@@ -833,7 +833,7 @@ function buildNav() {
   logo.innerHTML = '<div class="brand-main">ЛЮТЫЕ ПЛЯЖНИКИ !!</div><div class="brand-sub">King of the Court</div>';
   logo.setAttribute('role', 'button');
   logo.setAttribute('title', 'На главную');
-  logo.addEventListener('click', () => switchTab('roster'));
+  logo.addEventListener('click', () => switchTab('home'));
   top.appendChild(logo);
 
   const spacer = document.createElement('div');

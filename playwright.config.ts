@@ -20,7 +20,8 @@ const config: PlaywrightTestConfig = {
   webServer: {
     command: `npx http-server . -p ${PORT} -c-1`,
     url: `http://${HOST}:${PORT}/`,
-    reuseExistingServer: !process.env.CI,
+    // Avoid reusing a potentially already-running server with a different root.
+    reuseExistingServer: false,
     timeout: 60_000,
   },
   reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],

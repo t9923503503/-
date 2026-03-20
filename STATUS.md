@@ -119,12 +119,12 @@
 
 - [x] **Q1.1** — E2E: создание тай-турнира ✅ (2026-03-20, `tests/e2e/thai-create.spec.ts`)
 - [x] **Q1.2** — E2E: полный R1 ✅ (2026-03-20, `tests/e2e/thai-full-r1.spec.ts`)
-- [ ] **Q1.3** — E2E: посев R2
-- [ ] **Q1.4** — E2E: R2 → FINISHED → номинации
-- [ ] **Q1.5** — Unit-тесты номинаций
+- [x] **Q1.3** — E2E: посев R2 ✅ (2026-03-20, `tests/e2e/thai-r2-seed.spec.ts`)
+- [x] **Q1.4** — E2E: R2 → FINISHED → номинации ✅ (2026-03-20, `tests/e2e/thai-r2-finished.spec.ts`)
+- [x] **Q1.5** — Unit-тесты номинаций ✅ (2026-03-20, `tests/unit/thai-nominations.test.js`)
 - [ ] **Q1.6** — Regression: хаб не сломался
-- [ ] **Q1.7** — Mobile testing
-- [ ] **Q1.8** — THAI_GUIDE.md
+- [x] **Q1.7** — Mobile testing ✅ (2026-03-20, `tests/e2e/thai-mobile.spec.ts`)
+- [x] **Q1.8** — THAI_GUIDE.md ✅ (2026-03-20, `THAI_GUIDE.md`)
 
 ---
 
@@ -134,6 +134,7 @@
 > Формат: `[АГЕНТ] ЗАДАЧА: описание проблемы → кто может разблокировать`
 
 (пусто)
+[ARCH] Q1.6 — `npm run test:smoke` (Browser smoke) нестабилен: при открытии хаба кнопка `.nb[data-tab="home"]` не кликается (timeout), вероятно из-за сетевых/внешних зависимостей Supabase/CDN → добавить жёсткую деградацию при недоступном Supabase (guard/try-catch вокруг init) и/или локальный fallback скриптов; затем пере-запустить smoke.
 
 ---
 
