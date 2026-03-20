@@ -2125,3 +2125,8 @@ GRANT EXECUTE ON FUNCTION get_public_tournament_history(INT, INT) TO anon, authe
 --             get_public_leaderboard                       [NEW]
 --             get_public_tournament_history                [NEW]
 -- ══════════════════════════════════════════════════════════════
+
+-- Уведомляем PostgREST о необходимости обновить кеш схемы.
+-- Работает только если в PostgreSQL есть слушатель на канале "pgrst"
+-- (PostgREST слушает его автоматически).
+SELECT pg_notify('pgrst', 'reload schema');

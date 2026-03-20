@@ -104,6 +104,17 @@ else
     echo "    sudo -u postgres psql ${DB_NAME} < lpbvolley_backup_20260319.sql"
 fi
 
+# ── 5b. Применение миграций (функции create_room и др.) ──────
+echo "[5b/9] Применение supabase_migration.sql..."
+MIGRATION_FILE="$(dirname "$0")/supabase_migration.sql"
+if [ -f "$MIGRATION_FILE" ]; then
+    sudo -u postgres psql "${DB_NAME}" < "$MIGRATION_FILE"
+    echo "    ✓ Миграция применена"
+else
+    echo "    ⚠ supabase_migration.sql не найден рядом со скриптом"
+    echo "    Выполните вручную: sudo -u postgres psql ${DB_NAME} < supabase_migration.sql"
+fi
+
 # ── 6. PostgREST ──────────────────────────────────────────────
 echo "[6/9] Установка PostgREST..."
 cd /tmp

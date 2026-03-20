@@ -543,7 +543,8 @@ function _buildNav(trn) {
     lite:    { icon:'🍀', label:'ЛАЙТ',   color:'#6ABF69' },
   };
   finalsKeys.forEach(k => {
-    const d = FDef[k] || {icon:'🏆', label:k.toUpperCase(), color:'#ffd700'};
+    const safeKey = String(k != null ? k : '');
+    const d = FDef[k] || {icon:'🏆', label:safeKey.toUpperCase(), color:'#ffd700'};
     const dis = allDone ? '' : 'disabled';
     html += `<button class="ipt-tab-btn tab-finals" data-tab="${k}" ${dis} onclick="_iptTab('${k}')">
       <span class="t-main">${d.icon}</span>

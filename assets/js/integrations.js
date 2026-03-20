@@ -224,7 +224,9 @@ REVOKE ALL ON FUNCTION rotate_room_secret(TEXT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION create_room(TEXT, TEXT, JSONB) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION get_room_state(TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION push_room_state(TEXT, TEXT, JSONB) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION rotate_room_secret(TEXT, TEXT, TEXT) TO anon, authenticated;`;
+GRANT EXECUTE ON FUNCTION rotate_room_secret(TEXT, TEXT, TEXT) TO anon, authenticated;
+
+SELECT pg_notify('pgrst', 'reload schema');`;
 
 function sbNormalizeRoomCode(value) {
   return (value || '').toUpperCase().trim();
@@ -466,7 +468,7 @@ async function sbConnect() {
   } catch(e) {
     sbSetStatus('offline');
     const msg = e.message || '';
-    if (msg.toLowerCase().includes('fetch') || msg.toLowerCase().includes('network') || msg.toLowerCase().includes('failed') || msg.toLowerCase().includes('functions')) {
+    if (msg.toLowerCase().includes('fetch') || msg.toLowerCase().includes('network') || msg.toLowerCase().includes('failed') || msg.toLowerCase().includes('functions') || msg.toLowerCase().includes('schema cache') || msg.toLowerCase().includes('could not find')) {
       showToast('❌ Нет соединения или не применена миграция для комнат');
     } else {
       showToast('❌ Ошибка: ' + msg);
@@ -832,7 +834,7 @@ function renderSupabaseCard() {
 
     <details class="sb-sql-block">
       <summary>🛠 SQL для безопасной комнатной синхронизации</summary>
-      <div class="sb-sql-hint">Откройте <a href="https://supabase.com/dashboard/project/rscctyllkqcpxkxrveoz/sql/new" target="_blank" style="color:#3ecf8e">SQL Editor</a>, вставьте блок ниже или запустите обновлённый supabase_migration.sql целиком.</div>
+      <div class="sb-sql-hint">Выполните на сервере: <code>sudo -u postgres psql lpbvolley &lt; supabase_migration.sql</code> — или вставьте блок ниже вручную через psql.</div>
       <pre class="sb-sql-pre">${esc(SB_SYNC_SQL)}</pre>
       <button class="btn-sb-sql-copy" onclick="sbCopySql()">📋 Копировать SQL</button>
     </details>

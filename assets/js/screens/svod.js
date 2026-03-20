@@ -23,7 +23,8 @@ function renderSvod() {
     const start  = i * ppc + 1;
     const end    = isLast ? null : (i + 1) * ppc;
     const rangeLabel = isLast ? `${start}+` : `${start}–${end}`;
-    const label  = `${key.toUpperCase()} (Места ${rangeLabel})`;
+    const safeKey = String(key != null ? key : '');
+    const label  = `${safeKey.toUpperCase()} (Места ${rangeLabel})`;
     return { key, ...ALL_GROUP_DEFS[key], label, rangeLabel };
   });
 

@@ -179,8 +179,9 @@ function renderStats() {
       [...svod[key].M, ...svod[key].W].forEach(p => {
         if (p.rPlayed > 0) s1AvgMap[p.name] = p.pts / p.rPlayed;
       });
+      const safeKey = String(key != null ? key : '');
       out += `<div class="level-block" style="margin-bottom:10px">
-        <div class="level-hdr ${cls}"><span>${icon} ${key.toUpperCase()}</span></div>
+        <div class="level-hdr ${cls}"><span>${icon} ${safeKey.toUpperCase()}</span></div>
         <div class="svod-table-wrap"><table class="svod-table">
           <thead><tr>
             <th class="td-rank">Фин</th><th>Имя</th>

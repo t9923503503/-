@@ -8,4 +8,4 @@ window.APP_CONFIG = {
 };
 
 // URL основного сайта (для кнопки ВЫХОД)
-var SITE_URL = 'http://localhost:3000';
+var SITE_URL = 'https://lpvolley.ru';
