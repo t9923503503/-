@@ -53,9 +53,11 @@ test.describe('Browser smoke', () => {
     await expect(page.locator('#screens')).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('text=Ошибка запуска приложения')).toHaveCount(0);
 
+    // Ждём завершения bootstrap switchTab (пока занят busy-lock — клик дропается)
+    await expect(page.locator('.screen.active')).toBeAttached({ timeout: 30_000 });
+
     // Навигация по основным вкладкам
     // Переход на home — через логотип (#nav-logo), кнопки .nb[data-tab="home"] нет в DOM
-    await page.locator('#nav-logo').waitFor({ state: 'visible', timeout: 30_000 });
     await page.locator('#nav-logo').click();
     await expect(page.locator('#screen-home')).toHaveClass(/active/);
 
@@ -93,6 +95,8 @@ test.describe('Browser smoke', () => {
   test('3. Home — создание турнира локально', async ({ page }) => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#screens')).toBeVisible({ timeout: 30_000 });
+    // Ждём завершения bootstrap switchTab (busy-lock)
+    await expect(page.locator('.screen.active')).toBeAttached({ timeout: 30_000 });
     // home — через логотип, кнопки .nb[data-tab="home"] нет
     await page.locator('#nav-logo').click();
     await expect(page.locator('#screen-home')).toHaveClass(/active/);
@@ -123,11 +127,12 @@ test.describe('Browser smoke', () => {
   test('5. Перезагрузка с зарегистрированным service worker', async ({ page }) => {
     // Первая загрузка — SW регистрируется
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    // Ждём nav-logo (кнопки .nb[data-tab="home"] нет в DOM)
-    await page.locator('#nav-logo').waitFor({ state: 'visible', timeout: 30_000 });
+    // Ждём завершения bootstrap (busy-lock), nav-logo существует
+    await expect(page.locator('.screen.active')).toBeAttached({ timeout: 30_000 });
     const swAfterFirst = await page.evaluate(async () => {
       const reg = await navigator.serviceWorker.getRegistration('./sw.js');
-      return reg?.active?.state ?? reg?.installing?.state ?? null;
+      // SW может быть в любом из трёх состояний: active, waiting (installed), installing
+      return reg?.active?.state ?? reg?.waiting?.state ?? reg?.installing?.state ?? null;
     });
     expect(swAfterFirst).not.toBeNull();
 
