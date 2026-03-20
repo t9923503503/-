@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d1a">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://sv-ugra.ru; img-src 'self' data: blob: https:;">
+<title>Профиль игрока — Лютые пляжники</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:      #0d0d1a;
+  --surface: #161628;
+  --border:  #2a2a4a;
+  --accent:  #7c6af7;
+  --gold:    #ffd700;
+  --text:    #e8e8f0;
+  --muted:   #8888aa;
+  --danger:  #f87171;
+  --success: #4ade80;
+  --radius:  10px;
+}
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+  font-size: 15px;
+}
+
+/* ── Top nav ─────────────────────────────────────────────── */
+.top-nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.top-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.82rem;
+}
+.top-nav a:hover { color: var(--text); }
+.breadcrumb {
+  font-size: 0.8rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.breadcrumb a { color: var(--muted); text-decoration: none; }
+.breadcrumb a:hover { color: var(--gold); }
+.breadcrumb .sep { color: var(--border); }
+
+/* ── Hero photo card ─────────────────────────────────────── */
+.hero {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  background: #111;
+  overflow: hidden;
+  aspect-ratio: 3/4;
+  max-height: 480px;
+}
+.hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+.hero-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 5rem;
+  color: var(--border);
+  background: var(--surface);
+}
+/* Rank badge: bottom-left black box */
+.hero-rank {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  background: rgba(0,0,0,.85);
+  color: #fff;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 2.5rem;
+  padding: 12px 18px 10px;
+  line-height: 1;
+  min-width: 60px;
+  text-align: center;
+}
+/* Gender badge top-right */
+.hero-gender {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(0,0,0,.7);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+/* ── Player name ─────────────────────────────────────────── */
+.content {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 16px 60px;
+}
+.player-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 2.2rem;
+  letter-spacing: 1px;
+  margin: 16px 0 4px;
+  line-height: 1;
+}
+
+/* ── Rating table (yellow/black — like screenshot) ───────── */
+.rating-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+}
+.rating-table tr:first-child td {
+  background: var(--gold);
+  color: #0d0d1a;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900;
+  font-size: 0.78rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 10px 12px;
+}
+.rating-table tr:first-child td:last-child {
+  text-align: right;
+  font-size: 1.4rem;
+  font-family: 'Bebas Neue', sans-serif;
+  letter-spacing: 1px;
+  background: #0d0d1a;
+  color: var(--text);
+  width: 70px;
+}
+.rating-table tr td {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.88rem;
+}
+.rating-table tr td:last-child {
+  text-align: right;
+  font-weight: 600;
+  width: 70px;
+}
+
+/* ── Info grid ───────────────────────────────────────────── */
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 18px 0;
+}
+.info-section h3 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.info-section ul {
+  list-style: disc;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.info-section li {
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.info-section li strong {
+  color: var(--text);
+  font-weight: 600;
+}
+@media (max-width: 380px) {
+  .info-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Action buttons ──────────────────────────────────────── */
+.action-btns { display: flex; flex-direction: column; gap: 8px; margin: 20px 0; }
+.btn-gold {
+  background: var(--gold);
+  color: #0d0d1a;
+  border: none;
+  border-radius: 8px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 13px 20px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: opacity .2s;
+}
+.btn-gold:hover { opacity: .85; }
+.btn-dark {
+  background: var(--surface);
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 13px 20px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  display: block;
+  text-decoration: none;
+  transition: background .2s;
+}
+.btn-dark:hover { background: rgba(255,215,0,.08); }
+
+/* ── Results table ───────────────────────────────────────── */
+.section-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.2rem;
+  letter-spacing: 1px;
+  background: var(--gold);
+  color: #0d0d1a;
+  padding: 10px 14px;
+  border-radius: 8px 8px 0 0;
+  margin-top: 20px;
+}
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.results-table th {
+  background: #1a1a30;
+  color: var(--muted);
+  text-align: left;
+  padding: 8px 10px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-size: 0.78rem;
+  border: 1px solid var(--border);
+}
+.results-table td {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  vertical-align: middle;
+}
+.results-table tr:hover td { background: var(--surface); filter: brightness(1.1); }
+.results-table td.place {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1rem;
+  text-align: center;
+  width: 40px;
+}
+.results-table td.pts {
+  font-weight: 700;
+  color: var(--gold);
+  text-align: center;
+  width: 45px;
+}
+.place-1 { color: #ffd700; }
+.place-2 { color: #c0c0c0; }
+.place-3 { color: #cd7f32; }
+
+/* ── Empty / loading ─────────────────────────────────────── */
+.empty { text-align: center; color: var(--muted); padding: 30px; font-size: 0.9rem; }
+.spinner {
+  display: inline-block; width: 18px; height: 18px;
+  border: 2px solid rgba(255,215,0,.2); border-top-color: var(--gold);
+  border-radius: 50%; animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Not found page ──────────────────────────────────────── */
+.not-found {
+  min-height: 60vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; padding: 40px;
+}
+.not-found .icon { font-size: 3rem; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<!-- Top nav -->
+<div class="top-nav">
+  <div class="breadcrumb">
+    <a href="index.html">Главная</a>
+    <span class="sep">/</span>
+    <a href="rating.html">Игроки</a>
+    <span class="sep">/</span>
+    <span id="bc-name">Профиль</span>
+  </div>
+  <a href="login.html" id="nav-login-link">Войти</a>
+</div>
+
+<!-- Loading state -->
+<div id="loading-state" style="text-align:center; padding:80px 20px;">
+  <div class="spinner"></div>
+  <div style="margin-top:12px; color:var(--muted); font-size:0.9rem;">Загрузка профиля...</div>
+</div>
+
+<!-- Not found -->
+<div id="not-found-state" class="not-found" style="display:none">
+  <div class="icon">🏐</div>
+  <div style="font-family:'Bebas Neue',sans-serif; font-size:1.8rem; margin-bottom:8px;">Игрок не найден</div>
+  <div style="color:var(--muted); margin-bottom:20px;">Профиль не существует или был удалён</div>
+  <a href="rating.html" style="color:var(--gold); text-decoration:none;">← К рейтингу</a>
+</div>
+
+<!-- Profile content -->
+<div id="profile-content" style="display:none">
+
+  <!-- Hero photo -->
+  <div class="hero" id="hero-section">
+    <div class="hero-placeholder" id="hero-placeholder">🏐</div>
+    <img id="hero-photo" src="" alt="" style="display:none" onerror="this.style.display='none'; document.getElementById('hero-placeholder').style.display='flex';">
+    <div class="hero-rank" id="hero-rank">—</div>
+    <div class="hero-gender" id="hero-gender"></div>
+  </div>
+
+  <div class="content">
+
+    <!-- Name -->
+    <div class="player-name" id="player-name">—</div>
+
+    <!-- Rating table -->
+    <table class="rating-table" id="rating-table">
+      <tr>
+        <td>🏐 ТЕКУЩИЙ РЕЙТИНГ</td>
+        <td id="rt-current">—</td>
+      </tr>
+      <tr>
+        <td>Рейтинг сезона 2026</td>
+        <td id="rt-season">—</td>
+      </tr>
+      <tr>
+        <td>Общий рейтинг за все периоды</td>
+        <td id="rt-total">—</td>
+      </tr>
+    </table>
+
+    <!-- Info grid -->
+    <div class="info-grid">
+      <div class="info-section">
+        <h3>Информация</h3>
+        <ul id="info-list">
+          <li>Загрузка...</li>
+        </ul>
+      </div>
+      <div class="info-section" id="level-section" style="display:none">
+        <h3>Уровень игры</h3>
+        <ul id="level-list"></ul>
+      </div>
+    </div>
+
+    <!-- Coach -->
+    <div id="coach-section" style="display:none; margin-bottom:16px;">
+      <div style="font-size:0.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:4px;">
+        Тренер игрока:
+      </div>
+      <div id="coach-name" style="font-weight:600;"></div>
+    </div>
+
+    <!-- Bio -->
+    <div id="bio-section" style="display:none; color:var(--muted); font-size:0.88rem; margin-bottom:16px; line-height:1.5;"></div>
+
+    <!-- Action buttons -->
+    <div class="action-btns">
+      <button class="btn-gold" id="btn-show-results" onclick="toggleResults()">
+        Показать все результаты <span>›</span>
+      </button>
+    </div>
+
+    <!-- Results section -->
+    <div id="results-section" style="display:none">
+      <div class="section-title">Запланированные турниры</div>
+      <table class="results-table">
+        <thead>
+          <tr>
+            <th>Дата</th>
+            <th>Турнир</th>
+            <th>Партнёр</th>
+            <th>Категория</th>
+            <th style="text-align:center">Очки</th>
+            <th style="text-align:center">Место</th>
+          </tr>
+        </thead>
+        <tbody id="results-body">
+          <tr><td colspan="6" class="empty">Загрузка...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /profile-content -->
+
+<script>
+(function () {
+  'use strict';
+
+  const API = 'https://sv-ugra.ru/api/rest/v1';
+
+  // ── Get player ID from URL: /profile.html?id=UUID or ?name=NAME ──
+  const params   = new URLSearchParams(location.search);
+  const playerId = params.get('id');
+  const playerName = params.get('name');
+
+  if (!playerId && !playerName) {
+    showNotFound();
+  } else {
+    loadProfile();
+  }
+
+  // ── Load ──────────────────────────────────────────────────
+  async function loadProfile() {
+    try {
+      let url = playerId
+        ? `${API}/players?id=eq.${encodeURIComponent(playerId)}&limit=1`
+        : `${API}/players?name=ilike.${encodeURIComponent(playerName)}&status=eq.active&limit=1`;
+
+      const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      const data = await res.json();
+
+      if (!data || !data.length) { showNotFound(); return; }
+
+      const player = data[0];
+      renderProfile(player);
+
+    } catch (e) {
+      showNotFound();
+    }
+  }
+
+  // ── Render ────────────────────────────────────────────────
+  function renderProfile(p) {
+    document.getElementById('loading-state').style.display = 'none';
+    document.getElementById('profile-content').style.display = 'block';
+
+    // Breadcrumb
+    document.getElementById('bc-name').textContent = p.name || '—';
+    document.title = (p.name || 'Игрок') + ' — Лютые пляжники';
+
+    // Hero photo
+    if (p.photo_url) {
+      const img = document.getElementById('hero-photo');
+      img.src = p.photo_url;
+      img.alt = p.name;
+      img.style.display = 'block';
+      document.getElementById('hero-placeholder').style.display = 'none';
+    }
+
+    // Gender badge
+    const genderEl = document.getElementById('hero-gender');
+    if (p.gender === 'M') { genderEl.textContent = '♂ Мужской'; }
+    else if (p.gender === 'W') { genderEl.textContent = '♀ Женский'; }
+
+    // Rank (total_pts ranking — approximate)
+    document.getElementById('hero-rank').textContent = p.total_pts || '—';
+
+    // Name
+    document.getElementById('player-name').textContent = (p.name || '').toUpperCase();
+
+    // Rating table
+    document.getElementById('rt-current').textContent = p.total_pts ?? '—';
+    document.getElementById('rt-season').textContent  = p.total_pts ?? '—';
+    document.getElementById('rt-total').textContent   = p.total_pts ?? '—';
+
+    // Info list
+    const infoItems = [];
+    if (p.height)     infoItems.push(`Рост: <strong>${p.height} см</strong>`);
+    if (p.birth_date) {
+      const age = Math.floor((Date.now() - new Date(p.birth_date)) / (365.25 * 86400000));
+      infoItems.push(`Возраст: <strong>${age} лет</strong>`);
+    }
+    if (p.city)       infoItems.push(`Город: <strong>${esc(p.city)}</strong>`);
+    infoItems.push(`Турниров: <strong>${p.tournaments || 0}</strong>`);
+    infoItems.push(`Побед: <strong>${p.wins || 0}</strong>`);
+
+    document.getElementById('info-list').innerHTML = infoItems.length
+      ? infoItems.map(i => `<li>${i}</li>`).join('')
+      : '<li>Информация не указана</li>';
+
+    // Level
+    if (p.level) {
+      document.getElementById('level-section').style.display = 'block';
+      document.getElementById('level-list').innerHTML = `<li><strong>${esc(p.level)}</strong></li>`;
+    }
+
+    // Coach
+    if (p.coach) {
+      document.getElementById('coach-section').style.display = 'block';
+      document.getElementById('coach-name').textContent = p.coach;
+    }
+
+    // Bio
+    if (p.bio) {
+      const bioEl = document.getElementById('bio-section');
+      bioEl.style.display = 'block';
+      bioEl.textContent = p.bio;
+    }
+
+    // Load results
+    loadResults(p.id);
+  }
+
+  // ── Results ───────────────────────────────────────────────
+  async function loadResults(id) {
+    try {
+      const res  = await fetch(
+        `${API}/tournament_results?player_id=eq.${id}&order=created_at.desc&limit=50` +
+        `&select=place,game_pts,rating_pts,partner_name,category,tournament_id,tournaments(name,date)`,
+        { headers: { 'Accept': 'application/json' } }
+      );
+      const data = await res.json();
+      renderResults(data || []);
+    } catch (e) {
+      document.getElementById('results-body').innerHTML =
+        '<tr><td colspan="6" class="empty">Не удалось загрузить результаты</td></tr>';
+    }
+  }
+
+  function renderResults(rows) {
+    if (!rows.length) {
+      document.getElementById('results-body').innerHTML =
+        '<tr><td colspan="6" class="empty">Нет результатов</td></tr>';
+      return;
+    }
+
+    document.getElementById('results-body').innerHTML = rows.map(r => {
+      const date  = r.tournaments?.date
+        ? new Date(r.tournaments.date).toLocaleDateString('ru', { day:'2-digit', month:'2-digit', year:'numeric' })
+        : '—';
+      const tname = r.tournaments?.name || '—';
+      const pts   = r.rating_pts ?? r.game_pts ?? 0;
+      const placeClass = r.place <= 3 ? `place-${r.place}` : '';
+
+      return `
+        <tr>
+          <td style="white-space:nowrap">${esc(date)}</td>
+          <td>${esc(tname)}</td>
+          <td>${esc(r.partner_name || '—')}</td>
+          <td>${esc(r.category || '—')}</td>
+          <td class="pts">${pts}</td>
+          <td class="place ${placeClass}">${r.place || '—'}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // ── Toggle results ────────────────────────────────────────
+  window.toggleResults = function() {
+    const sec = document.getElementById('results-section');
+    const btn = document.getElementById('btn-show-results');
+    const visible = sec.style.display !== 'none';
+    sec.style.display = visible ? 'none' : 'block';
+    btn.innerHTML = visible
+      ? 'Показать все результаты <span>›</span>'
+      : 'Скрыть результаты <span>↑</span>';
+  };
+
+  // ── Helpers ───────────────────────────────────────────────
+  function showNotFound() {
+    document.getElementById('loading-state').style.display = 'none';
+    document.getElementById('not-found-state').style.display = 'flex';
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+})();
+</script>
+</body>
+</html>

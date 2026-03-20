@@ -1,0 +1,170 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #FF5A00;
+  --color-brand-light: #FF5A00;
+  --color-brand-dark: #FF5A00;
+  --color-surface: #070B14;
+  --color-surface-light: #070B14;
+  --color-surface-lighter: #070B14;
+  --color-text-primary: #F4F7FA;
+  --color-text-secondary: #64748B;
+  --color-gold: #FFD700;
+  --color-silver: #C0C0C0;
+  --color-bronze: #CD7F32;
+
+  --font-heading: 'Bebas Neue', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-condensed: 'Oswald', sans-serif;
+}
+
+:root {
+  --bg-dark: #070B14;
+  --bg-panel: rgba(11, 17, 24, 0.7);
+  --accent-ice: #00D1FF;
+  --accent-fire: #FF5A00;
+  --text-main: #F4F7FA;
+  --text-muted: #64748B;
+
+  --glow-fire: 0 0 15px rgba(255, 90, 0, 0.3);
+  --glow-ice: 0 0 15px rgba(0, 209, 255, 0.3);
+
+  --glass-border: rgba(0, 209, 255, 0.35);
+}
+
+@keyframes neonPulseIce {
+  0% {
+    box-shadow: var(--glow-ice);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(0, 209, 255, 0.55), inset 0 0 25px rgba(0, 209, 255, 0.25);
+    filter: brightness(1.1);
+  }
+  100% {
+    box-shadow: var(--glow-ice);
+    filter: brightness(1);
+  }
+}
+
+@keyframes neonPulseFire {
+  0% {
+    box-shadow: var(--glow-fire);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(255, 90, 0, 0.6), inset 0 0 25px rgba(255, 90, 0, 0.25);
+    filter: brightness(1.1);
+  }
+  100% {
+    box-shadow: var(--glow-fire);
+    filter: brightness(1);
+  }
+}
+
+@keyframes cardFloat {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.glass-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(12px);
+}
+
+.btn-action {
+  background: var(--accent-fire);
+  color: var(--text-main);
+  border-radius: 16px;
+  padding: 14px 18px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: var(--glow-fire);
+  transition: transform 160ms ease, box-shadow 200ms ease, filter 200ms ease;
+}
+
+.btn-action:hover {
+  box-shadow: 0 0 22px rgba(255, 90, 0, 0.55), inset 0 0 20px rgba(255, 90, 0, 0.25);
+  transform: translateY(-1px);
+}
+
+.btn-action-outline {
+  background: transparent;
+  color: var(--text-main);
+  border: 1px solid rgba(0, 209, 255, 0.55);
+  border-radius: 16px;
+  padding: 14px 18px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: var(--glow-ice);
+  transition: transform 160ms ease, box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.btn-action-outline:hover {
+  box-shadow: 0 0 22px rgba(0, 209, 255, 0.55), inset 0 0 20px rgba(0, 209, 255, 0.25);
+  border-color: rgba(0, 209, 255, 0.85);
+  transform: translateY(-1px);
+}
+
+.hero-poster {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(1000px 600px at 15% 15%, rgba(0, 209, 255, 0.16), transparent 55%),
+    radial-gradient(800px 480px at 80% 35%, rgba(255, 90, 0, 0.20), transparent 60%),
+    var(--bg-dark);
+}
+
+.hero-poster::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.26;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.35) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.hero-poster::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2764%27%20height%3D%2764%27%20viewBox%3D%270%200%2064%2064%27%3E%3Cg%20fill%3D%27white%27%20fill-opacity%3D%270.5%27%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%273%27%20r%3D%273%27/%3E%3Ccircle%20cx%3D%2729%27%20cy%3D%2717%27%20r%3D%272%27/%3E%3Ccircle%20cx%3D%2754%27%20cy%3D%2712%27%20r%3D%272%27/%3E%3Ccircle%20cx%3D%2737%27%20cy%3D%2738%27%20r%3D%273%27/%3E%3Ccircle%20cx%3D%2718%27%20cy%3D%2749%27%20r%3D%272%27/%3E%3Ccircle%20cx%3D%2756%27%20cy%3D%2747%27%20r%3D%272%27/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 64px 64px;
+}
+
+.neon-ice {
+  animation: neonPulseIce 2.8s ease-in-out infinite;
+}
+
+.neon-fire {
+  animation: neonPulseFire 2.4s ease-in-out infinite;
+}
+
+.rank-1-expanded {
+  animation: cardFloat 4.2s ease-in-out infinite;
+  box-shadow: 0 0 30px rgba(0, 209, 255, 0.4), inset 0 0 25px rgba(0, 209, 255, 0.2);
+}
+
+.crown-icon-large {
+  filter: drop-shadow(0 0 18px rgba(0, 209, 255, 0.45));
+}
+
+.poster-name {
+  font-family: 'Bebas Neue', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

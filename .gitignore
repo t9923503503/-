@@ -1,0 +1,8 @@
+.tmp-smoke/
+test-results/
+playwright-report/
+node_modules/
+SERVER_GUIDE.local.md
+lpbvolley_backup_*.sql
+server_restore.env
+.claude/

@@ -1,0 +1,20 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/leaderboard/route": "app/api/leaderboard/route.js",
+  "/api/players/[id]/route": "app/api/players/[id]/route.js",
+  "/api/sudyam-auth/route": "app/api/sudyam-auth/route.js",
+  "/api/tournaments/route": "app/api/tournaments/route.js",
+  "/api/tournament-register/route": "app/api/tournament-register/route.js",
+  "/sudyam/login/page": "app/sudyam/login/page.js",
+  "/calendar/[id]/register/page": "app/calendar/[id]/register/page.js",
+  "/calendar/[id]/page": "app/calendar/[id]/page.js",
+  "/page": "app/page.js",
+  "/login/page": "app/login/page.js",
+  "/partner/page": "app/partner/page.js",
+  "/calendar/page": "app/calendar/page.js",
+  "/pravila/page": "app/pravila/page.js",
+  "/rankings/page": "app/rankings/page.js",
+  "/players/[id]/page": "app/players/[id]/page.js",
+  "/profile/page": "app/profile/page.js",
+  "/sudyam/page": "app/sudyam/page.js"
+}

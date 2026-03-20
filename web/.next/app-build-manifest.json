@@ -1,0 +1,146 @@
+{
+  "pages": {
+    "/_not-found/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/app/_not-found/page-2fcf4179d5914949.js"
+    ],
+    "/layout": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/css/aeffeb2e4550f2a7.css",
+      "static/chunks/619-ba102abea3e3d0e4.js",
+      "static/chunks/app/layout-d59e822dea55c555.js"
+    ],
+    "/api/leaderboard/route": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/app/api/leaderboard/route-b2a52e2ef459a302.js"
+    ],
+    "/api/players/[id]/route": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/app/api/players/[id]/route-b2a52e2ef459a302.js"
+    ],
+    "/api/sudyam-auth/route": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/app/api/sudyam-auth/route-b2a52e2ef459a302.js"
+    ],
+    "/api/tournaments/route": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/app/api/tournaments/route-b2a52e2ef459a302.js"
+    ],
+    "/api/tournament-register/route": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/app/api/tournament-register/route-b2a52e2ef459a302.js"
+    ],
+    "/sudyam/login/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/app/sudyam/login/page-c4fa31caab5c2fee.js"
+    ],
+    "/calendar/[id]/register/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/619-ba102abea3e3d0e4.js",
+      "static/chunks/app/calendar/[id]/register/page-00fad9ceb0abb8e8.js"
+    ],
+    "/calendar/[id]/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/619-ba102abea3e3d0e4.js",
+      "static/chunks/app/calendar/[id]/page-977bd4914269e6fe.js"
+    ],
+    "/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/619-ba102abea3e3d0e4.js",
+      "static/chunks/app/page-977bd4914269e6fe.js"
+    ],
+    "/login/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/app/login/page-b2a52e2ef459a302.js"
+    ],
+    "/partner/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/app/partner/page-b2a52e2ef459a302.js"
+    ],
+    "/calendar/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/619-ba102abea3e3d0e4.js",
+      "static/chunks/app/calendar/page-3ffef3f892c6c4b1.js"
+    ],
+    "/pravila/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/app/pravila/page-b2a52e2ef459a302.js"
+    ],
+    "/rankings/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/619-ba102abea3e3d0e4.js",
+      "static/chunks/app/rankings/page-4c1f6087f563499e.js"
+    ],
+    "/players/[id]/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/619-ba102abea3e3d0e4.js",
+      "static/chunks/app/players/[id]/page-3ffef3f892c6c4b1.js"
+    ],
+    "/profile/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/619-ba102abea3e3d0e4.js",
+      "static/chunks/app/profile/page-3ffef3f892c6c4b1.js"
+    ],
+    "/sudyam/page": [
+      "static/chunks/webpack-1017649d66d1259f.js",
+      "static/chunks/4bd1b696-c023c6e3521b1417.js",
+      "static/chunks/493-e61740f684b4ba13.js",
+      "static/chunks/main-app-28c5f9e138126c9a.js",
+      "static/chunks/app/sudyam/page-b2a52e2ef459a302.js"
+    ]
+  }
+}
