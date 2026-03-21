@@ -406,8 +406,8 @@ function renderHome() {
     // pick up to 2 real names for avatars
     const topM = db.filter(p=>p.gender==='M').sort((a,b)=>(b.totalPts||0)-(a.totalPts||0))[0];
     const topW = db.filter(p=>p.gender==='W').sort((a,b)=>(b.totalPts||0)-(a.totalPts||0))[0];
-    const av1  = topM ? topM.name.slice(0,2).toUpperCase() : '🏋️';
-    const av2  = topW ? topW.name.slice(0,2).toUpperCase() : '👩';
+    const av1  = topM ? (topM.name||'').slice(0,2).toUpperCase() : '🏋️';
+    const av2  = topW ? (topW.name||'').slice(0,2).toUpperCase() : '👩';
     const av3  = total > 2 ? `+${total-2}` : '👤';
     return `
   <button class="plr-banner" onclick="switchTab('players')">

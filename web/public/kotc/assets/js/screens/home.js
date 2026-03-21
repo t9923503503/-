@@ -129,7 +129,7 @@ function renderHome() {
   <div class="trn-card-body">
     <div class="trn-card-head">
       <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
-        <span class="trn-lv ${t.level}">${t.level.toUpperCase()}</span>
+        <span class="trn-lv ${t.level||''}">${(t.level||'').toUpperCase()}</span>
         <span style="font-size:10px;color:var(--muted);background:rgba(255,255,255,.06);
           padding:2px 7px;border-radius:6px">${esc(t.division)}</span>
       </div>
@@ -172,7 +172,7 @@ function renderHome() {
     <div class="cal-info-name">${esc(t.name)}</div>
     <div class="cal-info-meta">
       <span>🕐 ${esc(t.time)}</span>
-      <span class="trn-lv ${t.level}" style="font-size:9px;padding:1px 5px">${t.level.toUpperCase()}</span>
+      <span class="trn-lv ${t.level||''}" style="font-size:9px;padding:1px 5px">${(t.level||'').toUpperCase()}</span>
       <span>${esc(t.division)}</span>
     </div>
   </div>
@@ -378,8 +378,8 @@ function renderHome() {
     // pick up to 2 real names for avatars
     const topM = db.filter(p=>p.gender==='M').sort((a,b)=>(b.totalPts||0)-(a.totalPts||0))[0];
     const topW = db.filter(p=>p.gender==='W').sort((a,b)=>(b.totalPts||0)-(a.totalPts||0))[0];
-    const av1  = topM ? topM.name.slice(0,2).toUpperCase() : '🏋️';
-    const av2  = topW ? topW.name.slice(0,2).toUpperCase() : '👩';
+    const av1  = topM ? (topM.name||'').slice(0,2).toUpperCase() : '🏋️';
+    const av2  = topW ? (topW.name||'').slice(0,2).toUpperCase() : '👩';
     const av3  = total > 2 ? `+${total-2}` : '👤';
     return `
   <button class="plr-banner" onclick="switchTab('players')">

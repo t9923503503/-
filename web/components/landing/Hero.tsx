@@ -12,7 +12,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function PlayerCard({ entry, featured }: { entry: LeaderboardEntry; featured?: boolean }) {
-  const initials = entry.name.slice(0, 2).toUpperCase();
+  const initials = (entry.name ?? '').slice(0, 2).toUpperCase();
   const winRate = entry.tournaments > 0
     ? Math.round((entry.wins / entry.tournaments) * 100)
     : 0;
@@ -35,7 +35,7 @@ function PlayerCard({ entry, featured }: { entry: LeaderboardEntry; featured?: b
 
         <div className="mt-4">
           <div className="poster-name text-4xl md:text-5xl text-transparent bg-clip-text bg-gradient-to-r from-[#FF5A00] to-[#00D1FF]">
-            {entry.name.toUpperCase()}
+            {(entry.name ?? '').toUpperCase()}
           </div>
         </div>
 
@@ -78,7 +78,7 @@ function PlayerCard({ entry, featured }: { entry: LeaderboardEntry; featured?: b
 
       <div className="mt-4">
         <div className="poster-name text-2xl md:text-3xl text-transparent bg-clip-text bg-gradient-to-r from-[#FF5A00] to-[#00D1FF]">
-          {entry.name.toUpperCase()}
+          {(entry.name ?? '').toUpperCase()}
         </div>
       </div>
 
