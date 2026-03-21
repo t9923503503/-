@@ -98,6 +98,7 @@ async function loadAppScripts() {
       import('/shared/timer.js'),
       import('/shared/table.js'),
       import('/shared/ui-kit.js'),
+      import('/shared/format-links.js'),
       import('/shared/api.js'),
       import('/shared/auth.js'),
     ]);

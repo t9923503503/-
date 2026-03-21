@@ -8,6 +8,8 @@
     "dev:serve": "node serve.mjs 8000",
     "test:unit": "vitest run",
     "test:smoke": "playwright test",
+    "test:e2e:thai": "playwright test tests/e2e --reporter=list",
+    "test:gate": "node scripts/release-gate.mjs",
     "test:smoke:headed": "playwright test --headed",
     "test:smoke:debug": "playwright test --debug"
   },

@@ -13,6 +13,45 @@
 
 ---
 
+## 🗺️ Квартальный план
+
+- Основной файл плана: `QUARTER_PRODUCT_ROADMAP.md`
+
+---
+
+## 🤝 Инструкция: работа 2–3 ИИ параллельно
+
+### Роли
+- **ИИ-1 (ARCH):** архитектура, shared-слой, интеграции, migration.
+- **ИИ-2 (FORMAT):** функционал форматов, UI сценарии формата, валидации.
+- **ИИ-3 (QA):** unit/e2e/smoke, regression, gate-скрипты, документация тестов.
+
+### Правила запуска
+- Перед стартом каждый ИИ читает `STATUS.md`.
+- Каждый ИИ берёт только свои задачи и сразу помечает их `in_progress` (или пишет в секции своей роли, что взял задачу).
+- Одновременно не трогать один и тот же файл несколькими ИИ.
+
+### Правила синхронизации
+- После завершения задачи: `- [x] ... ✅ (дата, файлы)`.
+- В `CHANGELOG` добавить строку: кто, что, какие файлы, что сделано.
+- Если задача блокируется — писать в `🚧 BLOCKED` в формате:
+  `[РОЛЬ] ЗАДАЧА: проблема → кто разблокирует`.
+
+### Разделение зон файлов (по умолчанию)
+- **ARCH:** `shared/*`, `assets/js/main.js`, `assets/js/integrations*`, `formats/kotc/*`.
+- **FORMAT:** `formats/thai/*`, форматные экраны и логика формата.
+- **QA:** `tests/*`, `playwright.config.ts`, `vitest.config.ts`, `scripts/release-gate.mjs`.
+
+### Merge policy
+- Мелкие изменения — отдельные коммиты по задаче.
+- Перед push обязательно прогон:
+  - `npm run test:unit`
+  - `npx playwright test tests/smoke.spec.ts --reporter=list`
+  - `npm run test:e2e:thai`
+- После зелёных тестов обновить `STATUS.md`, только затем push.
+
+---
+
 ## 🔵 ARCH — Архитектор
 
 ### Этап 0
@@ -93,7 +132,7 @@
 
 ### Этап 0
 
-- [ ] **Q0.1** — Настройка тестовой инфраструктуры
+- [x] **Q0.1** — Настройка тестовой инфраструктуры ✅ (2026-03-21, `tests/`, `vitest.config.ts`, `playwright.config.ts`, `package.json`)
   - Ветка: `qa/tests`
   - Блокирует: Q0.2
   - Файлы: `tests/`, `vitest.config.ts`, `playwright.config.ts`, `package.json`
@@ -122,7 +161,7 @@
 - [x] **Q1.3** — E2E: посев R2 ✅ (2026-03-20, `tests/e2e/thai-r2-seed.spec.ts`)
 - [x] **Q1.4** — E2E: R2 → FINISHED → номинации ✅ (2026-03-20, `tests/e2e/thai-r2-finished.spec.ts`)
 - [x] **Q1.5** — Unit-тесты номинаций ✅ (2026-03-20, `tests/unit/thai-nominations.test.js`)
-- [ ] **Q1.6** — Regression: хаб не сломался
+- [x] **Q1.6** — Regression: хаб не сломался ✅ (2026-03-21, `tests/smoke.spec.ts`, `playwright.config.ts`; `npx playwright test tests/smoke.spec.ts` = 5/5)
 - [x] **Q1.7** — Mobile testing ✅ (2026-03-20, `tests/e2e/thai-mobile.spec.ts`)
 - [x] **Q1.8** — THAI_GUIDE.md ✅ (2026-03-20, `THAI_GUIDE.md`)
 
@@ -134,7 +173,6 @@
 > Формат: `[АГЕНТ] ЗАДАЧА: описание проблемы → кто может разблокировать`
 
 (пусто)
-[ARCH] Q1.6 — `npm run test:smoke` (Browser smoke) нестабилен: при открытии хаба кнопка `.nb[data-tab="home"]` не кликается (timeout), вероятно из-за сетевых/внешних зависимостей Supabase/CDN → добавить жёсткую деградацию при недоступном Supabase (guard/try-catch вокруг init) и/или локальный fallback скриптов; затем пере-запустить smoke.
 
 ---
 
@@ -160,6 +198,15 @@
 | 2026-03-20 | FORMAT | F1.3 | formats/thai/thai.html | Zero-Sum бар (ok/warn/bad), блокировка «Следующий тур» до Σ=0 + все счета введены |
 | 2026-03-20 | FORMAT | F1.7 | formats/thai/thai.html | R2 посев: _buildR1Standings → thaiSeedR2 → 4 зоны (Hard/Advance/Medium/Lite) по полам |
 | 2026-03-20 | FORMAT | F1.9 | formats/thai/thai.html | FINISHED: подиум 🥇🥈🥉 + итоговая таблица (PTS, DIFF, WINS, K) + _thaiFinishTournament |
+| 2026-03-21 | ARCH | UX flow hardening | shared/format-links.js, assets/js/main.js, assets/js/screens/home.js, assets/js/screens/roster.js | Унифицирован генератор ссылок Thai в shared, нормализация mode/n/seed, стабильный launch из home/roster |
+| 2026-03-21 | QA | E2E edge cases | tests/e2e/thai-edge-cases.spec.ts | Добавлены edge-case тесты: запрет старта с неполным ростером и бейджи отдыха при n=10 |
+| 2026-03-21 | ARCH | KOTC MVP shell | formats/kotc/kotc.html, formats/kotc/kotc.js, formats/kotc/kotc.css | Создана целевая структура formats/kotc/*: legacy-open + iframe-embed MVP |
+| 2026-03-21 | QA | Release gates | package.json, scripts/release-gate.mjs | Добавлены test:e2e:thai и test:gate (unit + smoke + e2e), gate прогоняется зелёным |
+| 2026-03-21 | ARCH | Admin Panel MVP | web/app/admin/*, web/app/api/admin/*, web/lib/admin-*.ts, web/components/admin/AdminShell.tsx, web/middleware.ts, tests/unit/admin-reports.test.js | Реализованы `/admin` (login + разделы), CRUD турниров/игроков, manual overrides с reason, RBAC (admin/operator/viewer), audit log, CSV/Telegram отчеты; проверки: `npx tsc --noEmit`, `npm run build` (web), `npm run test:unit` |
+| 2026-03-21 | ARCH | Admin security hardening | web/lib/admin-auth.ts, web/lib/admin-audit.ts, web/lib/admin-constants.ts, web/db/migrations/20260321_admin_audit_log.sql, web/app/api/admin/*, web/app/admin/*, web/components/admin/AdminShell.tsx, web/middleware.ts | Убран runtime DDL из кода приложения; добавлена actor-based signed admin session (id+role), аудит теперь пишет `actor_id`; сохранены строгие cookie flags и defense-in-depth RBAC в каждом admin API |
+| 2026-03-21 | ARCH | Admin hardening v2 | web/lib/admin-auth.ts, web/app/api/admin/tournaments/route.ts, web/app/api/admin/players/route.ts, web/ADMIN_SECURITY.md | В production legacy PIN fallback выключен по умолчанию (`ADMIN_ALLOW_LEGACY_PIN=true` только вручную); при actor-credentials логин требует `id`; для DELETE обязателен `reason`; добавлена security-документация по миграциям/сессиям/ENV |
+| 2026-03-21 | QA | Admin auth policy tests | web/lib/admin-auth-policy.ts, tests/unit/admin-auth-policy.test.js, web/lib/admin-auth.ts | Вынесена policy-логика auth в чистый модуль без Next runtime зависимостей; добавлены unit-тесты (parse credentials, legacy pin policy, actor-id requirement), suite: 84/84 ✅ |
+| 2026-03-21 | ARCH+QA | Admin input validation hardening | web/lib/admin-validators.ts, web/app/api/admin/tournaments/route.ts, web/app/api/admin/players/route.ts, web/app/api/admin/overrides/route.ts, tests/unit/admin-validators.test.js | Добавлена нормализация/валидация payload для CRUD и overrides (whitelist статусов, обязательные поля, числовые guardrail’ы); suite: 87/87 ✅, `npx tsc --noEmit` + `npm run build` (web) ✅ |
 
 ---
 

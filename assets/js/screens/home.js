@@ -128,7 +128,14 @@ function renderHome() {
 
     // A1.5: Thai button opens thai.html with stored meta
     const thaiMeta = t.thaiMeta || {};
-    const thaiHref = `formats/thai/thai.html?mode=${thaiMeta.mode||'MF'}&n=${thaiMeta.n||8}&seed=${thaiMeta.seed||1}&trnId=${encodeURIComponent(t.id)}`;
+    const thaiHref = (globalThis.sharedFormatLinks && typeof globalThis.sharedFormatLinks.buildThaiFormatUrl === 'function')
+      ? globalThis.sharedFormatLinks.buildThaiFormatUrl({
+          mode: thaiMeta.mode || 'MF',
+          n: thaiMeta.n || 8,
+          seed: thaiMeta.seed || 1,
+          trnId: t.id,
+        })
+      : `formats/thai/thai.html?mode=${thaiMeta.mode||'MF'}&n=${thaiMeta.n||8}&seed=${thaiMeta.seed||1}&trnId=${encodeURIComponent(t.id)}`;
     const btnLabel = isThai
       ? (isActive ? '🌴 Продолжить Thai' : '🌴 Открыть Thai')
       : isIPT

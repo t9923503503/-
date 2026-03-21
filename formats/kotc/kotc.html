@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KOTC MVP</title>
+  <link rel="stylesheet" href="kotc.css" />
+</head>
+<body>
+  <main class="kotc-wrap">
+    <header class="kotc-header">
+      <button class="kotc-back" onclick="history.length>1?history.back():location.href='../../index.html'">← Хаб</button>
+      <h1 class="kotc-title">KOTC MVP</h1>
+    </header>
+
+    <section class="kotc-card">
+      <p class="kotc-sub">MVP-страница формата KOTC в целевой структуре `formats/kotc/*`.</p>
+      <div class="kotc-actions">
+        <button id="kotc-open-legacy" class="kotc-btn">Открыть legacy KOTC</button>
+        <button id="kotc-open-embedded" class="kotc-btn secondary">Встроить legacy в iframe</button>
+      </div>
+    </section>
+
+    <section id="kotc-embed-wrap" class="kotc-embed-wrap" hidden>
+      <iframe id="kotc-embed" title="KOTC legacy" class="kotc-embed"></iframe>
+    </section>
+  </main>
+
+  <script src="kotc.js"></script>
+</body>
+</html>
+
