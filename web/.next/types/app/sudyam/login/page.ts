@@ -1,4 +1,4 @@
-// File: F:\2103\21-main\web\app\sudyam\login\page.tsx
+// File: F:\2103\ФИНАЛ\web\app\sudyam\login\page.tsx
 import * as entry from '../../../../../app/sudyam/login/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

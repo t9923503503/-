@@ -26,7 +26,7 @@ function showTournament(trnId) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
           <div style="background:#1a1e24;padding:12px;border-radius:8px;border:1px solid #1e1e34">
             <div style="font-size:11px;color:#999">Уровень</div>
-            <div style="font-size:14px;color:#fff;font-weight:600;margin-top:4px">${trn.level ? esc(trn.level.toUpperCase()) : '—'}</div>
+            <div style="font-size:14px;color:#fff;font-weight:600;margin-top:4px">${(trn.level != null && String(trn.level).trim() !== '') ? esc(String(trn.level).toUpperCase()) : '—'}</div>
           </div>
           <div style="background:#1a1e24;padding:12px;border-radius:8px;border:1px solid #1e1e34">
             <div style="font-size:11px;color:#999">Тип</div>
@@ -199,7 +199,7 @@ function showPlayerCard(name, gender) {
   }
 
   // ── Avatar initials ───────────────────────────────────────
-  const initials = name.trim().split(/\s+/).map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2) || gIcon;
+  const initials = String(name || '').trim().split(/\s+/).map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2) || gIcon;
 
   // ── Build HTML ────────────────────────────────────────────
   const joinedStr = dbPlayer?.addedAt ? `📅 с ${dbPlayer.addedAt}` : '';

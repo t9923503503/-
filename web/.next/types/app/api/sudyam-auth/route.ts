@@ -1,4 +1,4 @@
-// File: F:\2103\21-main\web\app\api\sudyam-auth\route.ts
+// File: F:\2103\ФИНАЛ\web\app\api\sudyam-auth\route.ts
 import * as entry from '../../../../../app/api/sudyam-auth/route.js'
 import type { NextRequest } from 'next/server.js'
 

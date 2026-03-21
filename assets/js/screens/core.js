@@ -861,8 +861,33 @@ function buildNav() {
   exitBtn.title = 'Выход на основной сайт';
   exitBtn.addEventListener('click', () => {
     if (!confirm('Выйти из раздела «Судьям»?\nВы вернётесь на основной сайт.')) return;
-    // Определяем URL основного сайта
-    const siteUrl = (typeof SITE_URL !== 'undefined' && SITE_URL) || 'http://localhost:3000';
+    // При открытии KOTC внутри /sudyam в iframe используем явный siteUrl из
+    // query-параметра. Это надёжнее, чем старый захардкоженный SITE_URL.
+    let siteUrl = '';
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const queryUrl = params.get('siteUrl');
+      if (queryUrl) {
+        siteUrl = queryUrl;
+      }
+    } catch (_) {}
+    if (!siteUrl) {
+      try {
+        if (document.referrer) {
+          siteUrl = new URL('/', document.referrer).href;
+        }
+      } catch (_) {}
+    }
+    if (!siteUrl) {
+      try {
+        siteUrl = new URL('/', window.location.href).href;
+      } catch (_) {
+        siteUrl = '/';
+      }
+    }
+    if (!siteUrl) {
+      siteUrl = (typeof SITE_URL !== 'undefined' && SITE_URL) || '/';
+    }
     try {
       // Если в iframe — выходим на родительскую страницу
       if (window.top !== window.self) {
