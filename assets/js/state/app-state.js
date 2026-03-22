@@ -117,3 +117,116 @@ function divisionToType(division) {
   if (d.includes('микст') || d.includes('смешан')) return 'Mix';
   return 'M';
 }
+
+// ── GUARD-ФУНКЦИИ (A1.2) ──────────────────────────────────
+/**
+ * Безопасное чтение scores[ci][mi][ri] с bounds check.
+ * Возвращает null если индексы вне диапазона.
+ */
+function getScore(ci, mi, ri) {
+  if (!scores[ci] || !scores[ci][mi]) return null;
+  const v = scores[ci][mi][ri];
+  return v === undefined ? null : v;
+}
+
+/**
+ * Безопасная запись scores[ci][mi][ri] с bounds check.
+ * Возвращает false если индексы вне диапазона.
+ */
+function setScore(ci, mi, ri, value) {
+  if (!scores[ci] || !scores[ci][mi]) return false;
+  if (ri < 0 || ri >= scores[ci][mi].length) return false;
+  const n = Number(value);
+  scores[ci][mi][ri] = (value === null || value === undefined) ? null : (Number.isFinite(n) ? n : null);
+  return true;
+}
+
+/**
+ * Добавляет запись в tournamentHistory с enforced лимитом 450.
+ */
+function pushHistory(entry) {
+  if (!Array.isArray(tournamentHistory)) tournamentHistory = [];
+  tournamentHistory.push(entry);
+  if (tournamentHistory.length > 450) tournamentHistory = tournamentHistory.slice(-450);
+}
+
+/**
+ * Sanitize объекта игрока из API — возвращает только безопасные поля.
+ */
+function sanitizePlayer(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    id:        typeof raw.id === 'string' ? raw.id.slice(0, 64) : String(raw.id ?? '').slice(0, 64),
+    name:      typeof raw.name === 'string' ? raw.name.slice(0, 100) : '',
+    gender:    raw.gender === 'W' ? 'W' : 'M',
+    ratingM:   Number.isFinite(Number(raw.ratingM))   ? Number(raw.ratingM)   : 0,
+    ratingW:   Number.isFinite(Number(raw.ratingW))   ? Number(raw.ratingW)   : 0,
+    ratingMix: Number.isFinite(Number(raw.ratingMix)) ? Number(raw.ratingMix) : 0,
+    tournaments: Number.isInteger(raw.tournaments) && raw.tournaments >= 0 ? raw.tournaments : 0,
+    status:    typeof raw.status === 'string' ? raw.status.slice(0, 32) : 'active',
+  };
+}
+
+// ── AppState ОБЪЕКТ — адаптер (A1.5) ──────────────────────
+// Обёртка над глобальными переменными с геттерами/сеттерами.
+// Старый код продолжает работать напрямую; новый код использует AppState.
+const AppState = {
+  // Корты
+  get scores() { return scores; },
+  get nc() { return nc; },
+  set nc(v) { nc = v; },
+  get ppc() { return ppc; },
+  set ppc(v) { ppc = v; },
+  get courtRound() { return courtRound; },
+  get scoreTs() { return scoreTs; },
+
+  // Турнир
+  get tournamentMeta() { return tournamentMeta; },
+  set tournamentMeta(v) { tournamentMeta = v; },
+  get tournamentHistory() { return tournamentHistory; },
+  set tournamentHistory(v) { tournamentHistory = v; },
+  get historyFilter() { return historyFilter; },
+  set historyFilter(v) { historyFilter = v; },
+
+  // Дивизионы
+  get divScores() { return divScores; },
+  get divRoster() { return divRoster; },
+  get divRoundState() { return divRoundState; },
+
+  // UI
+  get activeTabId() { return activeTabId; },
+  set activeTabId(v) { activeTabId = v; },
+  get svodGenderFilter() { return svodGenderFilter; },
+  set svodGenderFilter(v) { svodGenderFilter = v; },
+
+  // Игроки
+  get playersGender() { return playersGender; },
+  set playersGender(v) { playersGender = v; },
+  get playersSearch() { return playersSearch; },
+  set playersSearch(v) { playersSearch = v; },
+  get playersSort() { return playersSort; },
+  set playersSort(v) { playersSort = v; },
+
+  // Архив
+  get archiveSearch() { return archiveSearch; },
+  set archiveSearch(v) { archiveSearch = v; },
+  get archiveSort() { return archiveSort; },
+  set archiveSort(v) { archiveSort = v; },
+
+  // Вспомогательные функции
+  getScore,
+  setScore,
+  pushHistory,
+  sanitizePlayer,
+  makeBlankScores,
+  activeDivKeys,
+  calculateRanking,
+  getPlayerZone,
+  divisionToType,
+};
+
+try {
+  if (typeof globalThis !== 'undefined') {
+    globalThis.AppState = AppState;
+  }
+} catch (_) {}

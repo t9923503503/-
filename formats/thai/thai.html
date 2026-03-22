@@ -310,6 +310,7 @@
     import { injectUiKitCSS } from '../../shared/ui-kit.js';
     import { syncTournamentAsync } from '../../shared/api.js';
     import { isOrgUnlocked, requestOrgAuth } from '../../shared/auth.js';
+    import { exportToJSON, exportToCSV, standingsToCSVData } from '../../shared/export-utils.js';
 
     // ── Thai format math ──────────────────────────────────
     import {
@@ -1313,6 +1314,12 @@
       html += '</div>';
       html += '</div>';
 
+      // F3.1: Export buttons (JSON + CSV)
+      html += '<div style="display:flex;gap:8px;justify-content:center;margin:16px 0">';
+      html += '  <button class="btn-secondary" onclick="window._thaiExportJSON()">JSON</button>';
+      html += '  <button class="btn-secondary" onclick="window._thaiExportCSV()">CSV</button>';
+      html += '</div>';
+
       container.innerHTML = html;
 
       const ta = document.getElementById('thai-telegram-text');
@@ -1368,6 +1375,52 @@
       } catch (_) {
         showToast('❌ Не удалось скопировать Telegram-отчёт', 'error');
       }
+    };
+
+    // F3.1: Export JSON
+    window._thaiExportJSON = function() {
+      if (!_session) return;
+      const pools = [];
+      if (_mode === 'MF' || _mode === 'MM') pools.push({ label: 'Мужчины', ids: _session.playersM || [], gender: 'M' });
+      if (_mode === 'MF' || _mode === 'WW') pools.push({ label: 'Женщины', ids: _session.playersW || [], gender: 'W' });
+
+      const result = {
+        format: 'Thai Mixed',
+        mode: _mode,
+        n: _n,
+        seed: _seed,
+        date: _session.meta?.date || new Date().toISOString().slice(0, 10),
+        trnId: _session.trnId,
+        pools: pools.map(p => ({
+          label: p.label,
+          gender: p.gender,
+          standings: _buildR1Standings(p.ids),
+        })),
+      };
+      const dateStr = result.date.replace(/-/g, '');
+      exportToJSON(result, 'thai_' + dateStr + '_' + _mode + '.json');
+    };
+
+    // F3.1: Export CSV
+    window._thaiExportCSV = function() {
+      if (!_session) return;
+      const pools = [];
+      if (_mode === 'MF' || _mode === 'MM') pools.push({ label: 'Мужчины', ids: _session.playersM || [], gender: 'M' });
+      if (_mode === 'MF' || _mode === 'WW') pools.push({ label: 'Женщины', ids: _session.playersW || [], gender: 'W' });
+
+      const headers = ['Пул', 'Место', 'Имя', 'Очки', 'Разница', 'Победы', 'Коэф', 'Мячи', 'Лучший раунд', 'Сыграно'];
+      const rows = [];
+      for (const p of pools) {
+        const standings = _buildR1Standings(p.ids);
+        for (const s of standings) {
+          rows.push([
+            p.label, s.place ?? '', s.name ?? '', s.pts ?? 0, s.diff ?? 0,
+            s.wins ?? 0, typeof s.K === 'number' ? s.K.toFixed(2) : '', s.balls ?? 0, s.bestRound ?? 0, s.rPlayed ?? 0,
+          ]);
+        }
+      }
+      const dateStr = (_session.meta?.date || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+      exportToCSV(headers, rows, 'thai_' + dateStr + '_' + _mode + '.csv');
     };
 
     // F1.8: Start R2 play (after seeding)

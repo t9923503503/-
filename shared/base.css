@@ -5,6 +5,10 @@
    ARCH A0.1
    ════════════════════════════════════════════════════════════ */
 
+/* ── OFFLINE BANNER (S5.3) ──────────────────────────────────── */
+#offline-banner{position:fixed;top:0;left:0;right:0;z-index:99998;background:#7c4a00;color:#fff;text-align:center;padding:6px 12px;font:600 13px/1.5 Barlow,sans-serif;pointer-events:none;display:none}
+#offline-banner.is-visible{display:block}
+
 /* ── RESET ──────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

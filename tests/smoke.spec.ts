@@ -149,4 +149,31 @@ test.describe('Browser smoke', () => {
     expect(swAfterReload).toBeTruthy();
   });
 
+  test('6. Corrupted localStorage не роняет bootstrap', async ({ page }) => {
+    const errors = await collectErrors(page);
+    await page.addInitScript(() => {
+      localStorage.setItem('kotc3_thai_sel', '{broken');
+      localStorage.setItem('kotc3_ipt_sel', '{broken');
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#screens')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('text=Ошибка запуска приложения')).toHaveCount(0);
+    await expect(page.locator('.screen.active')).toBeAttached({ timeout: 30_000 });
+
+    expect(errors.consoleErrors, 'consoleErrors').toEqual([]);
+    expect(errors.pageErrors, 'pageErrors').toEqual([]);
+  });
+
+  test('7. Offline banner показывается при потере сети', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#screens')).toBeVisible({ timeout: 30_000 });
+
+    await page.context().setOffline(true);
+    await expect(page.locator('#offline-banner')).toContainText('работает офлайн');
+
+    await page.context().setOffline(false);
+    await expect(page.locator('#offline-banner')).toBeHidden();
+  });
+
 });

@@ -1,5 +1,9 @@
 'use strict';
 
+function tr(key, params) {
+  return typeof globalThis.i18n?.t === 'function' ? globalThis.i18n.t(key, params) : key;
+}
+
 // ════════════════════════════════════════════════════════════
 // 16. SCORE INTERACTIONS
 // ════════════════════════════════════════════════════════════
@@ -126,7 +130,7 @@ function _updateScoreDisp(sd, val) {
   sd.append(String(val));
   const lbl = document.createElement('span');
   lbl.className = 'score-max-lbl';
-  lbl.textContent = mx ? 'МАХ' : '/15';
+  lbl.textContent = mx ? tr('score.max') : tr('score.slash15');
   sd.appendChild(lbl);
   sd.classList.add('pop');
   setTimeout(()=>sd.classList.remove('pop'), 250);
@@ -192,13 +196,13 @@ function _resetGuard(btnId, fn) {
   state.step = (state.step || 0) + 1;
 
   if (state.step === 1) {
-    btn.textContent = '⚠️ Ещё раз?';
+    btn.textContent = tr('score.resetTap1');
     btn.classList.add('rc-warn1');
     btn.classList.remove('rc-warn2');
     state.timer = setTimeout(() => _rcReset(btnId, btn), 3000);
     _rcGuard[btnId] = state;
   } else if (state.step === 2) {
-    btn.textContent = '🔴 Точно сбросить?';
+    btn.textContent = tr('score.resetTap2');
     btn.classList.add('rc-warn2');
     btn.classList.remove('rc-warn1');
     state.timer = setTimeout(() => _rcReset(btnId, btn), 3000);
@@ -214,7 +218,7 @@ function _rcReset(btnId, btn) {
   if (!btn) return;
   btn.classList.remove('rc-warn1', 'rc-warn2');
   // Restore original label from data attribute
-  btn.textContent = btn.dataset.origLabel || '↺ Сброс';
+  btn.textContent = btn.dataset.origLabel || tr('score.resetBtn');
 }
 
 function resetCourtGuard(ci, origLabel) {
@@ -232,22 +236,22 @@ function resetDivGuard(key, origLabel) {
 }
 
 async function resetCourt(ci) {
-  if (!await showConfirm(`Сбросить очки ${COURT_META[ci].name}?`)) return;
+  if (!await showConfirm(tr('score.resetCourt', { name: COURT_META[ci].name }))) return;
   scores[ci] = Array.from({length:ppc}, ()=>Array(ppc).fill(null));
   timerReset(ci);
   const s = document.getElementById(`screen-${ci}`);
   if (s) s.innerHTML = renderCourt(ci);
   updateDivisions();
   saveState();
-  showToast('↺ Очки сброшены');
+  showToast(tr('score.toastCourtReset'));
 }
 async function resetDivision(key) {
-  if (!await showConfirm(`Сбросить очки дивизиона?`)) return;
+  if (!await showConfirm(tr('score.resetDivisionConfirm'))) return;
   const Nd = divRoster[key].men.length || ppc;
   divScores[key] = Array.from({length:Nd}, ()=>Array(Nd).fill(null));
   updateDivisions();
   saveState();
-  showToast('↺ Очки дивизиона сброшены');
+  showToast(tr('score.toastDivisionReset'));
 }
 
 // ════════════════════════════════════════════════════════════
@@ -302,7 +306,7 @@ window.addEventListener('beforeunload', () => window.removeEventListener('scroll
 // Global unhandled promise rejection handler
 window.addEventListener('unhandledrejection', event => {
   console.error('Unhandled promise rejection:', event.reason);
-  showToast('❌ ' + (event.reason?.message || 'Неизвестная ошибка'));
+  showToast('❌ ' + (event.reason?.message || tr('score.unknownError')));
 });
 
 // Handlers moved from inline onclick (CSP compliance)
@@ -323,8 +327,15 @@ function showConfirm(msg) {
     const ov = document.getElementById('confirm-overlay');
     document.getElementById('confirm-msg').textContent = msg;
     ov.classList.add('open');
-    document.getElementById('confirm-ok').focus();
+    // F4.1: trap focus within confirm dialog
+    let _trapCleanup = null;
+    if (typeof FocusTrap !== 'undefined') {
+      _trapCleanup = FocusTrap.attach(ov);
+    } else {
+      document.getElementById('confirm-ok').focus();
+    }
     function cleanup(result) {
+      if (_trapCleanup) _trapCleanup();
       ov.classList.remove('open');
       document.getElementById('confirm-ok').onclick = null;
       document.getElementById('confirm-cancel').onclick = null;

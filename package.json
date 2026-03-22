@@ -5,6 +5,9 @@
   "description": "Browser smoke-тесты для статического приложения King of the Court.",
   "scripts": {
     "validate:static": "node scripts/validate-static.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "dev:serve": "node serve.mjs 8000",
     "test:unit": "vitest run",
     "test:smoke": "playwright test",
@@ -17,7 +20,7 @@
     "@playwright/test": "^1.45.0",
     "http-server": "^14.1.1",
     "jsdom": "^26.0.0",
+    "vite": "^7.3.1",
     "vitest": "^3.2.4"
   }
 }
-

@@ -573,6 +573,25 @@ function _iptSessionBootstrap() {
   const arr = getTournaments();
   const trn = arr.find(t=>t.id===trnId);
 
+  if (trn) {
+    try { _migrateIPTLegacy(trn); } catch (e) {}
+
+    const parts = trn.participants || [];
+    const expectedGroups = Math.max(1, Math.floor(parts.length / 8));
+    const needsGenerate = parts.length >= 8 && (!trn.ipt?.groups || trn.ipt.groups.length !== expectedGroups);
+
+    if (needsGenerate) {
+      if (!trn.ipt) trn.ipt = {};
+      const lim = parseInt(String(trn.ipt.pointLimit ?? ''), 10);
+      trn.ipt.pointLimit   = Number.isFinite(lim) && lim >= 1 ? lim : 21;
+      trn.ipt.finishType   = trn.ipt.finishType || 'hard';
+      trn.ipt.currentGroup = 0;
+      trn.ipt.groups       = generateIPTGroups(parts, trn.ipt.gender || trn.gender || 'mixed');
+      if (trn.status !== 'finished') trn.status = 'active';
+      saveTournaments(arr);
+    }
+  }
+
   if (!trn?.ipt?.groups) {
     document.getElementById('ipt-screen-loading').innerHTML = `
       <div class="ipt-loading">

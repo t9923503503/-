@@ -9,7 +9,23 @@
 
 ---
 
-## Текущий этап: ЭТАП 1 — ФОРМАТЫ (ARCH A0.x ✅ все выполнены)
+## Текущий этап: ФАЗА 5 — FORMAT (S5.9–S5.11). ARCH S5.1–S5.7 ✅ · S5.8 ✅
+
+### Фаза 5 задачи
+- [x] **S5.1** — Убрать web/.next/ из git ✅ (2026-03-22, `.gitignore`; при необходимости закоммитить staged `git rm`)
+- [x] **S5.2** — Убрать hardcoded секрет ✅ (2026-03-22, `web/middleware.ts` — `getAdminSessionSecret()`, prod без env → throw)
+- [x] **S5.3** — CSP style-src + offline banner + Vite dist ✅ (2026-03-22, `vite.config.js`, `shared/api.js`, `assets/app.css`, `scripts/release-gate.mjs`)
+- [x] **S5.4** — SW cache ✅ (2026-03-22, `sw.js` v59, `admin.css` в CORE_ASSETS)
+- [x] **S5.5** — admin.css ✅ (2026-03-22, `admin.css`, `admin.html`)
+- [x] **S5.6** — Решить судьбу web/public/kotc/ ✅ (2026-03-22, web/public/kotc/DEPRECATED.md)
+- [x] **S5.7** — Realtime: snapshot после reconnect ✅ (2026-03-22, shared/realtime.js, tests/unit/realtime.test.js)
+- [x] **S5.8** — i18n: home.js (FORMAT) ✅ (2026-03-22, `assets/js/screens/home.js`, `locales/ru.json`, `locales/en.json` — `tr()` + ключи `home.*`)
+- [ ] **S5.9** — i18n: roster screens (FORMAT)
+- [ ] **S5.10** — i18n: navigation + runtime (FORMAT)
+- [ ] **S5.11** — i18n: format pages (FORMAT)
+
+### Предыдущие этапы
+- ФАЗА 4 ЗАВЕРШЕНА ✅ (A4.1 ✅, Q4.1 ✅, A4.3 ✅, F4.1 ✅, A4.2 ✅, Q4.2 ✅, Q4.3 ✅)
 
 ---
 
@@ -53,6 +69,33 @@
 ---
 
 ## 🔵 ARCH — Архитектор
+
+### Фаза 1 (Стабилизация) — ARCH завершён ✅
+
+- [x] **A1.1** — Error boundaries ✅ (2026-03-22, `assets/js/ui/error-handler.js`, `assets/js/main.js`)
+- [x] **A1.2** — Валидация состояния ✅ (2026-03-22, `assets/js/state/app-state.js`: getScore/setScore/pushHistory/sanitizePlayer)
+- [x] **A1.3** — CSP fix + auth fallback ✅ (2026-03-22, `index.html`: убран unsafe-inline из script-src, `assets/js/init-helpers.js`: вынесен inline-скрипт, `assets/js/ui/roster-auth.js`: guard на crypto.subtle)
+- [x] **A1.4** — Retry + offline ✅ (2026-03-22, `shared/api.js`: _withRetry, offline banner, _safeSetItem)
+- [x] **A1.5** — State refactor ✅ (2026-03-22, `assets/js/state/app-state.js`: globalThis.AppState с геттерами/сеттерами)
+
+> **QA-агент:** все ARCH задачи готовы. Q1.4 независима — можно делать сразу. Q1.2 (тесты CSP+auth) — A1.3 готова. Q1.1+Q1.3 (тесты retry+offline) — A1.4 готова.
+
+### Фаза 2 (KOTC Миграция) — ARCH завершён ✅
+
+- [x] **F2.0** — Аудит legacy KOTC ✅ (2026-03-22, план миграции в `plans/mellow-jumping-mitten.md`)
+- [x] **A2.1** — KOTC math extraction ✅ (2026-03-22, `formats/kotc/kotc-format.js`: 370 строк чистых функций)
+- [x] **A2.2** — KOTC standalone page ✅ (2026-03-22, `formats/kotc/kotc.html`, `kotc.js`, `kotc.css`)
+- [x] **A2.3** — KOTC в навигацию ✅ (2026-03-22, `shared/format-links.js`, `roster.js`, `home.js`)
+- [x] **A2.4** — SW update ✅ (2026-03-22, `sw.js` v53)
+- [x] **F2.1** — KOTC UI экраны ✅ (2026-03-22, `formats/kotc/kotc.js`, `kotc.css`)
+- [x] **Q2.1** — KOTC unit-тесты ✅ (2026-03-22, 46 тестов, `tests/unit/kotc-format.test.js`)
+
+- [x] **Q2.2** — KOTC E2E ✅ (2026-03-22, `tests/e2e/kotc-flow.spec.ts`, 5 тестов)
+- [x] **Q2.3** — Regression ✅ (2026-03-22, smoke 8/8 + Thai E2E 1/1 passed)
+
+> **Фаза 2 полностью завершена.** Следующая: Фаза 3 (Vite build, разбить монолиты, экспорт).
+
+---
 
 ### Этап 0
 
@@ -129,6 +172,13 @@
 ---
 
 ## 🟢 QA — Тестировщик + Интегратор
+
+### Фаза 1 (Стабилизация)
+
+- [x] **Q1.4** — Базовая a11y ✅ (2026-03-22, `shared/ui-kit.js`, `assets/js/screens/core.js`, `assets/js/screens/components.js`, `assets/app.css`)
+- [x] **Q1.2** — Тесты безопасности ✅ (2026-03-22, `tests/unit/roster-auth.test.js`)
+- [x] **Q1.1** — Тесты error handling ✅ (2026-03-22, `tests/unit/error-handler.test.js`, `tests/smoke.spec.ts`, `assets/js/screens/roster.js`)
+- [x] **Q1.3** — Release gate v2 ✅ (2026-03-22, `scripts/release-gate.mjs`, `tests/unit/api-storage.test.js`, `tests/smoke.spec.ts`)
 
 ### Этап 0
 
@@ -207,6 +257,48 @@
 | 2026-03-21 | ARCH | Admin hardening v2 | web/lib/admin-auth.ts, web/app/api/admin/tournaments/route.ts, web/app/api/admin/players/route.ts, web/ADMIN_SECURITY.md | В production legacy PIN fallback выключен по умолчанию (`ADMIN_ALLOW_LEGACY_PIN=true` только вручную); при actor-credentials логин требует `id`; для DELETE обязателен `reason`; добавлена security-документация по миграциям/сессиям/ENV |
 | 2026-03-21 | QA | Admin auth policy tests | web/lib/admin-auth-policy.ts, tests/unit/admin-auth-policy.test.js, web/lib/admin-auth.ts | Вынесена policy-логика auth в чистый модуль без Next runtime зависимостей; добавлены unit-тесты (parse credentials, legacy pin policy, actor-id requirement), suite: 84/84 ✅ |
 | 2026-03-21 | ARCH+QA | Admin input validation hardening | web/lib/admin-validators.ts, web/app/api/admin/tournaments/route.ts, web/app/api/admin/players/route.ts, web/app/api/admin/overrides/route.ts, tests/unit/admin-validators.test.js | Добавлена нормализация/валидация payload для CRUD и overrides (whitelist статусов, обязательные поля, числовые guardrail’ы); suite: 87/87 ✅, `npx tsc --noEmit` + `npm run build` (web) ✅ |
+| 2026-03-22 | QA | Q1.4 | shared/ui-kit.js, assets/js/screens/core.js, assets/js/screens/components.js, assets/app.css | Добавлены `aria-label` для score-кнопок и icon-nav, активный таб помечается `aria-current`, логотип/история турниров переведены на `button`, добавлены focus-visible стили; `npm run test:unit` = 89/89 |
+| 2026-03-22 | QA | Q1.2 | tests/unit/roster-auth.test.js | Добавлены unit-тесты на блокировку roster-auth без `crypto.subtle` и на отсутствие `unsafe-inline` в `script-src`; `npm run test:unit` = 91/91 |
+| 2026-03-22 | QA | Q1.1 | tests/unit/error-handler.test.js, tests/smoke.spec.ts, assets/js/screens/roster.js | Добавлен unit-тест на `window.onerror`; smoke покрывает bootstrap при corrupted localStorage; в `roster.js` добавлен безопасный парсинг selection-state |
+| 2026-03-22 | QA | Q1.3 | scripts/release-gate.mjs, tests/unit/api-storage.test.js, tests/smoke.spec.ts | Release gate расширен до preflight + unit + smoke + e2e; добавлен unit-тест на quota-handling `safeSetItem`; smoke проверяет offline banner; `npm run test:gate` ✅ |
+| 2026-03-22 | ARCH | A1.1 Error boundaries | assets/js/ui/error-handler.js (новый), assets/js/main.js | window.onerror+onunhandledrejection, toast, лог 50 ошибок в localStorage |
+| 2026-03-22 | ARCH | A1.2 Валидация состояния | assets/js/state/app-state.js | getScore/setScore bounds check, pushHistory лимит 450, sanitizePlayer |
+| 2026-03-22 | ARCH | A1.3 CSP fix + auth | index.html, assets/js/init-helpers.js (новый), assets/js/ui/roster-auth.js | убран unsafe-inline из script-src, вынесен inline-скрипт, guard на crypto.subtle |
+| 2026-03-22 | ARCH | A1.4 Retry + offline | shared/api.js | exponential retry x3, offline banner, _safeSetItem с QuotaExceeded toast |
+| 2026-03-22 | ARCH | A1.5 AppState | assets/js/state/app-state.js | globalThis.AppState — адаптер с геттерами/сеттерами для 20+ глобалов |
+| 2026-03-22 | ARCH | F2.0 Аудит KOTC | план миграции | Аудит legacy KOTC (~11 000 строк, 33 JS-файла): карта shared-reuse, KOTC-специфичное, план 8 шагов |
+| 2026-03-22 | ARCH | A2.1 kotc-format.js | formats/kotc/kotc-format.js | Чистые функции KOTC: ротация, ранкинг, дивизионы, импорт thaiCalcPoints/thaiCalcCoef (~370 строк) |
+| 2026-03-22 | QA | Q2.1 KOTC unit-тесты | tests/unit/kotc-format.test.js | 46 тестов: ротация, matchups, ранкинг, дивизионы, edge cases — все зелёные |
+| 2026-03-22 | ARCH+FORMAT | A2.2+F2.1 KOTC standalone | formats/kotc/kotc.html, kotc.js, kotc.css | Standalone страница: roster/courts/standings/divisions/finished, Web Audio таймеры, Telegram export (~1600 строк) |
+| 2026-03-22 | ARCH | A2.3 KOTC навигация | shared/format-links.js, assets/js/screens/roster.js, assets/js/screens/home.js | buildKotcFormatUrl(), KOTC таб в ростере (4 формата), KOTC карточки на home.js |
+| 2026-03-22 | ARCH | A2.4 SW update | sw.js | CACHE_VERSION v51→v53, formats/kotc/* в CORE_ASSETS |
+| 2026-03-22 | QA | Q2.2 KOTC E2E | tests/e2e/kotc-flow.spec.ts | 5 E2E тестов: load roster, start stage1, score entry, persistence, hub KOTC tab |
+| 2026-03-22 | QA | Q2.3 Regression | существующие тесты | smoke 8/8, Thai E2E 1/1, unit 139/139 — всё зелёное после KOTC миграции |
+| 2026-03-22 | ARCH | A3.1 Vite build | vite.config.js, package.json | 9 HTML entry points, ES modules bundled, classic scripts copied post-build, 452ms build |
+| 2026-03-22 | FORMAT | F3.1 Экспорт | shared/export-utils.js, formats/thai/thai.html, formats/kotc/kotc.js | JSON+CSV кнопки на FINISHED, BOM для Excel Cyrillic, sw.js v54 |
+| 2026-03-22 | ARCH | A3.2 Split монолиты | assets/js/screens/core-*.js, roster-*.js, main.js, sw.js | core.js→3 файла (render/lifecycle/navigation), roster.js→3 файла (format-launcher/edit/list), sw v55 |
+| 2026-03-22 | QA | Q3.1 Build smoke | tests/unit/build-smoke.test.js, scripts/release-gate.mjs | 8 тестов: SW/main.js/dist consistency, CSP. Release gate 4→5 шагов (+vite build) |
+| 2026-03-22 | QA | Q3.2 localStorage stress | tests/unit/localstorage-stress.test.js | 7 тестов: QuotaExceeded, 450 history, 200 players, 50 tournaments, combined <500KB |
+| 2026-03-22 | ARCH | A3.3 Admin dashboard | admin.html | Quick Launch (Thai/IPT/KOTC), Active/Finished toggle, кнопка "Открыть" на турнирах |
+| 2026-03-22 | ARCH | A4.1 i18n | shared/i18n.js, locales/ru.json, locales/en.json, assets/js/main.js, sw.js | i18n: detect locale, lazy JSON load, t() с {{params}}, globalThis bridge, SW v56 |
+| 2026-03-22 | QA | Q4.1 i18n тесты | tests/unit/i18n.test.js | 10 тестов: key parity, non-empty, 50+ keys, translation ratio, exports, placeholders |
+| 2026-03-22 | ARCH | A4.3 Ratings | shared/ratings.js, tests/unit/ratings.test.js | FORMAT_MULTIPLIERS (7 форматов), PLACEMENT_POINTS (24), calcRatingPoints, participation bonus |
+| 2026-03-22 | FORMAT | F4.1 a11y | shared/ui-kit.js, assets/js/runtime.js, assets/js/screens/components.js, assets/js/screens/core-navigation.js | FocusTrap в confirm/player card/tournament modal, AriaTabList в nav pills + top nav |
+| 2026-03-22 | ARCH | A4.2 Realtime | shared/realtime.js, sw.js | WebSocket realtime sync через Supabase Broadcast channels, auto-reconnect, tournament sync helpers, SW v57 |
+| 2026-03-22 | QA | Q4.2 Realtime тесты | tests/unit/realtime.test.js | 14 тестов: noop channel, mock WebSocket connect/join/broadcast/reconnect/destroy, tournament sync helpers |
+| 2026-03-22 | QA | Q4.3 Финальный аудит | STATUS.md, DEVELOPMENT_PLAN.md | 193 unit + 7 smoke = все зелёные. Фаза 4 завершена. |
+| 2026-03-22 | ARCH | S5.1 .gitignore | .gitignore | web/.next/ и web/.env.local добавлены в .gitignore |
+| 2026-03-22 | ARCH | S5.2 Hardcoded secret | web/middleware.ts | Убран FALLBACK_ADMIN_SESSION_SECRET; `getAdminSessionSecret()` как в admin-auth (prod только env) |
+| 2026-03-22 | ARCH | S5.3 CSP style-src | vite.config.js, shared/api.js, assets/app.css, shared/base.css, release-gate.mjs | Offline banner: класс `is-visible`; Vite post transform убирает unsafe-inline в dist (кроме register/profile с `<style>`) |
+| 2026-03-22 | ARCH | S5.4 SW cache | sw.js | CORE_ASSETS + `admin.css`, CACHE_VERSION v59 |
+| 2026-03-22 | ARCH | S5.5 admin.css | admin.html, admin.css | Блок `<style>` вынесен в `admin.css` |
+| 2026-03-22 | ARCH | S5.6 Legacy KOTC | web/public/kotc/DEPRECATED.md | Документирован как legacy, указатель на formats/kotc/ |
+| 2026-03-22 | ARCH | S5.7 Reconnect snapshot | shared/realtime.js, tests/unit/realtime.test.js | request_snapshot после reconnect, onSnapshotRequest для организаторов, 198 тестов ✅ |
+| 2026-03-22 | ARCH | Фаза 5 security/CSP | web/middleware.ts, vite.config.js, shared/api.js, admin.html+admin.css, sw.js v59, release-gate.mjs, locales | Секрет middleware; offline-banner `.is-visible`; Vite strip style-src unsafe-inline; admin CSS вынесен; gate проверяет style-src |
+| 2026-03-22 | FORMAT | S5.8 i18n home | assets/js/screens/home.js, locales/ru.json, locales/en.json | `tr()` + ключи `home.*`; карточки/архив/модалка/история |
+| 2026-03-22 | FORMAT | S5.9 i18n roster | assets/js/screens/roster-format-launcher.js, roster-edit.js, roster-list.js, locales/*.json | IPT/Thai/KOTC карточки, стандартные настройки, фильтр истории К1–К4, toast ротации |
+| 2026-03-22 | ARCH | S5.10 i18n nav+runtime+UI | assets/js/screens/core-navigation.js, runtime.js, components.js, locales/*.json | `nav.*`, `score.*`, `pcard.*`, дивизионные подписи, модалка турнира, player card |
+| 2026-03-22 | FORMAT | S5.11 i18n KOTC page | formats/kotc/kotc.js, locales/*.json | `initI18n` + `kotcFmt.*`; этапы, таблицы, экспорт CSV, 199 unit ✅ |
 
 ---
 

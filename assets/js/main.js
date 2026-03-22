@@ -25,6 +25,7 @@ if (typeof globalThis.escAttr !== 'function') {
 // (ES module scope is isolated; classic scripts + dynamic loads need global access).
 
 const APP_SCRIPT_ORDER = [
+  'assets/js/ui/error-handler.js',
   'assets/js/state/app-state.js',
   'assets/js/domain/players.js',
   'assets/js/domain/tournaments.js',
@@ -39,8 +40,12 @@ const APP_SCRIPT_ORDER = [
   'assets/js/ui/ipt-format.js',
   'assets/js/screens/ipt.js',
   'assets/js/registration.js',
-  'assets/js/screens/core.js',
-  'assets/js/screens/roster.js',
+  'assets/js/screens/core-render.js',
+  'assets/js/screens/core-lifecycle.js',
+  'assets/js/screens/core-navigation.js',
+  'assets/js/screens/roster-format-launcher.js',
+  'assets/js/screens/roster-edit.js',
+  'assets/js/screens/roster-list.js',
   'assets/js/screens/courts.js',
   'assets/js/screens/components.js',
   'assets/js/screens/svod.js',
@@ -101,7 +106,10 @@ async function loadAppScripts() {
       import('/shared/format-links.js'),
       import('/shared/api.js'),
       import('/shared/auth.js'),
+      import('/shared/i18n.js'),
     ]);
+    // Initialize i18n (loads locale JSON)
+    if (globalThis.i18n?.initI18n) await globalThis.i18n.initI18n();
   } catch (e) {
     console.warn('[shared] Module preload failed (non-fatal):', e.message);
   }

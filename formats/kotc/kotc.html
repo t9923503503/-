@@ -1,32 +1,85 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>KOTC MVP</title>
-  <link rel="stylesheet" href="kotc.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0d1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>KOTC — Лютые Пляжники</title>
+
+  <link rel="stylesheet" href="../../shared/base.css">
+  <link rel="stylesheet" href="kotc.css">
 </head>
 <body>
-  <main class="kotc-wrap">
-    <header class="kotc-header">
-      <button class="kotc-back" onclick="history.length>1?history.back():location.href='../../index.html'">← Хаб</button>
-      <h1 class="kotc-title">KOTC MVP</h1>
-    </header>
 
-    <section class="kotc-card">
-      <p class="kotc-sub">MVP-страница формата KOTC в целевой структуре `formats/kotc/*`.</p>
-      <div class="kotc-actions">
-        <button id="kotc-open-legacy" class="kotc-btn">Открыть legacy KOTC</button>
-        <button id="kotc-open-embedded" class="kotc-btn secondary">Встроить legacy в iframe</button>
-      </div>
-    </section>
+  <!-- ═══════════════════════════════════════════════════════
+       TOP NAVIGATION
+       ══════════════════════════════════════════════════════= -->
+  <nav class="fmt-nav" id="kotc-nav">
+    <button class="fmt-nav-back" onclick="history.length>1?history.back():location.href='../../index.html'">← Хаб</button>
+    <span class="fmt-nav-title" id="kotc-nav-title">👑 King of the Court</span>
+    <div class="fmt-nav-sep"></div>
+    <div class="pill-tabs" id="kotc-round-tabs" role="tablist" aria-label="Раунды"></div>
+  </nav>
 
-    <section id="kotc-embed-wrap" class="kotc-embed-wrap" hidden>
-      <iframe id="kotc-embed" title="KOTC legacy" class="kotc-embed"></iframe>
-    </section>
+  <!-- ═══════════════════════════════════════════════════════
+       MAIN CONTENT
+       ══════════════════════════════════════════════════════= -->
+  <main class="fmt-content" id="kotc-main">
+
+    <!-- Session info bar -->
+    <div class="session-info-bar" id="kotc-info-bar">
+      <span id="kotc-info-text">Загрузка…</span>
+      <span class="session-info-badge" id="kotc-phase-badge"></span>
+    </div>
+
+    <!-- Court tabs for Stage 1 -->
+    <div class="kotc-court-tabs" id="kotc-court-tabs-wrap" style="display:none">
+      <div class="pill-tabs" id="kotc-court-tabs" role="tablist" aria-label="Корты"></div>
+    </div>
+
+    <!-- Division tabs for Stage 2 -->
+    <div class="kotc-div-tabs" id="kotc-div-tabs-wrap" style="display:none">
+      <div class="pill-tabs" id="kotc-div-tabs" role="tablist" aria-label="Дивизионы"></div>
+    </div>
+
+    <!-- ── PANELS (only one active at a time) ── -->
+
+    <!-- ROSTER PANEL: assign players to 4 courts -->
+    <div id="kotc-roster-panel" class="kotc-panel active">
+      <div id="kotc-roster-content"></div>
+    </div>
+
+    <!-- COURTS PANEL: score entry Stage 1 -->
+    <div id="kotc-courts-panel" class="kotc-panel">
+      <div id="kotc-courts-content"></div>
+    </div>
+
+    <!-- STANDINGS PANEL: global rankings after Stage 1 -->
+    <div id="kotc-standings-panel" class="kotc-panel">
+      <div id="kotc-standings-content"></div>
+    </div>
+
+    <!-- DIVISIONS PANEL: Stage 2 play within divisions -->
+    <div id="kotc-divisions-panel" class="kotc-panel">
+      <div id="kotc-divisions-content"></div>
+    </div>
+
+    <!-- FINISHED PANEL: final results + export -->
+    <div id="kotc-finished-panel" class="kotc-panel">
+      <div id="kotc-finished-content"></div>
+    </div>
+
   </main>
 
-  <script src="kotc.js"></script>
+  <!-- Bottom action bar -->
+  <div class="fmt-action-bar" id="kotc-action-bar" style="display:none"></div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       SCRIPTS
+       ══════════════════════════════════════════════════════= -->
+  <script type="module" src="kotc.js"></script>
+
 </body>
 </html>
-

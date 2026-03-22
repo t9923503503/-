@@ -47,7 +47,9 @@ function scoreCardRender({
   const mkBtn = (team, delta, label) => {
     if (!onScore) return '';
     const cb = onScore.replace(/%t/g, team).replace(/%d/g, delta);
-    return `<button class="${btnCls}" onclick="${cb}" ${finished ? 'disabled' : ''}>${label}</button>`;
+    const teamName = team === 1 ? t1 : t2;
+    const actionLabel = `${delta > 0 ? 'Увеличить' : 'Уменьшить'} счет команды ${teamName || `#${team}`}`;
+    return `<button type="button" class="${btnCls}" onclick="${cb}" aria-label="${_esc(actionLabel)}" title="${_esc(actionLabel)}" ${finished ? 'disabled' : ''}>${label}</button>`;
   };
 
   return `<div class="sc-card${finished ? ' sc-finished' : ''}"${idAttr}>
@@ -212,6 +214,7 @@ export function injectUiKitCSS() {
 .sc-score-sep{color:var(--muted,#6b6b8a);font-weight:300}
 .sc-score-btn{background:rgba(255,255,255,.07);border:none;border-radius:8px;padding:6px 10px;font-size:1.1em;font-weight:700;cursor:pointer;color:var(--text,#e8e8f0);line-height:1;touch-action:manipulation}
 .sc-score-btn:active{background:rgba(255,255,255,.15)}
+.sc-score-btn:focus-visible{outline:2px solid var(--gold,#FFD700);outline-offset:2px}
 .sc-score-btn.disabled{opacity:.35;cursor:default}
 .sc-inline-input::-webkit-inner-spin-button,.sc-inline-input::-webkit-outer-spin-button{-webkit-appearance:none}
 /* CourtCard */
@@ -227,7 +230,111 @@ export function injectUiKitCSS() {
   document.head.appendChild(style);
 }
 
-const _api = { ScoreCard, CourtCard, DoubleClickInput, HoldBtn, injectUiKitCSS };
+// ── FocusTrap (F4.1 a11y) ─────────────────────────────────────
+
+/**
+ * Trap Tab focus within a container (modal, dialog).
+ * Returns a cleanup function to remove the trap.
+ *
+ * @param {HTMLElement} container
+ * @returns {() => void} cleanup
+ */
+function focusTrap(container) {
+  const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+  function getFocusable() {
+    return [...container.querySelectorAll(FOCUSABLE)].filter(el => el.offsetParent !== null);
+  }
+
+  function onKeyDown(e) {
+    if (e.key !== 'Tab') return;
+    const focusable = getFocusable();
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+    } else {
+      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  }
+
+  container.addEventListener('keydown', onKeyDown);
+
+  // Auto-focus first focusable element
+  requestAnimationFrame(() => {
+    const focusable = getFocusable();
+    if (focusable.length) focusable[0].focus();
+  });
+
+  return function cleanup() {
+    container.removeEventListener('keydown', onKeyDown);
+  };
+}
+
+/**
+ * Initialize ARIA tablist keyboard navigation on a container.
+ * Adds role="tablist" to container, role="tab" to buttons,
+ * and Arrow Left/Right + Home/End keyboard navigation.
+ *
+ * @param {HTMLElement} container - element containing tab buttons
+ * @param {object} [opts]
+ * @param {string} [opts.selector='button'] - selector for tab buttons
+ * @param {function} [opts.onActivate] - called with (button, index) when tab activates
+ * @returns {() => void} cleanup
+ */
+function ariaTabList(container, opts = {}) {
+  const selector = opts.selector || 'button';
+  container.setAttribute('role', 'tablist');
+
+  function getTabs() { return [...container.querySelectorAll(selector)]; }
+
+  const tabs = getTabs();
+  tabs.forEach((tab, i) => {
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('tabindex', tab.classList.contains('active') ? '0' : '-1');
+    tab.setAttribute('aria-selected', tab.classList.contains('active') ? 'true' : 'false');
+  });
+
+  function activateTab(tab, index) {
+    const allTabs = getTabs();
+    allTabs.forEach(t => {
+      t.setAttribute('tabindex', '-1');
+      t.setAttribute('aria-selected', 'false');
+    });
+    tab.setAttribute('tabindex', '0');
+    tab.setAttribute('aria-selected', 'true');
+    tab.focus();
+    if (opts.onActivate) opts.onActivate(tab, index);
+  }
+
+  function onKeyDown(e) {
+    const allTabs = getTabs();
+    const idx = allTabs.indexOf(document.activeElement);
+    if (idx === -1) return;
+
+    let next = -1;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (idx + 1) % allTabs.length;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = (idx - 1 + allTabs.length) % allTabs.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = allTabs.length - 1;
+    else return;
+
+    e.preventDefault();
+    activateTab(allTabs[next], next);
+  }
+
+  container.addEventListener('keydown', onKeyDown);
+
+  return function cleanup() {
+    container.removeEventListener('keydown', onKeyDown);
+  };
+}
+
+export const FocusTrap = { attach: focusTrap };
+export const AriaTabList = { attach: ariaTabList };
+
+const _api = { ScoreCard, CourtCard, DoubleClickInput, HoldBtn, FocusTrap, AriaTabList, injectUiKitCSS };
 
 try {
   if (typeof globalThis !== 'undefined') {
@@ -236,6 +343,8 @@ try {
     globalThis.CourtCard = CourtCard;
     globalThis.DoubleClickInput = DoubleClickInput;
     globalThis.HoldBtn = HoldBtn;
+    globalThis.FocusTrap = FocusTrap;
+    globalThis.AriaTabList = AriaTabList;
   }
 } catch (_) {}
 

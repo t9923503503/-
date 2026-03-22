@@ -98,3 +98,61 @@ export function validateOverrideInput(input: ReturnType<typeof normalizeOverride
   }
   return 'Unsupported override type';
 }
+
+// ── Roster ────────────────────────────────────────────────
+
+const ROSTER_ACTIONS = new Set(['add', 'remove', 'promote']);
+
+export function normalizeRosterInput(input: Record<string, unknown>) {
+  const action = toSafeString(input.action).toLowerCase();
+  return {
+    tournamentId: toSafeString(input.tournamentId),
+    playerId: toSafeString(input.playerId),
+    action: ROSTER_ACTIONS.has(action) ? action : '',
+    reason: toSafeString(input.reason),
+  };
+}
+
+export function validateRosterInput(input: ReturnType<typeof normalizeRosterInput>): string | null {
+  if (!input.tournamentId) return 'Missing tournamentId';
+  if (!input.playerId) return 'Missing playerId';
+  if (!input.action) return 'Invalid action (add, remove, promote)';
+  return null;
+}
+
+// ── Player Requests ──────────────────────────────────────
+
+const REQUEST_ACTIONS = new Set(['approve', 'reject']);
+
+export function normalizeRequestInput(input: Record<string, unknown>) {
+  const action = toSafeString(input.action).toLowerCase();
+  return {
+    requestId: toSafeString(input.requestId),
+    action: REQUEST_ACTIONS.has(action) ? action : '',
+    reason: toSafeString(input.reason),
+  };
+}
+
+export function validateRequestInput(input: ReturnType<typeof normalizeRequestInput>): string | null {
+  if (!input.requestId) return 'Missing requestId';
+  if (!input.action) return 'Invalid action (approve, reject)';
+  return null;
+}
+
+// ── Merge ────────────────────────────────────────────────
+
+export function normalizeMergeInput(input: Record<string, unknown>) {
+  return {
+    tempId: toSafeString(input.tempId),
+    realId: toSafeString(input.realId),
+    reason: toSafeString(input.reason),
+  };
+}
+
+export function validateMergeInput(input: ReturnType<typeof normalizeMergeInput>): string | null {
+  if (!input.tempId) return 'Missing tempId';
+  if (!input.realId) return 'Missing realId';
+  if (input.tempId === input.realId) return 'Cannot merge player with itself';
+  if (!input.reason) return 'Reason is required for merge';
+  return null;
+}

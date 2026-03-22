@@ -17,6 +17,9 @@ function rosterRandomSalt() {
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 }
 async function rosterDigestHex(value) {
+  if (!crypto?.subtle) {
+    throw new Error('Крипто-функции недоступны. Используйте HTTPS для защиты паролем.');
+  }
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
 }

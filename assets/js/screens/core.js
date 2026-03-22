@@ -822,16 +822,24 @@ function syncDivLock() {
 function buildNav() {
   const nav = document.getElementById('nav');
   nav.innerHTML = '';
+  const tabLabels = {
+    players: 'Игроки',
+    svod: 'Сводка',
+    stats: 'Статистика',
+    rating: 'Рейтинг',
+    roster: 'Ростер',
+  };
 
   // ── Верхняя строка: лого + утилиты ──────────────────────
   const top = document.createElement('div');
   top.className = 'nav-top';
 
-  const logo = document.createElement('div');
+  const logo = document.createElement('button');
   logo.id = 'nav-logo';
   logo.className = 'nav-logo-container';
   logo.innerHTML = '<div class="brand-main">ЛЮТЫЕ ПЛЯЖНИКИ !!</div><div class="brand-sub">King of the Court</div>';
-  logo.setAttribute('role', 'button');
+  logo.type = 'button';
+  logo.setAttribute('aria-label', 'На главную');
   logo.setAttribute('title', 'На главную');
   logo.addEventListener('click', () => switchTab('home'));
   top.appendChild(logo);
@@ -849,15 +857,19 @@ function buildNav() {
     { label:'⚙️', tab:'roster'  },
   ].forEach(({label,tab}) => {
     const b = document.createElement('button');
+    b.type = 'button';
     b.className = 'nb'; b.dataset.tab = tab;
     b.textContent = label;
+    b.setAttribute('aria-label', tabLabels[tab] || label);
     b.addEventListener('click', ()=>switchTab(tab));
     top.appendChild(b);
   });
   // Кнопка ВЫХОД — возврат на основной сайт (на месте РЕГИСТР)
   const exitBtn = document.createElement('button');
+  exitBtn.type = 'button';
   exitBtn.className = 'nb nb-exit';
   exitBtn.textContent = '✕';
+  exitBtn.setAttribute('aria-label', 'Выход на основной сайт');
   exitBtn.title = 'Выход на основной сайт';
   exitBtn.addEventListener('click', () => {
     if (!confirm('Выйти из раздела «Судьям»?\nВы вернётесь на основной сайт.')) return;
@@ -904,6 +916,7 @@ function buildNav() {
   // ── Ряд пиллов: корты + разделитель + дивизионы ─────────
   const row = document.createElement('div');
   row.className = 'nav-pills-row';
+  row.setAttribute('aria-label', 'Навигация по кортам и дивизионам');
 
   // ── Определяем режим: IPT или стандарт ──────────────────────
   // Источник 1: активный IPT-турнир (уже запущен)
@@ -936,11 +949,13 @@ function buildNav() {
   for (let ci = 0; ci < courtCount; ci++) {
     const meta = COURT_META[ci] || COURT_META[0];
     const p = document.createElement('button');
+    p.type = 'button';
     p.className = 'nav-pill'; p.dataset.tab = ci;
     p.style.setProperty('--pill-c', meta.color);
     // Суб-лейбл: из активного турнира → из имён групп IPT → КОРТ
     const subLabel = _iptNavGroups?.[ci]?.name
       || (_isIPT ? (_IPT_NAMES[courtCount]?.[ci] || 'КОРТ') : 'КОРТ');
+    p.setAttribute('aria-label', `Корт ${ci + 1}: ${subLabel}`);
     p.innerHTML = `<span class="pill-dot"></span><span class="pill-main">К${ci+1}</span><span class="pill-sub">${subLabel}</span>`;
     p.addEventListener('click', ()=>switchTab(ci));
     row.appendChild(p);
@@ -957,8 +972,10 @@ function buildNav() {
 
   divKeys.map(id => ({id, ...ALL_DIV_DEFS[id]})).forEach(({id,icon,main,sub,color}) => {
     const p = document.createElement('button');
+    p.type = 'button';
     p.className = 'nav-pill pill-div-btn'; p.dataset.tab = id;
     p.style.setProperty('--pill-c', color);
+    p.setAttribute('aria-label', `${main} ${sub}`);
     p.innerHTML = `<span class="pill-dot"></span><span class="pill-main">${icon} ${main}</span><span class="pill-sub">${sub}</span>`;
     p.addEventListener('click', ()=>switchTab(id));
     row.appendChild(p);
@@ -973,11 +990,17 @@ function buildNav() {
 function syncNavActive() {
   // Utility buttons (nb)
   document.querySelectorAll('.nb[data-tab]').forEach(b => {
-    b.classList.toggle('active', b.dataset.tab === String(activeTabId));
+    const isActive = b.dataset.tab === String(activeTabId);
+    b.classList.toggle('active', isActive);
+    if (isActive) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
   });
   // Pill buttons
   document.querySelectorAll('.nav-pill[data-tab]').forEach(p => {
-    p.classList.toggle('active', p.dataset.tab === String(activeTabId));
+    const isActive = p.dataset.tab === String(activeTabId);
+    p.classList.toggle('active', isActive);
+    if (isActive) p.setAttribute('aria-current', 'page');
+    else p.removeAttribute('aria-current');
   });
   syncIPTNav();
 }

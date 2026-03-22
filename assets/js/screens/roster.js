@@ -9,16 +9,20 @@ let _thaiN    = parseInt(localStorage.getItem('kotc3_thai_n') || '8', 10); // 8|
 let _thaiSeed = parseInt(localStorage.getItem('kotc3_thai_seed') || '1', 10);
 let _thaiLimit  = parseInt(localStorage.getItem('kotc3_thai_lim') || '21', 10);
 let _thaiFinish = localStorage.getItem('kotc3_thai_finish') || 'hard';
-let _thaiSelectedIds = new Set(
-  JSON.parse(localStorage.getItem('kotc3_thai_sel') || '[]')
-);
+function _loadSelectedIds(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch (_) {
+    return new Set();
+  }
+}
+let _thaiSelectedIds = _loadSelectedIds('kotc3_thai_sel');
 let _iptCourts    = parseInt(localStorage.getItem('kotc3_ipt_courts') || '2', 10);
 let _iptLimit     = parseInt(localStorage.getItem('kotc3_ipt_lim')    || '21', 10);
 let _iptFinish    = localStorage.getItem('kotc3_ipt_finish') || 'hard';
 let _iptGender    = localStorage.getItem('kotc3_ipt_gender') || 'mixed'; // 'male'|'female'|'mixed'
-let _iptSelectedIds = new Set(
-  JSON.parse(localStorage.getItem('kotc3_ipt_sel') || '[]')
-);
+let _iptSelectedIds = _loadSelectedIds('kotc3_ipt_sel');
 
 // ── IPT finals nav keys — зависят от кол-ва групп/кортов ────
 function getIPTFinalsNavKeys(n) {
@@ -271,6 +275,7 @@ function iptClearSelection() {
 
 function _renderFmtCard() {
   if (_rosterFmt === 'thai') return _renderThaiCard(); // A0.3
+  if (_rosterFmt === 'kotc') return _renderKotcCard(); // A2.3
 
   if (_rosterFmt === 'ipt') {
     const needed  = _iptCourts * 8;
@@ -286,6 +291,7 @@ function _renderFmtCard() {
         <button class="fmt-tab" onclick="switchRosterFmt('standard')">🏐 Стандарт</button>
         <button class="fmt-tab on" onclick="switchRosterFmt('ipt')">👑 IPT</button>
         <button class="fmt-tab" onclick="switchRosterFmt('thai')">🌴 Тай</button>
+        <button class="fmt-tab" onclick="switchRosterFmt('kotc')">👑 KOTC</button>
       </div>
 
       <div class="sc-row" style="margin-top:10px">
@@ -339,6 +345,7 @@ function _renderFmtCard() {
       <button class="fmt-tab on" onclick="switchRosterFmt('standard')">🏐 Стандарт</button>
       <button class="fmt-tab" onclick="switchRosterFmt('ipt')">👑 IPT</button>
       <button class="fmt-tab" onclick="switchRosterFmt('thai')">🌴 Тай</button>
+      <button class="fmt-tab" onclick="switchRosterFmt('kotc')">👑 KOTC</button>
     </div>
     <div class="sc-row" style="margin-top:10px">
       <span class="sc-lbl">Кортов:</span>
@@ -424,9 +431,7 @@ async function launchQuickIPT() {
   saveTournaments(arr);
 
   showToast(`👑 IPT Быстрый старт — ${_iptCourts} групп(ы), ${participants.length} игроков`);
-  setTimeout(() => {
-    window.open('ipt-session.html?trnId=ipt_quick', '_blank');
-  }, 300);
+  setTimeout(() => openIPT('ipt_quick'), 300);
 }
 
 // ── Thai Format Launcher helpers (A0.3) ────────────────────────────────────
@@ -617,6 +622,7 @@ function _renderThaiCard() {
       <button class="fmt-tab" onclick="switchRosterFmt('standard')">🏐 Стандарт</button>
       <button class="fmt-tab" onclick="switchRosterFmt('ipt')">👑 IPT</button>
       <button class="fmt-tab on" onclick="switchRosterFmt('thai')">🌴 Тай Микст</button>
+        <button class="fmt-tab" onclick="switchRosterFmt('kotc')">👑 KOTC</button>
     </div>
 
     <div class="sc-row" style="margin-top:10px">
@@ -715,6 +721,57 @@ function launchThaiFormat() {
   showToast(`🌴 Thai Быстрый старт — ${participants.length} игроков`);
 
   const href = `formats/thai/thai.html?mode=${encodeURIComponent(mode)}&n=${encodeURIComponent(String(n))}&seed=${encodeURIComponent(String(seed))}&trnId=thai_quick`;
+  setTimeout(() => {
+    window.open(href, '_blank');
+  }, 300);
+}
+
+// ══════════════════════════════════════════════════════════════
+// A2.3: KOTC Format Launcher
+// ══════════════════════════════════════════════════════════════
+let _kotcNc = parseInt(localStorage.getItem('kotc3_kotc_nc') || '4', 10);
+
+function _renderKotcCard() {
+  return `<div class="settings-card" id="fmt-settings-card">
+    <div class="sc-title">⚙️ King of the Court</div>
+    <div class="fmt-mode-tabs">
+      <button class="fmt-tab" onclick="switchRosterFmt('standard')">🏐 Стандарт</button>
+      <button class="fmt-tab" onclick="switchRosterFmt('ipt')">👑 IPT</button>
+      <button class="fmt-tab" onclick="switchRosterFmt('thai')">🌴 Тай</button>
+      <button class="fmt-tab on" onclick="switchRosterFmt('kotc')">👑 KOTC</button>
+    </div>
+
+    <div class="sc-row" style="margin-top:10px">
+      <span class="sc-lbl">Кортов:</span>
+      <div class="seg">
+        ${[1,2,3,4].map(v=>`<button class="seg-btn${_kotcNc===v?' on':''}" onclick="setKotcNc(${v})">${v}</button>`).join('')}
+      </div>
+    </div>
+    <div class="sc-row">
+      <span class="sc-lbl">Игроков на корт:</span>
+      <span style="font-weight:700">4М + 4Ж</span>
+    </div>
+    <div class="sc-row">
+      <span class="sc-lbl">Всего нужно:</span>
+      <span style="font-weight:700;color:var(--gold)">${_kotcNc * 4}М + ${_kotcNc * 4}Ж = ${_kotcNc * 8} чел.</span>
+    </div>
+    <div class="sc-btns" style="margin-top:12px">
+      <button class="btn-apply ipt-launch-btn" onclick="launchKotcFormat()">👑 Запустить KOTC</button>
+    </div>
+  </div>`;
+}
+
+function setKotcNc(nc) {
+  _kotcNc = nc;
+  localStorage.setItem('kotc3_kotc_nc', String(nc));
+  const card = document.getElementById('fmt-settings-card');
+  if (card) card.outerHTML = _renderKotcCard();
+}
+
+function launchKotcFormat() {
+  const trnId = 'kotc_quick_' + Date.now();
+  showToast(`👑 KOTC Быстрый старт — ${_kotcNc} кортов`);
+  const href = `formats/kotc/kotc.html?nc=${_kotcNc}&ppc=4&trnId=${encodeURIComponent(trnId)}`;
   setTimeout(() => {
     window.open(href, '_blank');
   }, 300);

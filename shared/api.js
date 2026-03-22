@@ -5,8 +5,65 @@
  * Reads server base URL from config.js (window.APP_CONFIG.apiBase).
  * Falls back gracefully to localStorage-only mode when server is unavailable.
  *
- * ARCH A0.1 / A1.3
+ * ARCH A0.1 / A1.3 / A1.4
  */
+
+// ── OFFLINE BANNER (A1.4) ──────────────────────────────────
+(function _initOfflineBanner() {
+  function _showBanner() {
+    let el = document.getElementById('offline-banner');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'offline-banner';
+      el.textContent = '📴 Нет соединения — работает офлайн';
+      document.body.prepend(el);
+    }
+    el.classList.add('is-visible');
+  }
+  function _hideBanner() {
+    const el = document.getElementById('offline-banner');
+    if (el) el.classList.remove('is-visible');
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online',  _hideBanner);
+    window.addEventListener('offline', _showBanner);
+    if (!navigator.onLine) _showBanner();
+  }
+})();
+
+// ── SAFE localStorage.setItem (A1.4) ──────────────────────
+function _safeSetItem(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    if (e.name === 'QuotaExceededError' || e.code === 22) {
+      if (typeof globalThis.showToast === 'function') {
+        globalThis.showToast('⚠️ Память устройства переполнена. Удалите старые данные.', 'warn', 5000);
+      }
+      console.warn('[api] localStorage quota exceeded for key:', key);
+    }
+    return false;
+  }
+}
+
+// ── EXPONENTIAL RETRY (A1.4) ───────────────────────────────
+async function _withRetry(fn, retries = 3, baseDelayMs = 400) {
+  let lastError;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      // Не ретраить если абортировали или нет сети
+      if (err.name === 'AbortError') throw err;
+      if (attempt < retries - 1) {
+        await new Promise(r => setTimeout(r, baseDelayMs * Math.pow(2, attempt)));
+      }
+    }
+  }
+  throw lastError;
+}
 
 function _getBase() {
   try {
@@ -33,22 +90,22 @@ function _getAuthHeader() {
  * @param {{ timeout?: number }} [opts]
  * @returns {Promise<any>}
  */
-export async function apiGet(path, { timeout = 8000 } = {}) {
+export async function apiGet(path, { timeout = 8000, retries = 3 } = {}) {
   const base = _getBase();
   if (!base) throw new Error('api: no server configured');
-  const ctrl = new AbortController();
-  const tid  = setTimeout(() => ctrl.abort(), timeout);
-  try {
-    const res = await fetch(base + path, {
+  return _withRetry(() => {
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), timeout);
+    return fetch(base + path, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json', ..._getAuthHeader() },
       signal: ctrl.signal,
-    });
-    if (!res.ok) throw new Error(`api GET ${path}: ${res.status} ${res.statusText}`);
-    return await res.json();
-  } finally {
-    clearTimeout(tid);
-  }
+    }).then(res => {
+      clearTimeout(tid);
+      if (!res.ok) throw new Error(`api GET ${path}: ${res.status} ${res.statusText}`);
+      return res.json();
+    }).catch(err => { clearTimeout(tid); throw err; });
+  }, retries);
 }
 
 /**
@@ -58,23 +115,23 @@ export async function apiGet(path, { timeout = 8000 } = {}) {
  * @param {{ timeout?: number }} [opts]
  * @returns {Promise<any>}
  */
-export async function apiPost(path, data, { timeout = 8000 } = {}) {
+export async function apiPost(path, data, { timeout = 8000, retries = 3 } = {}) {
   const base = _getBase();
   if (!base) throw new Error('api: no server configured');
-  const ctrl = new AbortController();
-  const tid  = setTimeout(() => ctrl.abort(), timeout);
-  try {
-    const res = await fetch(base + path, {
+  return _withRetry(() => {
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), timeout);
+    return fetch(base + path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ..._getAuthHeader() },
       body: JSON.stringify(data),
       signal: ctrl.signal,
-    });
-    if (!res.ok) throw new Error(`api POST ${path}: ${res.status} ${res.statusText}`);
-    return await res.json();
-  } finally {
-    clearTimeout(tid);
-  }
+    }).then(res => {
+      clearTimeout(tid);
+      if (!res.ok) throw new Error(`api POST ${path}: ${res.status} ${res.statusText}`);
+      return res.json();
+    }).catch(err => { clearTimeout(tid); throw err; });
+  }, retries);
 }
 
 /**
@@ -132,8 +189,10 @@ export function syncTournamentAsync(tournament) {
   saveTournamentToServer(tournament).catch(() => {});
 }
 
+export { _safeSetItem as safeSetItem };
+
 const _api = { apiGet, apiPost, saveTournamentToServer, loadTournamentFromServer,
-               updatePlayerRatings, syncTournamentAsync };
+               updatePlayerRatings, syncTournamentAsync, safeSetItem: _safeSetItem };
 
 try {
   if (typeof globalThis !== 'undefined') {

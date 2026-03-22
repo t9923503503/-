@@ -1,5 +1,9 @@
 'use strict';
 
+function tr(key, params) {
+  return typeof globalThis.i18n?.t === 'function' ? globalThis.i18n.t(key, params) : key;
+}
+
 function setHomeTab(tab) {
   homeActiveTab = tab;
   if (tab !== 'archive') homeArchiveFormOpen = false;
@@ -14,8 +18,8 @@ function submitManualTournament() {
   const name     = (v('arch-inp-name') || '').trim();
   const date     =  v('arch-inp-date') || '';
   const format   =  v('arch-inp-fmt')  || 'King of the Court';
-  const division =  v('arch-inp-div')  || 'Мужской';
-  if (!name || !date) { showToast('⚠️ Введите название и дату'); return; }
+  const division =  v('arch-inp-div')  || tr('home.divMen');
+  if (!name || !date) { showToast('⚠️ ' + tr('home.enterNameDate')); return; }
 
   const playerResults = [...homeArchiveFormPlayers].sort((a,b) => b.pts - a.pts);
   const playersCount  = playerResults.length || (parseInt(v('arch-inp-players')||'0')||0);
@@ -33,9 +37,9 @@ function submitManualTournament() {
       playerResults.map(p => ({ name: p.name, gender: p.gender, totalPts: p.pts })),
       date
     );
-    showToast(`✅ Турнир сохранён · ${playerResults.length} игроков в базу`);
+    showToast(tr('home.tournamentSavedPlayers', { n: playerResults.length }));
   } else {
-    showToast('✅ Турнир добавлен в архив');
+    showToast(tr('home.tournamentSavedArchive'));
   }
 
   homeArchiveFormOpen = false;
@@ -67,7 +71,7 @@ function addArchFormPlayer() {
   const ptsEl  = document.getElementById('arch-plr-pts-inp');
   const name   = (nameEl?.value || '').trim();
   const pts    = parseInt(ptsEl?.value || '0') || 0;
-  if (!name) { showToast('⚠️ Введите фамилию'); return; }
+  if (!name) { showToast('⚠️ ' + tr('home.enterSurname')); return; }
   homeArchiveFormPlayers.push({ name, pts, gender: homeArchiveFormGender });
   homeArchiveFormPlayers.sort((a,b) => b.pts - a.pts);
   nameEl.value = ''; ptsEl.value = '';
@@ -87,14 +91,14 @@ function _refreshArchPlrList() {
 
 function _archPlrListHtml() {
   if (!homeArchiveFormPlayers.length)
-    return '<div class="arch-plr-empty">Игроки не добавлены — очки не запишутся в базу</div>';
-  return `<div class="arch-plr-count">${homeArchiveFormPlayers.length} игроков</div>
+    return `<div class="arch-plr-empty">${tr('home.noPlayersAdded')}</div>`;
+  return `<div class="arch-plr-count">${tr('home.playersCount', { n: homeArchiveFormPlayers.length })}</div>
 <div class="arch-plr-list">` +
     homeArchiveFormPlayers.map((p,i) => `
   <div class="arch-plr-row">
     <span class="arch-plr-row-rank">${MEDALS_3[i]||i+1}</span>
     <span class="arch-plr-row-name">${esc(p.name)}</span>
-    <span class="arch-plr-row-g ${p.gender}">${p.gender==='M'?'М':'Ж'}</span>
+    <span class="arch-plr-row-g ${p.gender}">${p.gender==='M'?tr('home.genderM'):tr('home.genderW')}</span>
     <span class="arch-plr-row-pts">${p.pts}</span>
     <button class="arch-plr-row-del" onclick="removeArchFormPlayer(${i})">✕</button>
   </div>`).join('') + '</div>';
@@ -109,106 +113,121 @@ function renderHome() {
   const pct  = (r,c) => c ? Math.min(r/c*100, 100) : 0;
   const pcls = (r,c) => { if (!c) return 'g'; const p=r/c; return p>=1?'r':p>=.8?'y':'g'; };
 
-  function cardHtml(t) {
-    const pp  = t.participants || [];
-    const c   = pcls(pp.length, t.capacity);
-    const isIPT  = t.format === 'IPT Mixed';
+  function cardHtml(trn) {
+    const pp  = trn.participants || [];
+    const c   = pcls(pp.length, trn.capacity);
+    const isIPT  = trn.format === 'IPT Mixed';
     // A1.5: Thai Mixed tournament detection
-    const isThai = t.format === 'Thai Mixed';
-    const isActive = t.status === 'active';
-    const isOpen   = t.status === 'open';
+    const isThai = trn.format === 'Thai Mixed';
+    // A2.3: KOTC tournament detection
+    const isKotc = trn.format === 'KOTC' || (trn.id && trn.id.startsWith('kotc_'));
+    const isActive = trn.status === 'active';
+    const isOpen   = trn.status === 'open';
     const ac  = isOpen ? 'var(--gold)'
       : isThai  ? '#3d1a5e'
+      : isKotc  ? '#4a3a00'
       : isIPT && isActive ? '#1a4a8e' : '#2a2a44';
-    const stLabel = isOpen ? 'ОТКРЫТ'
-      : isThai && isActive ? 'В ИГРЕ'
-      : isIPT && isActive ? 'В ИГРЕ'
-      : t.status === 'finished' ? 'ЗАВЕРШЁН'
-      : 'ЗАПОЛНЕНО';
+    const stLabel = isOpen ? tr('home.statusOpen')
+      : (isThai || isKotc) && isActive ? tr('home.statusPlaying')
+      : isIPT && isActive ? tr('home.statusPlaying')
+      : trn.status === 'finished' ? tr('home.statusFinished')
+      : tr('home.statusFull');
 
     // A1.5: Thai button opens thai.html with stored meta
-    const thaiMeta = t.thaiMeta || {};
+    const thaiMeta = trn.thaiMeta || {};
     const thaiHref = (globalThis.sharedFormatLinks && typeof globalThis.sharedFormatLinks.buildThaiFormatUrl === 'function')
       ? globalThis.sharedFormatLinks.buildThaiFormatUrl({
           mode: thaiMeta.mode || 'MF',
           n: thaiMeta.n || 8,
           seed: thaiMeta.seed || 1,
-          trnId: t.id,
+          trnId: trn.id,
         })
-      : `formats/thai/thai.html?mode=${thaiMeta.mode||'MF'}&n=${thaiMeta.n||8}&seed=${thaiMeta.seed||1}&trnId=${encodeURIComponent(t.id)}`;
-    const btnLabel = isThai
-      ? (isActive ? '🌴 Продолжить Thai' : '🌴 Открыть Thai')
-      : isIPT
-        ? (isActive ? '🏐 Продолжить матч' : pp.length >= 8 ? '🏐 Начать матч IPT' : '👥 Добавить игроков')
-        : (isOpen ? '⚡ Записаться' : '📋 В лист ожидания');
+      : `formats/thai/thai.html?mode=${thaiMeta.mode||'MF'}&n=${thaiMeta.n||8}&seed=${thaiMeta.seed||1}&trnId=${encodeURIComponent(trn.id)}`;
+    // A2.3: KOTC URL building
+    const kotcMeta = trn.kotcMeta || {};
+    const kotcHref = (globalThis.sharedFormatLinks && typeof globalThis.sharedFormatLinks.buildKotcFormatUrl === 'function')
+      ? globalThis.sharedFormatLinks.buildKotcFormatUrl({ nc: kotcMeta.nc || 4, trnId: trn.id })
+      : `formats/kotc/kotc.html?nc=${kotcMeta.nc||4}&ppc=4&trnId=${encodeURIComponent(trn.id)}`;
 
-    const fmtIcon = isThai ? '🌴' : '👑';
+    const btnLabel = isKotc
+      ? (isActive ? '👑 ' + tr('home.continueKotc') : '👑 ' + tr('home.openKotc'))
+      : isThai
+      ? (isActive ? '🌴 ' + tr('home.continueThai') : '🌴 ' + tr('home.openThai'))
+      : isIPT
+        ? (isActive ? '🏐 ' + tr('home.continueMatch') : pp.length >= 8 ? '🏐 ' + tr('home.startIpt') : '👥 ' + tr('home.addPlayers'))
+        : (isOpen ? '⚡ ' + tr('home.register') : '📋 ' + tr('home.waitList'));
+
+    const fmtIcon = isKotc ? '👑' : isThai ? '🌴' : '👑';
+    const cardClick = isKotc ? `window.open('${kotcHref}','_blank')`
+      : isThai ? `window.open('${thaiHref}','_blank')`
+      : `openTrnDetails('${escAttr(trn.id)}')`;
     return `
-<div class="trn-card${isThai?' trn-card-thai':''}" onclick="${isThai?`window.open('${thaiHref}','_blank')`:`openTrnDetails('${escAttr(t.id)}')`}" style="cursor:pointer">
+<div class="trn-card${isThai?' trn-card-thai':''}${isKotc?' trn-card-kotc':''}" onclick="${cardClick}" style="cursor:pointer">
   <div class="trn-card-accent" style="background:${ac}"></div>
   <div class="trn-card-body">
     <div class="trn-card-head">
       <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
-        <span class="trn-lv ${t.level||''}">${(t.level||'').toUpperCase()}</span>
+        <span class="trn-lv ${trn.level||''}">${(trn.level||'').toUpperCase()}</span>
         <span style="font-size:10px;color:var(--muted);background:rgba(255,255,255,.06);
-          padding:2px 7px;border-radius:6px">${esc(t.division)}</span>
+          padding:2px 7px;border-radius:6px">${esc(trn.division)}</span>
         ${isThai ? `<span style="font-size:10px;background:rgba(199,125,255,.15);color:#C77DFF;padding:2px 7px;border-radius:6px">ThaiVolley32</span>` : ''}
+        ${isKotc ? `<span style="font-size:10px;background:rgba(255,215,0,.15);color:#FFD700;padding:2px 7px;border-radius:6px">KOTC</span>` : ''}
       </div>
-      <span class="trn-st ${t.status}">
+      <span class="trn-st ${trn.status}">
         <span class="trn-st-dot"></span>
         ${stLabel}
       </span>
     </div>
-    <div class="trn-fmt">${fmtIcon} ${esc(t.format)}</div>
-    <div class="trn-name">${esc(t.name)}</div>
-    <div class="trn-meta">🕐 <span>${esc(t.date)}${t.time?', '+esc(t.time):''}</span></div>
-    ${t.location ? `<div class="trn-meta">📍 <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">${esc(t.location)}</span></div>` : ''}
-    ${t.prize ? `<div class="trn-prize">🏆 Призовой фонд: ${esc(t.prize)}</div>` : ''}
+    <div class="trn-fmt">${fmtIcon} ${esc(trn.format)}</div>
+    <div class="trn-name">${esc(trn.name)}</div>
+    <div class="trn-meta">🕐 <span>${esc(trn.date)}${trn.time?', '+esc(trn.time):''}</span></div>
+    ${trn.location ? `<div class="trn-meta">📍 <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">${esc(trn.location)}</span></div>` : ''}
+    ${trn.prize ? `<div class="trn-prize">${tr('home.prizePool')} ${esc(trn.prize)}</div>` : ''}
     ${isThai ? `
     <div class="trn-prog" style="margin-top:6px">
       <div class="trn-prog-hdr">
-        <span class="trn-prog-lbl">Режим: ${esc(thaiMeta.mode||'MF')} · ${esc(thaiMeta.n||8)} игроков</span>
-        <span style="font-size:11px;color:var(--purple)">seed ${esc(thaiMeta.seed||1)}</span>
+        <span class="trn-prog-lbl">${tr('home.modeLabel', { mode: thaiMeta.mode||'MF', n: thaiMeta.n||8 })}</span>
+        <span style="font-size:11px;color:var(--purple)">${tr('home.seedLabel')} ${esc(thaiMeta.seed||1)}</span>
       </div>
     </div>` : `
     <div class="trn-prog">
       <div class="trn-prog-hdr">
-        <span class="trn-prog-lbl">${isIPT ? 'Участники' : 'Регистрация'}</span>
-        <span class="trn-prog-val ${c}">${pp.length}/${t.capacity}</span>
+        <span class="trn-prog-lbl">${isIPT ? tr('home.participantsLbl') : tr('home.registrationLbl')}</span>
+        <span class="trn-prog-val ${c}">${pp.length}/${trn.capacity}</span>
       </div>
       <div class="trn-prog-bar">
-        <div class="trn-prog-fill ${c}" style="width:${pct(pp.length,t.capacity)}%"></div>
+        <div class="trn-prog-fill ${c}" style="width:${pct(pp.length,trn.capacity)}%"></div>
       </div>
     </div>`}
-    <button class="trn-btn ${isThai?'ipt':isIPT?'ipt':t.status}"
-      onclick="event.stopPropagation();${isThai?`window.open('${thaiHref}','_blank')`:`openTrnDetails('${escAttr(t.id)}')`}">
+    <button class="trn-btn ${isKotc?'ipt':isThai?'ipt':isIPT?'ipt':trn.status}"
+      onclick="event.stopPropagation();${isKotc?`window.open('${kotcHref}','_blank')`:isThai?`window.open('${thaiHref}','_blank')`:`openTrnDetails('${escAttr(trn.id)}')`}">
       ${btnLabel}
     </button>
   </div>
 </div>`;
   }
 
-  function calRow(t) {
-    const c = t.status==='open' ? 'g' : 'r';
+  function calRow(trn) {
+    const c = trn.status==='open' ? 'g' : 'r';
     return `
-<div class="cal-row" onclick="showTournament('${escAttr(t.id)}')" style="cursor:pointer">
+<div class="cal-row" onclick="showTournament('${escAttr(trn.id)}')" style="cursor:pointer">
   <div class="cal-date-box">
-    <div class="cal-dn">${t.dayNum}</div>
-    <div class="cal-ds">${t.dayStr}</div>
+    <div class="cal-dn">${trn.dayNum}</div>
+    <div class="cal-ds">${trn.dayStr}</div>
   </div>
   <div class="cal-info">
-    <div class="cal-info-name">${esc(t.name)}</div>
+    <div class="cal-info-name">${esc(trn.name)}</div>
     <div class="cal-info-meta">
-      <span>🕐 ${esc(t.time)}</span>
-      <span class="trn-lv ${t.level||''}" style="font-size:9px;padding:1px 5px">${(t.level||'').toUpperCase()}</span>
-      <span>${esc(t.division)}</span>
+      <span>🕐 ${esc(trn.time)}</span>
+      <span class="trn-lv ${trn.level||''}" style="font-size:9px;padding:1px 5px">${(trn.level||'').toUpperCase()}</span>
+      <span>${esc(trn.division)}</span>
     </div>
   </div>
   <div class="cal-right">
-    <span class="trn-st ${t.status}" style="font-size:9px;padding:2px 6px">
-      <span class="trn-st-dot"></span>${t.status==='open'?'ОТКРЫТ':'ЗАПОЛНЕНО'}
+    <span class="trn-st ${trn.status}" style="font-size:9px;padding:2px 6px">
+      <span class="trn-st-dot"></span>${trn.status==='open'?tr('home.statusOpen'):tr('home.statusFull')}
     </span>
-    <span class="cal-slots ${c}">${(t.participants||[]).length}/${t.capacity}</span>
+    <span class="cal-slots ${c}">${(trn.participants||[]).length}/${trn.capacity}</span>
   </div>
 </div>`;
   }
@@ -221,7 +240,7 @@ function renderHome() {
   <div class="cal-month-hdr">
     <span class="cal-month-title">${m}</span>
     <div class="cal-month-line"></div>
-    <span class="cal-month-count">${ts.length} турн.</span>
+    <span class="cal-month-count">${tr('home.tournCount', { n: ts.length })}</span>
   </div>
   ${ts.map(calRow).join('')}
 </div>`).join('');
@@ -231,43 +250,43 @@ function renderHome() {
   const isA = homeActiveTab === 'archive';
 
   // ── Archive content builder ─────────────────────────────
-  function archCardHtml(t) {
-    const isApp = t.source === 'app';
+  function archCardHtml(trn) {
+    const isApp = trn.source === 'app';
     let dateStr = '—';
-    dateStr = fmtDateLong(t.date);
-    const winner = t.winner || (t.players && t.players[0] ? t.players[0].name : '');
-    const cnt    = t.playersCount || (t.players ? t.players.length : 0);
-    const rds    = t.rPlayed ? `🏐 ${t.rPlayed} раундов` : '';
+    dateStr = fmtDateLong(trn.date);
+    const winner = trn.winner || (trn.players && trn.players[0] ? trn.players[0].name : '');
+    const cnt    = trn.playersCount || (trn.players ? trn.players.length : 0);
+    const rds    = trn.rPlayed ? '🏐 ' + tr('home.roundsCount', { n: trn.rPlayed }) : '';
     return `
-<div class="arch-card" onclick="showTournamentDetails(${t.id})" style="cursor:pointer">
+<div class="arch-card" onclick="showTournamentDetails(${trn.id})" style="cursor:pointer">
   <div class="arch-card-accent"></div>
   <div class="arch-card-body">
     <div class="arch-card-top">
       <div>
-        <div class="arch-name">${esc(t.name)}</div>
+        <div class="arch-name">${esc(trn.name)}</div>
         <div class="arch-date">📅 ${dateStr}</div>
       </div>
       <div class="arch-badges">
-        <span class="arch-src ${isApp?'app':'manual'}">${isApp?'📱 Приложение':'✏️ Вручную'}</span>
-        ${!isApp?`<button class="arch-del-btn" onclick="event.stopPropagation();deleteManualTournament(${t.id})" title="Удалить">✕</button>`:''}
+        <span class="arch-src ${isApp?'app':'manual'}">${isApp?tr('home.appBadge'):tr('home.manualBadge')}</span>
+        ${!isApp?`<button class="arch-del-btn" onclick="event.stopPropagation();deleteManualTournament(${trn.id})" title="${escAttr(tr('home.deleteTitle'))}">✕</button>`:''}
       </div>
     </div>
     <div class="arch-meta">
-      <span class="arch-chip">${esc(t.format||'King of the Court')}</span>
-      <span class="arch-chip">${esc(t.division||'—')}</span>
-      ${cnt?`<span class="arch-chip blue">👥 ${cnt} игроков</span>`:''}
+      <span class="arch-chip">${esc(trn.format||'King of the Court')}</span>
+      <span class="arch-chip">${esc(trn.division||'—')}</span>
+      ${cnt?`<span class="arch-chip blue">👥 ${tr('home.playersCount', { n: cnt })}</span>`:''}
       ${rds?`<span class="arch-chip blue">${rds}</span>`:''}
       ${winner?`<span class="arch-chip gold">🥇 ${esc(winner)}</span>`:''}
     </div>
-    ${t.playerResults?.length>1 ? `
+    ${trn.playerResults?.length>1 ? `
     <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:3px">
-      ${t.playerResults.slice(0,5).map((p,i)=>{
+      ${trn.playerResults.slice(0,5).map((p,i)=>{
         return `<span style="font-size:10px;padding:2px 7px;border-radius:5px;
           background:rgba(255,255,255,.05);border:1px solid #2a2a40;color:var(--muted)">
           ${MEDALS_3[i]||'·'} ${esc(p.name)} ${p.pts?`<b style="color:var(--gold)">${p.pts}</b>`:''}
         </span>`;
       }).join('')}
-      ${t.playerResults.length>5?`<span style="font-size:10px;color:var(--muted)">+${t.playerResults.length-5}</span>`:''}
+      ${trn.playerResults.length>5?`<span style="font-size:10px;color:var(--muted)">+${trn.playerResults.length-5}</span>`:''}
     </div>` : ''}
   </div>
 </div>`;
@@ -277,9 +296,9 @@ function renderHome() {
     const appT = (() => {
       try {
         return loadHistory()
-          .map(t => ({...t, source:'app', playersCount:t.players?.length||0,
-            winner: t.players?.[0]?.name||'',
-            format: t.format||'King of the Court', division: t.division||'Смешанный'}));
+          .map(row => ({...row, source:'app', playersCount:row.players?.length||0,
+            winner: row.players?.[0]?.name||'',
+            format: row.format||'King of the Court', division: row.division||tr('home.divMixed')}));
       } catch(e){ return []; }
     })();
     const manT = loadManualTournaments();
@@ -305,51 +324,51 @@ function renderHome() {
     // Search bar HTML
     const searchHtml = `
     <div class="arch-search-row">
-      <input class="arch-search-inp" type="text" placeholder="🔍 Поиск по имени или турниру..."
+      <input class="arch-search-inp" type="text" placeholder="${escAttr(tr('home.searchPlaceholder'))}"
         value="${esc(archiveSearch)}"
         oninput="archiveSearch=this.value;setHomeTab('archive')">
       <select class="arch-sort-sel" onchange="archiveSort=this.value;setHomeTab('archive')">
-        <option value="date_desc"${archiveSort==='date_desc'?' selected':''}>Новые</option>
-        <option value="date_asc"${archiveSort==='date_asc'?' selected':''}>Старые</option>
-        <option value="players"${archiveSort==='players'?' selected':''}>Игроки</option>
-        <option value="pts"${archiveSort==='pts'?' selected':''}>Очки</option>
+        <option value="date_desc"${archiveSort==='date_desc'?' selected':''}>${tr('home.sortNewest')}</option>
+        <option value="date_asc"${archiveSort==='date_asc'?' selected':''}>${tr('home.sortOldest')}</option>
+        <option value="players"${archiveSort==='players'?' selected':''}>${tr('home.sortPlayers')}</option>
+        <option value="pts"${archiveSort==='pts'?' selected':''}>${tr('home.sortPoints')}</option>
       </select>
     </div>`;
 
     const formHtml = homeArchiveFormOpen ? `
 <div class="arch-add-form">
-  <div class="arch-form-title">✏️ Добавить прошедший турнир</div>
+  <div class="arch-form-title">${tr('home.formTitle')}</div>
   <div class="arch-form-grid">
     <input class="arch-form-inp arch-form-full" id="arch-inp-name"
-      type="text" placeholder="Название турнира *">
+      type="text" placeholder="${escAttr(tr('home.tournamentNamePh'))}">
     <input class="arch-form-inp" id="arch-inp-date"
       type="date" value="${new Date().toISOString().split('T')[0]}">
     <select class="arch-form-sel" id="arch-inp-fmt">
       <option>King of the Court</option>
       <option>Round Robin</option>
-      <option>Олимпийская система</option>
-      <option>Другой</option>
+      <option>${tr('home.formatOlympic')}</option>
+      <option>${tr('home.formatOther')}</option>
     </select>
     <select class="arch-form-sel" id="arch-inp-div">
-      <option>Мужской</option>
-      <option>Женский</option>
-      <option>Смешанный</option>
+      <option>${tr('home.divMen')}</option>
+      <option>${tr('home.divWomen')}</option>
+      <option>${tr('home.divMixed')}</option>
     </select>
   </div>
 
   <!-- Player results section -->
   <div class="arch-plr-section">
-    <div class="arch-plr-section-title">👥 Результаты игроков (необязательно)</div>
+    <div class="arch-plr-section-title">${tr('home.playerResultsTitle')}</div>
     <div class="arch-plr-add-row">
       <input class="arch-form-inp arch-plr-name" id="arch-plr-inp"
-        type="text" placeholder="Фамилия"
+        type="text" placeholder="${escAttr(tr('home.placeholderSurnameShort'))}"
         onkeydown="if(event.key==='Enter')addArchFormPlayer()">
       <input class="arch-form-inp arch-plr-pts" id="arch-plr-pts-inp"
-        type="number" min="0" max="999" placeholder="Очки"
+        type="number" min="0" max="999" placeholder="${escAttr(tr('home.placeholderPts'))}"
         onkeydown="if(event.key==='Enter')addArchFormPlayer()">
       <div class="arch-plr-gender-wrap">
-        <button id="arch-g-btn-M" class="arch-plr-g-btn sel-M" onclick="setArchFormGender('M')">М</button>
-        <button id="arch-g-btn-W" class="arch-plr-g-btn" onclick="setArchFormGender('W')">Ж</button>
+        <button id="arch-g-btn-M" class="arch-plr-g-btn sel-M" onclick="setArchFormGender('M')">${tr('home.genderM')}</button>
+        <button id="arch-g-btn-W" class="arch-plr-g-btn" onclick="setArchFormGender('W')">${tr('home.genderW')}</button>
       </div>
       <button class="arch-plr-add-btn" onclick="addArchFormPlayer()">+</button>
     </div>
@@ -357,24 +376,24 @@ function renderHome() {
   </div>
 
   <button class="arch-save-btn" onclick="submitManualTournament()">
-    💾 Сохранить${homeArchiveFormPlayers.length ? ` (${homeArchiveFormPlayers.length} игроков → база)` : ' в архив'}
+    ${homeArchiveFormPlayers.length ? tr('home.saveBtnPlayers', { n: homeArchiveFormPlayers.length }) : tr('home.saveBtnArchive')}
   </button>
 </div>` : '';
 
     const listHtml = all.length === 0 ? `
 <div class="arch-empty">
   <div class="arch-empty-icon">🏆</div>
-  Архив пуст. Завершите турнир в приложении<br>или добавьте прошедший вручную.
+  ${tr('home.archiveEmpty')}
 </div>` : (() => {
       const appOnes = all.filter(t=>t.source==='app');
       const manOnes = all.filter(t=>t.source==='manual');
       let html = '';
       if (appOnes.length) {
-        html += `<div class="arch-divider"><div class="arch-divider-line"></div><span class="arch-divider-txt">📱 Из приложения (${appOnes.length})</span><div class="arch-divider-line"></div></div>`;
+        html += `<div class="arch-divider"><div class="arch-divider-line"></div><span class="arch-divider-txt">📱 ${tr('home.fromApp')} (${appOnes.length})</span><div class="arch-divider-line"></div></div>`;
         html += appOnes.map(archCardHtml).join('');
       }
       if (manOnes.length) {
-        html += `<div class="arch-divider"><div class="arch-divider-line"></div><span class="arch-divider-txt">✏️ Добавлены вручную (${manOnes.length})</span><div class="arch-divider-line"></div></div>`;
+        html += `<div class="arch-divider"><div class="arch-divider-line"></div><span class="arch-divider-txt">✏️ ${tr('home.addedManually')} (${manOnes.length})</span><div class="arch-divider-line"></div></div>`;
         html += manOnes.map(archCardHtml).join('');
       }
       return html;
@@ -387,13 +406,13 @@ function renderHome() {
 <div class="home-wrap">
   <!-- Hero -->
   <div class="home-hero">
-    <div class="home-badge">🔥 Сезон 2026 — уже открыт!</div>
-    <div class="home-title">ДОМИНИРУЙ НА<br><span>КОРТЕ</span></div>
-    <div class="home-subtitle">Записывайся на турниры, следи за рейтингом<br>и становись королём пляжного волейбола</div>
+    <div class="home-badge">${tr('home.season')}</div>
+    <div class="home-title">${tr('home.dominate')}<br><span>${tr('home.court')}</span></div>
+    <div class="home-subtitle">${tr('home.subtitle')}</div>
     <div class="home-stats">
-      <div class="home-stat"><div class="home-stat-val">${T.length}</div><div class="home-stat-lbl">Турниров</div></div>
-      <div class="home-stat"><div class="home-stat-val">${totalReg}+</div><div class="home-stat-lbl">Участников</div></div>
-      <div class="home-stat"><div class="home-stat-val">${openCount}</div><div class="home-stat-lbl">Открыто</div></div>
+      <div class="home-stat"><div class="home-stat-val">${T.length}</div><div class="home-stat-lbl">${tr('home.tournamentsLabel')}</div></div>
+      <div class="home-stat"><div class="home-stat-val">${totalReg}+</div><div class="home-stat-lbl">${tr('home.participantsLabel')}</div></div>
+      <div class="home-stat"><div class="home-stat-val">${openCount}</div><div class="home-stat-lbl">${tr('home.openLabel')}</div></div>
     </div>
   </div>
 
@@ -412,15 +431,15 @@ function renderHome() {
     return `
   <button class="plr-banner" onclick="switchTab('players')">
     <div class="plr-banner-avatars">
-      <div class="plr-av" title="${topM?escAttr(topM.name):'Мужчины'}">${av1}</div>
-      <div class="plr-av" title="${topW?escAttr(topW.name):'Женщины'}">${av2}</div>
+      <div class="plr-av" title="${topM?escAttr(topM.name):tr('home.menAvatar')}">${av1}</div>
+      <div class="plr-av" title="${topW?escAttr(topW.name):tr('home.womenAvatar')}">${av2}</div>
       <div class="plr-av">${av3}</div>
     </div>
     <div class="plr-banner-body">
-      <div class="plr-banner-title">👤 РЕЙТИНГ <span>ЛЮТОСТИ</span></div>
-      <div class="plr-banner-sub">Управляй составом · История · Статистика</div>
+      <div class="plr-banner-title">👤 ${tr('home.ratingTitle')} <span>${tr('home.ratingHighlight')}</span></div>
+      <div class="plr-banner-sub">${tr('home.ratingSub')}</div>
       <div class="plr-banner-pill">
-        🏋️ ${men} муж &nbsp;·&nbsp; 👩 ${women} жен &nbsp;·&nbsp; Всего ${total}
+        🏋️ ${men} ${tr('home.menShort')} &nbsp;·&nbsp; 👩 ${women} ${tr('home.womenShort')} &nbsp;·&nbsp; ${tr('home.totalLabel')} ${total}
       </div>
     </div>
     <div class="plr-banner-arrow">→</div>
@@ -448,7 +467,7 @@ function renderHome() {
           <div class="hex-inner">7</div>
         </div>
       </div>
-      <div class="player-rank">РАНГ: 3850</div>
+      <div class="player-rank">${tr('home.rankDemo')}</div>
       <div class="badges-grid">
         <div class="badge badge-gold">🏆 KING OF COURT 2026</div>
         <div class="badge badge-fire">🔥 5 WIN STREAK</div>
@@ -457,10 +476,10 @@ function renderHome() {
       </div>
       <div class="battle-history">
         <div class="history-header">
-          <span>ПОСЛЕДНИЕ БИТВЫ</span>
-          <span>ДАТА</span>
-          <span>РЕЗУЛЬТАТ</span>
-          <span>МЕСТО</span>
+          <span>${tr('home.lastBattles')}</span>
+          <span>${tr('home.dateCol')}</span>
+          <span>${tr('home.resultCol')}</span>
+          <span>${tr('home.placeCol')}</span>
         </div>
         <div class="history-row row-win">
           <span class="tourney-name">DOUBLE TROUBLE</span>
@@ -481,21 +500,21 @@ function renderHome() {
   <!-- Tabs -->
   <div class="home-tabs">
     <button class="home-tab-btn ${isS?'active':''}" onclick="setHomeTab('schedule')" style="font-size:11px">
-      ⚔️ РАСПИСАНИЕ
+      ⚔️ ${tr('home.tabSchedule')}
     </button>
     <button class="home-tab-btn ${isC?'active':''}" onclick="setHomeTab('calendar')" style="font-size:11px">
-      📅 КАЛЕНДАРЬ
+      📅 ${tr('home.tabCalendar')}
     </button>
     <button class="home-tab-btn ${isA?'active':''}" onclick="setHomeTab('archive')" style="font-size:11px">
-      🏆 АРХИВ
+      🏆 ${tr('home.tabArchive')}
     </button>
   </div>
 
   <!-- Schedule -->
   <div style="display:${isS?'block':'none'}">
     <div class="home-sec-hdr">
-      <span class="home-sec-title">БЛИЖАЙШИЕ <span>ЧЕМПИОНАТЫ</span></span>
-      <span class="home-sec-count">${T.length} событий</span>
+      <span class="home-sec-title">${tr('home.upcoming')} <span>${tr('home.championships')}</span></span>
+      <span class="home-sec-count">${tr('home.eventsCount', { n: T.length })}</span>
     </div>
     <div class="home-grid">${T.map(cardHtml).join('')}</div>
   </div>
@@ -503,8 +522,8 @@ function renderHome() {
   <!-- Calendar -->
   <div style="display:${isC?'block':'none'}">
     <div class="home-sec-hdr">
-      <span class="home-sec-title">КАЛЕНДАРЬ <span>СОБЫТИЙ</span></span>
-      <span class="home-sec-count">Март — Апрель 2026</span>
+      <span class="home-sec-title">${tr('home.calTitle')} <span>${tr('home.calSub')}</span></span>
+      <span class="home-sec-count">${tr('home.calRange')}</span>
     </div>
     ${calHtml}
   </div>
@@ -512,11 +531,11 @@ function renderHome() {
   <!-- Archive -->
   <div style="display:${isA?'block':'none'}">
     <div class="home-sec-hdr">
-      <span class="home-sec-title">АРХИВ <span>ТУРНИРОВ</span></span>
+      <span class="home-sec-title">${tr('home.archTitle')} <span>${tr('home.archSub')}</span></span>
     </div>
     ${_buildProgressionChart()}
     <button class="arch-add-toggle" onclick="toggleArchiveForm()">
-      ${homeArchiveFormOpen ? '− Свернуть форму' : '+ Добавить прошедший турнир'}
+      ${homeArchiveFormOpen ? tr('home.collapseForm') : tr('home.addPast')}
     </button>
     ${archiveHtml}
   </div>
@@ -526,10 +545,10 @@ function renderHome() {
 function renderHistory() {
   const history = loadHistory();
 
-  let html = `<div class="hist-section-title">📚 АРХИВ ТУРНИРОВ</div>`;
+  let html = `<div class="hist-section-title">${tr('home.archiveHistoryTitle')}</div>`;
 
   if (!history.length) {
-    html += `<div class="hist-empty">Нет завершённых турниров.<br>Нажмите «Завершить турнир» в Ростере.</div>`;
+    html += `<div class="hist-empty">${tr('home.noFinished')}</div>`;
     return html;
   }
 
@@ -543,23 +562,23 @@ function renderHistory() {
           <div style="font-size:11px;color:var(--muted);margin-top:2px">📅 ${dateStr}</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start">
-          <button class="btn-gsh-hist" id="gsh-btn-${t.id}" onclick="event.stopPropagation();exportToSheetsFromHistory(${t.id})" title="Экспорт в Google Sheets">📊 Sheets</button>
+          <button class="btn-gsh-hist" id="gsh-btn-${t.id}" onclick="event.stopPropagation();exportToSheetsFromHistory(${t.id})" title="${escAttr(tr('home.exportSheetsTitle'))}">📊 Sheets</button>
           <button class="btn-pdf-hist" onclick="event.stopPropagation();exportTournamentPDF(${t.id})">📄 PDF</button>
           <button class="btn-del-hist" onclick="event.stopPropagation();deleteHistory(${t.id})">✕</button>
         </div>
       </div>
       <div class="hist-meta-row">
-        <span class="hist-chip">👥 ${t.players.length} игроков</span>
-        <span class="hist-chip">🏐 ${t.rPlayed} раундов</span>
-        <span class="hist-chip">⚡ ${t.totalScore} очков</span>
-        <span class="hist-chip">🏟 ${t.nc} корт(а) × ${t.ppc}</span>
+        <span class="hist-chip">👥 ${tr('home.playersCount', { n: t.players.length })}</span>
+        <span class="hist-chip">🏐 ${tr('home.roundsCount', { n: t.rPlayed })}</span>
+        <span class="hist-chip">⚡ ${t.totalScore} ${tr('home.pts')}</span>
+        <span class="hist-chip">🏟 ${t.nc} ${tr('home.courtCount')} × ${t.ppc}</span>
       </div>
       <div class="hist-podium">
         ${top.map((p,i) => `<div class="hist-row">
           <span class="hist-place-num">${MEDALS_5[i]||i+1}</span>
           <span class="hist-p-name">${p.gender==='M'?'🏋️':'👩'} ${esc(p.name)}</span>
           <span style="font-size:10px;color:var(--muted)">${p.courtName||''}</span>
-          <span class="hist-p-pts">${p.totalPts} оч</span>
+          <span class="hist-p-pts">${p.totalPts} ${tr('home.pts')}</span>
         </div>`).join('')}
       </div>
     </div>`;
@@ -586,7 +605,7 @@ function _buildProgressionChart() {
     try {
       dateLabel = new Date(t.date+'T12:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'short'});
     } catch(e) { dateLabel = t.date || ''; }
-    return `<div class="prog-bar-col" onclick="showTournamentDetails(${t.id})" title="${esc(t.name)}: ${sc} оч, ${cnt} игр.">
+    return `<div class="prog-bar-col" onclick="showTournamentDetails(${t.id})" title="${esc(t.name)}: ${sc} ${tr('home.pts')}, ${cnt} pl.">
       <div class="prog-bar-val">${sc}</div>
       <div class="prog-bar" style="height:${Math.max(pct, 8)}%"></div>
       <div class="prog-bar-lbl">${dateLabel}</div>
@@ -595,7 +614,7 @@ function _buildProgressionChart() {
 
   return `
   <div class="prog-chart-wrap">
-    <div class="prog-chart-title">📈 ПРОГРЕССИЯ ТУРНИРОВ</div>
+    <div class="prog-chart-title">${tr('home.progression')}</div>
     <div class="prog-chart">${bars}</div>
   </div>`;
 }
@@ -605,20 +624,20 @@ function _buildProgressionChart() {
 // ════════════════════════════════════════════════════════════
 function showTournamentDetails(trnId) {
   // Try kotc3_history first, then manual tournaments
-  let t = loadHistory().find(h => h.id === trnId) || null;
-  if (!t) {
+  let trn = loadHistory().find(h => h.id === trnId) || null;
+  if (!trn) {
     const manual = loadManualTournaments();
-    t = manual.find(m => m.id === trnId);
+    trn = manual.find(m => m.id === trnId);
   }
-  if (!t) { showToast('Турнир не найден'); return; }
+  if (!trn) { showToast(tr('home.tournamentNotFound')); return; }
 
   document.getElementById('trn-detail-modal')?.remove();
 
-  const players   = t.players || t.playerResults || [];
-  const dateStr   = fmtDateLong(t.date);
-  const cnt       = players.length || t.playersCount || 0;
-  const rPlayed   = t.rPlayed || 0;
-  const totalScore= t.totalScore || players.reduce((s,p) => s + (p.totalPts||p.pts||0), 0);
+  const players   = trn.players || trn.playerResults || [];
+  const dateStr   = fmtDateLong(trn.date);
+  const cnt       = players.length || trn.playersCount || 0;
+  const rPlayed   = trn.rPlayed || 0;
+  const totalScore= trn.totalScore || players.reduce((s,p) => s + (p.totalPts||p.pts||0), 0);
   const avgGlobal = cnt && rPlayed ? (totalScore / (cnt * rPlayed)).toFixed(1) : '—';
 
   // Enrich players with avg and rating points
@@ -634,28 +653,28 @@ function showTournamentDetails(trnId) {
   const top3    = enriched.slice(0, 3);
 
   // Highlights
-  const highlightsHtml = _buildHighlights(t, enriched, avgGlobal);
+  const highlightsHtml = _buildHighlights(trn, enriched, avgGlobal);
 
   // Podium
   const podiumHtml = top3.length ? `
-    <div class="trd-section">🏆 ПОДИУМ</div>
+    <div class="trd-section">${tr('home.podiumTitle')}</div>
     <div class="trd-podium">
       ${top3.map((p, i) => `
         <div class="trd-pod-row">
           <span class="trd-pod-medal">${MEDALS_3[i]}</span>
           <span class="trd-pod-name">${p.gender==='M'?'🏋️':'👩'} ${esc(p.name)}</span>
-          <span class="trd-pod-pts">${p.pts} оч</span>
-          <span class="trd-pod-avg">${p.avg}/р</span>
+          <span class="trd-pod-pts">${p.pts} ${tr('home.pts')}</span>
+          <span class="trd-pod-avg">${p.avg}${tr('home.perRound')}</span>
         </div>`).join('')}
     </div>` : '';
 
   // Full ranking table
   const rankingHtml = enriched.length > 3 ? `
-    <div class="trd-section">📊 ПОЛНЫЙ РЕЙТИНГ</div>
+    <div class="trd-section">${tr('home.fullRanking')}</div>
     <div class="trd-table-wrap">
       <table class="trd-table">
         <thead><tr>
-          <th>#</th><th>Игрок</th><th>Очки</th><th>Avg</th><th>+Рейтинг</th>
+          <th>#</th><th>${tr('home.colPlayer')}</th><th>${tr('home.colPoints')}</th><th>${tr('home.colAvg')}</th><th>${tr('home.colRating')}</th>
         </tr></thead>
         <tbody>
           ${enriched.map(p => `<tr>
@@ -672,10 +691,10 @@ function showTournamentDetails(trnId) {
   // Meta chips
   const metaHtml = `
     <div class="trd-meta-row">
-      ${t.format ? `<span class="trd-chip">👑 ${esc(t.format)}</span>` : ''}
-      ${t.division ? `<span class="trd-chip">${esc(t.division)}</span>` : ''}
-      ${t.nc ? `<span class="trd-chip">🏟 ${t.nc} корт(а)</span>` : ''}
-      ${t.ppc ? `<span class="trd-chip">👥 ${t.ppc} на корт</span>` : ''}
+      ${trn.format ? `<span class="trd-chip">👑 ${esc(trn.format)}</span>` : ''}
+      ${trn.division ? `<span class="trd-chip">${esc(trn.division)}</span>` : ''}
+      ${trn.nc ? `<span class="trd-chip">🏟 ${trn.nc} ${tr('home.courtCount')}</span>` : ''}
+      ${trn.ppc ? `<span class="trd-chip">👥 ${trn.ppc} ${tr('home.perCourt')}</span>` : ''}
     </div>`;
 
   const overlay = document.createElement('div');
@@ -689,12 +708,12 @@ function showTournamentDetails(trnId) {
     <div class="td-body" style="overflow-y:auto;padding:16px 16px 24px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
         <div>
-          <div class="td-name" style="margin:0">${esc(t.name)}</div>
+          <div class="td-name" style="margin:0">${esc(trn.name)}</div>
           <div style="font-size:12px;color:var(--muted);margin-top:4px">
-            📅 ${dateStr}${rPlayed ? ` · 🏐 ${rPlayed} раундов` : ''}
+            📅 ${dateStr}${rPlayed ? ` · 🏐 ${tr('home.roundsCount', { n: rPlayed })}` : ''}
           </div>
           <div style="font-size:12px;color:var(--muted);margin-top:2px">
-            👥 ${cnt} игроков · ⚡ ${totalScore} очков · avg ${avgGlobal}/р
+            👥 ${tr('home.playersCount', { n: cnt })} · ⚡ ${totalScore} ${tr('home.pts')} · avg ${avgGlobal}${tr('home.perRound')}
           </div>
         </div>
         <button onclick="this.closest('.td-overlay').remove()" style="background:transparent;border:1px solid #2a2a44;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:16px">✕</button>
@@ -706,8 +725,8 @@ function showTournamentDetails(trnId) {
       ${rankingHtml}
 
       <div style="display:flex;gap:8px;margin-top:16px">
-        <button class="trd-share-btn" onclick="event.stopPropagation();_shareTournamentResult(${trnId})">📤 Поделиться</button>
-        <button onclick="this.closest('.td-overlay').remove()" style="flex:1;padding:10px;background:#2a2a44;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px">Закрыть</button>
+        <button class="trd-share-btn" onclick="event.stopPropagation();_shareTournamentResult(${trnId})">📤 ${tr('home.share')}</button>
+        <button onclick="this.closest('.td-overlay').remove()" style="flex:1;padding:10px;background:#2a2a44;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px">${tr('home.close')}</button>
       </div>
     </div>
   </div>`;
@@ -718,33 +737,33 @@ function showTournamentDetails(trnId) {
 function _buildHighlights(t, enriched, avgGlobal) {
   const items = [];
   const mvp = enriched[0];
-  if (mvp) items.push(`🏆 MVP: <b>${esc(mvp.name)}</b> (${mvp.pts} оч, avg ${mvp.avg})`);
+  if (mvp) items.push(tr('home.mvp', { name: esc(mvp.name), pts: mvp.pts, avg: mvp.avg }));
 
   // Best round (from saved data if available)
   if (t.bestRound) {
-    items.push(`⚡ Лучший раунд: <b>${esc(t.bestRound.name)}</b> (${t.bestRound.score} оч, Р${t.bestRound.round+1})`);
+    items.push(tr('home.bestRound', { name: esc(t.bestRound.name), score: t.bestRound.score, round: t.bestRound.round+1 }));
   }
 
   // Best pair (from saved data if available)
   if (t.bestPair) {
-    items.push(`💜 Лучшая пара: <b>${esc(t.bestPair.man)} + ${esc(t.bestPair.woman)}</b> (${t.bestPair.totalPts} оч)`);
+    items.push(tr('home.bestPair', { man: esc(t.bestPair.man), woman: esc(t.bestPair.woman), pts: t.bestPair.totalPts }));
   }
 
   // Average score per round
   if (avgGlobal !== '—') {
-    items.push(`📈 Среднее: ${avgGlobal} очков за раунд`);
+    items.push(tr('home.avgPerRound', { avg: avgGlobal }));
   }
 
   // Court stats if available
   if (t.courtStats?.length) {
     const best = t.courtStats.reduce((a,b) => (+a.avgPts > +b.avgPts ? a : b));
-    items.push(`🏟 Лучший корт: <b>${esc(best.name)}</b> (avg ${best.avgPts})`);
+    items.push(tr('home.bestCourt', { name: esc(best.name), avg: best.avgPts }));
   }
 
   if (!items.length) return '';
 
   return `
-    <div class="trd-section">💡 HIGHLIGHTS</div>
+    <div class="trd-section">${tr('home.highlightsTitle')}</div>
     <div class="trd-highlights">
       ${items.map(i => `<div class="trd-hl-item">${i}</div>`).join('')}
     </div>`;
@@ -763,13 +782,13 @@ function _shareTournamentResult(trnId) {
   const cnt     = players.length || t.playersCount || 0;
   const dateStr = t.date ? new Date(t.date+'T12:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'}) : '';
 
-  let text = `👑 ${t.name}\n📅 ${dateStr} · 👥 ${cnt} игроков\n\n🏆 Подиум:\n`;
+  let text = `👑 ${t.name}\n📅 ${dateStr} · 👥 ${tr('home.playersCount', { n: cnt })}\n\n${tr('home.podiumTitle')}\n`;
   top3.forEach((p,i) => {
     const pts = p.totalPts ?? p.pts ?? 0;
-    text += `${MEDALS_3[i]} ${p.name} — ${pts} оч\n`;
+    text += `${MEDALS_3[i]} ${p.name} — ${pts} ${tr('home.pts')}\n`;
   });
-  if (t.totalScore) text += `\n⚡ Всего: ${t.totalScore} очков`;
-  if (t.rPlayed) text += ` за ${t.rPlayed} раундов`;
+  if (t.totalScore) text += `\n⚡ ${t.totalScore} ${tr('home.pts')}`;
+  if (t.rPlayed) text += ` / ${tr('home.roundsCount', { n: t.rPlayed })}`;
   text += '\n#KingBeach #Volley';
 
   shareText(text);

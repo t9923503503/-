@@ -6,3 +6,15 @@ SERVER_GUIDE.local.md
 lpbvolley_backup_*.sql
 server_restore.env
 .claude/
+
+# Next.js build output (should never be committed)
+web/.next/
+
+# Environment files with secrets
+web/.env.local
+
+# Vite static bundle output
+dist/
+
+# TypeScript incremental cache
+*.tsbuildinfo

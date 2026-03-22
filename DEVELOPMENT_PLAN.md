@@ -105,20 +105,20 @@
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| A1.1 | **Error boundaries** — глобальный `window.onerror` + `onunhandledrejection`, toast вместо белого экрана, лог последних 50 ошибок в localStorage | `assets/js/main.js`, новый `assets/js/ui/error-handler.js` | — |
-| A1.2 | **Валидация состояния** — guard-функции в app-state (bounds check на scores[ci][mi][ri]), enforce лимита eventLog (450), sanitize ответов API | `assets/js/state/app-state.js`, `shared/players.js`, `shared/api.js` | — |
-| A1.3 | **CSP fix** — убрать `unsafe-inline` из `index.html` (строка 7), вынести inline-скрипты (строки 43-50) в отдельный файл. Исправить auth fallback: `crypto.subtle` недоступен → блокировать, а не `return true` | `index.html`, `assets/js/ui/roster-auth.js` | — |
-| A1.4 | **Retry + offline** — exponential retry (3 попытки) в `shared/api.js`, try/catch на все `localStorage.setItem` с QuotaExceededError toast, offline-баннер (`navigator.onLine`) | `shared/api.js`, `shared/utils.js`, `assets/js/main.js` | A1.1 |
-| A1.5 | **State refactor (начало)** — обернуть 20+ глобалов из `app-state.js` в объект `AppState` с геттерами/сеттерами, адаптер через `globalThis.AppState` | `assets/js/state/app-state.js` | A1.2 |
+| A1.1 | ✅ `ARCH 2026-03-22→2026-03-22` **Error boundaries** — глобальный `window.onerror` + `onunhandledrejection`, toast вместо белого экрана, лог последних 50 ошибок в localStorage | `assets/js/main.js`, новый `assets/js/ui/error-handler.js` | — |
+| A1.2 | ✅ `ARCH 2026-03-22→2026-03-22` **Валидация состояния** — guard-функции в app-state (bounds check на scores[ci][mi][ri]), enforce лимита eventLog (450), sanitize ответов API | `assets/js/state/app-state.js`, `shared/players.js`, `shared/api.js` | — |
+| A1.3 | ✅ `ARCH 2026-03-22→2026-03-22` **CSP fix** — убрать `unsafe-inline` из `index.html` (строка 7), вынести inline-скрипты (строки 43-50) в отдельный файл. Исправить auth fallback: `crypto.subtle` недоступен → блокировать, а не `return true` | `index.html`, `assets/js/ui/roster-auth.js` | — |
+| A1.4 | ✅ `ARCH 2026-03-22→2026-03-22` **Retry + offline** — exponential retry (3 попытки) в `shared/api.js`, try/catch на все `localStorage.setItem` с QuotaExceededError toast, offline-баннер (`navigator.onLine`) | `shared/api.js`, `shared/utils.js`, `assets/js/main.js` | A1.1 |
+| A1.5 | ✅ `ARCH 2026-03-22→2026-03-22` **State refactor (начало)** — обернуть 20+ глобалов из `app-state.js` в объект `AppState` с геттерами/сеттерами, адаптер через `globalThis.AppState` | `assets/js/state/app-state.js` | A1.2 |
 
 ### QA
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| Q1.1 | **Тесты error handling** — unit: onerror перехватывает; smoke: corrupted localStorage не роняет страницу | `tests/unit/error-handler.test.js`, `tests/smoke/` | A1.1, A1.4 |
-| Q1.2 | **Тесты безопасности** — unit: без `crypto.subtle` доступ заблокирован; CSP парсинг HTML — нет `unsafe-inline` | `tests/unit/roster-auth.test.js` | A1.3 |
-| Q1.3 | **Release gate v2** — добавить проверку CSP, localStorage error handling; обновить smoke для offline | `scripts/release-gate.mjs`, `tests/smoke/` | A1.3, A1.4 |
-| Q1.4 | **Базовая a11y** — `aria-label` на score-кнопки (`shared/ui-kit.js`), интерактивные `div` → `button`, `aria-current="page"` на активный таб, keyboard-навигация Tab+Enter | `shared/ui-kit.js`, `assets/js/screens/components.js`, `assets/js/screens/core.js` | — |
+| Q1.1 | ✅ `QA 2026-03-22→03-22` **Тесты error handling** — unit: onerror перехватывает; smoke: corrupted localStorage не роняет страницу | `tests/unit/error-handler.test.js`, `tests/smoke/` | A1.1, A1.4 |
+| Q1.2 | ✅ `QA 2026-03-22→03-22` **Тесты безопасности** — unit: без `crypto.subtle` доступ заблокирован; CSP парсинг HTML — нет `unsafe-inline` | `tests/unit/roster-auth.test.js` | A1.3 |
+| Q1.3 | ✅ `QA 2026-03-22→03-22` **Release gate v2** — добавить проверку CSP, localStorage error handling; обновить smoke для offline | `scripts/release-gate.mjs`, `tests/smoke/` | A1.3, A1.4 |
+| Q1.4 | ✅ `QA 2026-03-22→03-22` **Базовая a11y** — `aria-label` на score-кнопки (`shared/ui-kit.js`), интерактивные `div` → `button`, `aria-current="page"` на активный таб, keyboard-навигация Tab+Enter | `shared/ui-kit.js`, `assets/js/screens/components.js`, `assets/js/screens/core.js` | — |
 
 ### Контрольная точка
 - Error handler ловит ошибки, показывает toast
@@ -137,36 +137,37 @@
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| F2.0 | **Аудит legacy KOTC** — карта `web/public/kotc/assets/js/` (~6000 строк): что переиспользовать из shared/, что KOTC-специфичное (King stays, challenge, ротация) | `web/public/kotc/` (чтение) → документ миграции | — |
+| F2.0 | ✅ **Аудит legacy KOTC** — карта `web/public/kotc/assets/js/` (~6000 строк): что переиспользовать из shared/, что KOTC-специфичное (King stays, challenge, ротация) | `web/public/kotc/` (чтение) → документ миграции | — |
 
 ### ARCH
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| A2.1 | **KOTC math extraction** — вытащить бизнес-логику в `formats/kotc/kotc-format.js` (ES module, чистые функции) по паттерну `formats/thai/thai-format.js` | `formats/kotc/kotc-format.js` (новый) | F2.0 |
-| A2.2 | **KOTC standalone page** — переписать `formats/kotc/kotc.html` с iframe на полноценную страницу, подключить shared/ модули, переписать `kotc.js` на shared-компоненты | `formats/kotc/kotc.html`, `formats/kotc/kotc.js`, `formats/kotc/kotc.css` | A2.1 |
-| A2.3 | **KOTC в навигацию** — `buildKotcFormatUrl()` в `shared/format-links.js`, launcher в roster.js, карточки KOTC на home.js | `shared/format-links.js`, `assets/js/screens/roster.js`, `assets/js/screens/home.js` | A2.2 |
-| A2.4 | **SW update** — добавить `formats/kotc/*` в CORE_ASSETS, инкрементировать CACHE_VERSION | `sw.js` | A2.2 |
+| A2.1 | ✅ **KOTC math extraction** — вытащить бизнес-логику в `formats/kotc/kotc-format.js` (ES module, чистые функции) по паттерну `formats/thai/thai-format.js` | `formats/kotc/kotc-format.js` (новый) | F2.0 |
+| A2.2 | ✅ **KOTC standalone page** — переписать `formats/kotc/kotc.html` с iframe на полноценную страницу, подключить shared/ модули, переписать `kotc.js` на shared-компоненты | `formats/kotc/kotc.html`, `formats/kotc/kotc.js`, `formats/kotc/kotc.css` | A2.1 |
+| A2.3 | ✅ **KOTC в навигацию** — `buildKotcFormatUrl()` в `shared/format-links.js`, launcher в roster.js, карточки KOTC на home.js | `shared/format-links.js`, `assets/js/screens/roster.js`, `assets/js/screens/home.js` | A2.2 |
+| A2.4 | ✅ **SW update** — добавить `formats/kotc/*` в CORE_ASSETS, инкрементировать CACHE_VERSION | `sw.js` | A2.2 |
 
 ### FORMAT
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| F2.1 | **KOTC UI экраны** — roster (4 на корт, ротация), courts (King stays, challenge), standings (рейтинг сессии) на shared/ui-kit | `formats/kotc/kotc.js`, `formats/kotc/kotc.css` | A2.1, A2.2 |
+| F2.1 | ✅ **KOTC UI экраны** — roster (4 на корт, ротация), courts (King stays, challenge), standings (рейтинг сессии) на shared/ui-kit | `formats/kotc/kotc.js`, `formats/kotc/kotc.css` | A2.1, A2.2 |
 
 ### QA
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| Q2.1 | **KOTC unit-тесты** — ротация, очки, определение победителя, edge cases | `tests/unit/kotc-format.test.js` | A2.1 |
-| Q2.2 | **KOTC E2E** — создание сессии из хаба, полный цикл, навигация хаб↔KOTC | `tests/e2e/kotc-*.spec.ts` | A2.2, F2.1 |
-| Q2.3 | **Regression** — все Thai E2E (6 spec) + IPT smoke + hub smoke проходят после KOTC-миграции | существующие тесты | A2.3 |
+| Q2.1 | ✅ **KOTC unit-тесты** — ротация, очки, определение победителя, edge cases (46 тестов) | `tests/unit/kotc-format.test.js` | A2.1 |
+| Q2.2 | ✅ `QA 2026-03-22→03-22` **KOTC E2E** — создание сессии из хаба, полный цикл, навигация хаб↔KOTC (5 тестов) | `tests/e2e/kotc-flow.spec.ts` | A2.2, F2.1 |
+| Q2.3 | ✅ `QA 2026-03-22→03-22` **Regression** — Thai E2E + IPT smoke + hub smoke проходят (8/8 passed) | существующие тесты | A2.3 |
 
 ### Контрольная точка
-- `formats/kotc/kotc-format.js` содержит чистые функции, unit-тесты зелёные
-- KOTC запускается из хаба как standalone (не iframe)
-- Legacy `web/public/kotc/` помечен deprecated
-- Regression Thai/IPT зелёный
+- ✅ `formats/kotc/kotc-format.js` содержит чистые функции, unit-тесты зелёные (46/46)
+- ✅ KOTC запускается из хаба как standalone (не iframe)
+- ✅ Legacy `web/public/kotc/` помечен deprecated
+- ✅ Regression Thai/IPT зелёный (8/8 smoke + Thai E2E)
+- ✅ KOTC E2E 5/5 passed, unit 139/139 passed
 
 ---
 
@@ -178,28 +179,28 @@
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| A3.1 | **Vite build** — заменить `serve.mjs` + ручную загрузку 27 скриптов на Vite multi-page (index.html, thai.html, kotc.html). Минификация, tree-shaking. Обратная совместимость: classic scripts через rollup input | `vite.config.js` (новый), `package.json`, `assets/js/main.js` | Фаза 2 |
-| A3.2 | **Разбить монолиты** — `core.js` (1135 строк) → `core-navigation.js` + `core-lifecycle.js` + `core-render.js`. `roster.js` (1194 строки) → `roster-list.js` + `roster-format-launcher.js` + `roster-edit.js` | `assets/js/screens/core.js`, `assets/js/screens/roster.js` | A3.1 |
-| A3.3 | **Admin dashboard** — расширить `admin.html`: список активных турниров, быстрый запуск любого формата, архив завершённых | `admin.html`, `assets/js/screens/admin.js` (новый) | A3.1 |
+| A3.1 | ✅ `ARCH 2026-03-22→03-22` **Vite build** — 9 HTML entry points, ES modules bundled + tree-shaken, classic scripts copied via post-build plugin. `npm run build` → dist/ (452ms). `npm run dev` → Vite HMR | `vite.config.js` (новый), `package.json` | Фаза 2 |
+| A3.2 | ✅ `ARCH 2026-03-22→03-22` **Разбить монолиты** — `core.js` → 3 файла (render/lifecycle/navigation), `roster.js` → 3 файла (format-launcher/edit/list). main.js + sw.js обновлены, все функции работают | `assets/js/screens/core-*.js`, `assets/js/screens/roster-*.js` | A3.1 |
+| A3.3 | ✅ `ARCH 2026-03-22→03-22` **Admin dashboard** — Quick Launch (Thai/IPT/KOTC), Active/Finished toggle, кнопка "Открыть" на карточках турниров | `admin.html` | A3.1 |
 
 ### FORMAT
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| F3.1 | **Экспорт архива** — кнопка "Экспорт" на экране FINISHED: JSON (полное состояние) + CSV (standings для Excel). Общая функция `exportTournament()` в shared/ | `shared/utils.js`, `formats/thai/thai.html`, `formats/kotc/kotc.js` | — |
+| F3.1 | ✅ `FORMAT 2026-03-22→03-22` **Экспорт архива** — JSON + CSV кнопки на FINISHED экранах Thai и KOTC. Общий модуль `shared/export-utils.js` (BOM для Excel Cyrillic) | `shared/export-utils.js` (новый), `formats/thai/thai.html`, `formats/kotc/kotc.js` | — |
 
 ### QA
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| Q3.1 | **Build smoke** — Vite build не ломает тесты, SW кэширует правильные пути | `scripts/release-gate.mjs`, `tests/smoke/` | A3.1 |
-| Q3.2 | **Stress-тест localStorage** — работа при ~4MB, экспорт/импорт без потери данных | `tests/unit/` | F3.1 |
+| Q3.1 | ✅ `QA 2026-03-22→03-22` **Build smoke** — 8 тестов: SW CORE_ASSETS, main.js APP_SCRIPT_ORDER, dist HTML/JS, CSP. Release gate расширен до 5 шагов (+vite build) | `tests/unit/build-smoke.test.js`, `scripts/release-gate.mjs` | A3.1 |
+| Q3.2 | ✅ `QA 2026-03-22→03-22` **Stress-тест localStorage** — 7 тестов: QuotaExceeded, 450 history, 200 players, 50 tournaments, combined <500KB, export roundtrip | `tests/unit/localstorage-stress.test.js` | F3.1 |
 
 ### Контрольная точка
-- `npm run build` генерирует рабочий бандл
-- `core.js` и `roster.js` разбиты на модули
-- Экспорт JSON/CSV работает
-- Admin-скелет показывает список турниров
+- ✅ `npm run build` генерирует рабочий бандл (452ms, 9 entry points)
+- ✅ `core.js` и `roster.js` разбиты на модули (6 файлов)
+- ✅ Экспорт JSON/CSV работает (Thai + KOTC)
+- ✅ Admin dashboard: Quick Launch, Active/Finished toggle, турниры с "Открыть"
 
 ---
 
@@ -207,32 +208,69 @@
 
 **Цель:** i18n, real-time sync, продвинутая accessibility, рейтинговые множители.
 
+> **Примечание для агентов:** A4.1 закрыта на уровне **инфраструктуры** — `shared/i18n.js`, каталог `locales/`, строки в shared и критичные toasts. Перенос **хардкода с экранов** (home, roster, навигация, KOTC и т.д.) на `t()` — это **Фаза 5, задачи S5.8–S5.11**; не трактуйте A4.1 как «ещё не сделано», если видите русский в `home.js`.
+
 ### ARCH
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| A4.1 | **i18n** — `shared/i18n.js` (ru/en), извлечь hardcoded строки в `locales/ru.json` + `locales/en.json`. Начать с shared/ модулей и toast-сообщений | `shared/i18n.js` (новый), `locales/` (новая папка) | A3.1 |
-| A4.2 | **Real-time sync** — расширить `shared/api.js` для Supabase realtime. Переработать `kotc-sync.js` (270 строк) в общий `shared/realtime.js`. Организатор вводит счёт → зрители видят за 1-2 сек | `shared/realtime.js` (новый), `shared/api.js` | A1.4 |
-| A4.3 | **Рейтинговые множители** — `BASE_POINTS * FORMAT_MULTIPLIER` (x1.0 Thai, x0.8 KOTC и т.д.), фильтр по формату в `rating.html` | `rating.html`, `shared/ratings.js` (новый) | — |
+| A4.1 | ✅ `ARCH 2026-03-22→2026-03-22` **i18n (инфраструктура)** — `shared/i18n.js` (ru/en), `locales/ru.json` + `locales/en.json`, shared-модули и toast-сообщения | `shared/i18n.js`, `locales/*` | A3.1 |
+| A4.2 | ✅ **Real-time sync** — расширить `shared/api.js` для Supabase realtime. Переработать `kotc-sync.js` (270 строк) в общий `shared/realtime.js`. Организатор вводит счёт → зрители видят за 1-2 сек | `shared/realtime.js` (новый), `sw.js` | A1.4 |
+| A4.3 | ✅ `ARCH 2026-03-22→2026-03-22` **Рейтинговые множители** — `BASE_POINTS * FORMAT_MULTIPLIER` (x1.0 Thai, x0.8 KOTC и т.д.), фильтр по формату в `rating.html` | `rating.html`, `shared/ratings.js` | — |
 
 ### FORMAT
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| F4.1 | **Продвинутая a11y** — focus trap в модалах, auto-focus при открытии, стрелки для табов, `role="tablist/tab/tabpanel"` | `assets/js/screens/components.js`, `assets/js/screens/core.js`, `shared/ui-kit.js` | Q1.4 |
+| F4.1 | ✅ **Продвинутая a11y** — focus trap в модалах, auto-focus при открытии, стрелки для табов, `role="tablist/tab/tabpanel"` | `assets/js/screens/components.js`, `assets/js/screens/core-navigation.js`, `shared/ui-kit.js`, `assets/js/runtime.js` | Q1.4 |
 
 ### QA
 
 | ID | Задача | Файлы | Зависит от |
 |----|--------|-------|------------|
-| Q4.1 | **i18n тесты** — все ключи ru.json есть в en.json; smoke: переключение языка не ломает UI | `tests/unit/i18n.test.js` | A4.1 |
-| Q4.2 | **Real-time integration** — два клиента синхронизируются; offline-клиент получает данные при reconnect | `tests/integration/` (новая папка) | A4.2 |
-| Q4.3 | **Финальный аудит** — полный прогон всех тестов, обновление документации | `STATUS.md`, `PLATFORM_ROADMAP.md` | все задачи Ф4 |
+| Q4.1 | ✅ `QA 2026-03-22→2026-03-22` **i18n тесты** — все ключи ru.json есть в en.json; smoke: переключение языка не ломает UI | `tests/unit/i18n.test.js` | A4.1 |
+| Q4.2 | ✅ **Real-time integration** — два клиента синхронизируются; offline-клиент получает данные при reconnect | `tests/unit/realtime.test.js` | A4.2 |
+| Q4.3 | ✅ `QA 2026-03-22→2026-03-22` **Финальный аудит** — полный прогон всех тестов, обновление документации | `STATUS.md`, `DEVELOPMENT_PLAN.md` | все задачи Ф4 |
+
+### Контрольная точка ✅ ФАЗА 4 ЗАВЕРШЕНА
+- ✅ Переключение ru/en работает (shared/i18n.js + locales/)
+- ✅ Real-time sync (shared/realtime.js — WebSocket broadcast channels)
+- ✅ Рейтинги с множителями по формату (shared/ratings.js — 7 форматов)
+- ✅ Продвинутая a11y (FocusTrap, AriaTabList в ui-kit.js)
+- ✅ Все тесты зелёные: 193 unit + 7 smoke
+
+---
+
+## Фаза 5 — Безопасность + Code Quality
+
+> **Статус:** ARCH S5.1–S5.11 ✅ (включая i18n экранов S5.8–S5.11).
+
+### ARCH
+
+| ID | Задача | Файлы | Зависит от |
+|----|--------|-------|------------|
+| S5.1 | ✅ `ARCH 2026-03-22→2026-03-22` **Убрать web/.next/ из git** — `.gitignore` + `git rm --cached` (закоммитить staged) | `.gitignore` | — |
+| S5.2 | ✅ `ARCH 2026-03-22→2026-03-22` **Убрать hardcoded секрет** — `FALLBACK_ADMIN_SESSION_SECRET` | `web/middleware.ts` | — |
+| S5.3 | ✅ `ARCH 2026-03-22→2026-03-22` **CSP style-src** — offline-banner: класс `is-visible` + CSS; Vite `transformIndexHtml` убирает unsafe-inline (кроме register/profile с inline `<style>`) | `vite.config.js`, `shared/api.js`, `assets/app.css`, `shared/base.css`, `scripts/release-gate.mjs` | — |
+| S5.4 | ✅ `ARCH 2026-03-22→2026-03-22` **SW cache** — `admin.css` в CORE_ASSETS, v59 | `sw.js` | — |
+| S5.5 | ✅ `ARCH 2026-03-22→2026-03-22` **admin.css** — стили вынесены из `<style>` | `admin.html`, `admin.css` | — |
+| S5.6 | ✅ `ARCH 2026-03-22→2026-03-22` **Legacy KOTC** — `web/public/kotc/DEPRECATED.md`, не трогать до обновления Next | `web/public/kotc/` | — |
+| S5.7 | ✅ `ARCH 2026-03-22→2026-03-22` **Realtime snapshot** — `request_snapshot` + тесты | `shared/realtime.js`, `tests/unit/realtime.test.js` | — |
+
+### FORMAT
+
+| ID | Задача | Файлы | Зависит от |
+|----|--------|-------|------------|
+| S5.8 | ✅ `FORMAT 2026-03-22→2026-03-22` **i18n: home.js** — `tr()` + ключи `home.*` в локалях | `assets/js/screens/home.js`, `locales/*.json` | — |
+| S5.9 | **i18n: roster screens** — format-launcher, edit, list | `assets/js/screens/roster-*.js`, `locales/*.json` | ✅ |
+| S5.10 | **i18n: navigation + runtime** — табы, toast, модалки | `assets/js/screens/core-navigation.js`, `assets/js/runtime.js`, `assets/js/screens/components.js`, `locales/*.json` | ✅ |
+| S5.11 | **i18n: format pages** — KOTC кнопки, заголовки | `formats/kotc/kotc.js`, `locales/*.json` (`kotc.html` — статика; строки UI в JS + `_boot`) | ✅ |
 
 ### Контрольная точка
-- Переключение ru/en работает
-- Real-time sync между двумя клиентами
-- Рейтинги с множителями по формату
+- git status — нет web/.next/ файлов
+- CSP: нет `unsafe-inline` в style-src
+- admin.html — нет inline style= атрибутов
+- i18n.t() работает во всех экранах, ru↔en переключение
 - Все тесты зелёные
 
 ---
@@ -244,9 +282,9 @@
 3. **SHOULD:** A3.1 (Vite build) — 27 скриптов загружаются вручную
 4. **SHOULD:** A3.2 (разбить монолиты) — core.js 1135 строк, roster.js 1194 строки
 5. **SHOULD:** F3.1 (экспорт) — организаторам нужны отчёты
-6. **COULD:** A4.1 (i18n) — переносится если не хватает времени
-7. **COULD:** A4.2 (real-time) — offline-first и так работает
-8. **COULD:** A4.3 (рейтинги) — можно добавить позже
+6. **DONE:** A4.1–A4.3, Q4.1–Q4.3 (Фаза 4 закрыта; см. примечание про i18n экранов → S5.8–S5.11)
+7. **IN PROGRESS:** Фаза 5 — безопасность, CSP style-src, admin CSS, SW, realtime snapshot, i18n экранов
+8. **COULD (после Ф5):** новые локали помимо ru/en, расширение ключей в `locales/*`
 
 ---
 

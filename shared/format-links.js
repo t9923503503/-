@@ -36,7 +36,26 @@ export function buildThaiFormatUrl(opts = {}) {
   return 'formats/thai/thai.html?' + params.toString();
 }
 
-const api = { buildThaiFormatUrl };
+/**
+ * Build KOTC format URL with normalized params.
+ * @param {{ nc?: number, ppc?: number, trnId?: string }} opts
+ * @returns {string}
+ */
+export function buildKotcFormatUrl(opts = {}) {
+  const nc = [1, 2, 3, 4].includes(Number(opts.nc)) ? Number(opts.nc) : 4;
+  const ppc = 4; // always 4 for KOTC
+  const trnId = opts.trnId != null ? String(opts.trnId) : '';
+
+  const params = new URLSearchParams({
+    nc: String(nc),
+    ppc: String(ppc),
+  });
+  if (trnId) params.set('trnId', trnId);
+
+  return 'formats/kotc/kotc.html?' + params.toString();
+}
+
+const api = { buildThaiFormatUrl, buildKotcFormatUrl };
 
 try {
   if (typeof globalThis !== 'undefined') {
