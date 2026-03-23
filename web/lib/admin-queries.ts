@@ -714,9 +714,9 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
                json_build_object(
                  'playerName', p.name,
                  'gender', p.gender,
-                 'placement', tr.placement,
-                 'points', tr.points
-               ) ORDER BY tr.placement ASC
+                 'placement', tr.place,
+                 'points', tr.game_pts
+               ) ORDER BY tr.place ASC
              ) FILTER (WHERE tr.id IS NOT NULL),
              '[]'
            ) AS results
