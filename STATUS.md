@@ -9,7 +9,7 @@
 
 ---
 
-## Текущий этап: ФАЗА 5 ЗАВЕРШЕНА ✅ — все задачи S5.1–S5.11 выполнены
+## Текущий этап: ФАЗА 6 В РАБОТЕ 🔄 — hardening прода по внешнему аудиту (2026-03-23)
 
 ### Фаза 5 задачи
 - [x] **S5.1** — Убрать web/.next/ из git ✅ (2026-03-22, `.gitignore`; при необходимости закоммитить staged `git rm`)
@@ -23,6 +23,14 @@
 - [x] **S5.9** — i18n: roster screens (FORMAT) ✅ (2026-03-23, уже полностью на `tr()`, все ключи в locales)
 - [x] **S5.10** — i18n: navigation + runtime (FORMAT) ✅ (2026-03-23, `runtime.js` fmtDateLong locale-aware, `components.js` tooltip i18n)
 - [x] **S5.11** — i18n: format pages (FORMAT) ✅ (2026-03-23, `kotc.html` + `kotc.js` — _boot() уже заменяет HTML placeholder'ы через i18n)
+
+### Фаза 6 задачи (2 ИИ)
+- [x] **S6.1 (ARCH / ИИ-1)** — Исправить редиректы `/sudyam` без утечки localhost ✅ (2026-03-23, `web/middleware.ts`, `web/app/sudyam/page.tsx`)
+- [x] **S6.2 (ARCH / ИИ-1)** — Обработка несуществующего `tournamentId` без 500 ✅ (2026-03-23, `web/app/api/tournament-register/route.ts`)
+- [x] **S6.3 (ARCH / ИИ-1)** — Базовые security headers + `robots/sitemap` ✅ (2026-03-23, `web/next.config.ts`, `web/app/robots.ts`, `web/app/sitemap.ts`)
+- [x] **S6.4 (FORMAT / ИИ-2)** — Закрытые турниры: registration page не принимает заявки ✅ (2026-03-23, `web/app/calendar/[id]/register/page.tsx`)
+- [x] **S6.5 (ARCH / ИИ-1)** — Усилить `/api/sudyam-auth`: rate limit + защита от brute-force ✅ (2026-03-23, `web/app/api/sudyam-auth/route.ts`)
+- [x] **S6.6 (FORMAT / ИИ-2)** — Ссылки профилей из рейтинга + guard для `/api/archive` в smoke ✅ (2026-03-23, `web/components/rankings/PlayerRow.tsx`, `assets/js/screens/home.js`)
 
 ### Предыдущие этапы
 - ФАЗА 4 ЗАВЕРШЕНА ✅ (A4.1 ✅, Q4.1 ✅, A4.3 ✅, F4.1 ✅, A4.2 ✅, Q4.2 ✅, Q4.3 ✅)
@@ -299,6 +307,12 @@
 | 2026-03-22 | FORMAT | S5.9 i18n roster | assets/js/screens/roster-format-launcher.js, roster-edit.js, roster-list.js, locales/*.json | IPT/Thai/KOTC карточки, стандартные настройки, фильтр истории К1–К4, toast ротации |
 | 2026-03-22 | ARCH | S5.10 i18n nav+runtime+UI | assets/js/screens/core-navigation.js, runtime.js, components.js, locales/*.json | `nav.*`, `score.*`, `pcard.*`, дивизионные подписи, модалка турнира, player card |
 | 2026-03-22 | FORMAT | S5.11 i18n KOTC page | formats/kotc/kotc.js, locales/*.json | `initI18n` + `kotcFmt.*`; этапы, таблицы, экспорт CSV, 199 unit ✅ |
+| 2026-03-23 | ARCH | S6.1 | web/middleware.ts, web/app/sudyam/page.tsx | Redirect теперь строится по `x-forwarded-host/proto`, fallback KOTC URL без localhost leak |
+| 2026-03-23 | ARCH | S6.2 | web/app/api/tournament-register/route.ts | Добавлена pre-check в `tournaments`: несуществующий id -> 404, закрытый статус -> 400 |
+| 2026-03-23 | ARCH | S6.3 | web/next.config.ts, web/app/robots.ts, web/app/sitemap.ts | Добавлены базовые security headers и генерация robots/sitemap через App Router |
+| 2026-03-23 | FORMAT | S6.4 | web/app/calendar/[id]/register/page.tsx | Для finished/cancelled турниров форма скрыта и показан закрытый статус с возвратом к карточке турнира |
+| 2026-03-23 | ARCH | S6.5 | web/app/api/sudyam-auth/route.ts | Добавлен IP rate limit (429 + Retry-After), fail-secure режим при отсутствии `SUDYAM_PIN` в production |
+| 2026-03-23 | FORMAT | S6.6 | web/components/rankings/PlayerRow.tsx, assets/js/screens/home.js | Harden ссылки профилей в рейтинге (не генерировать `undefined`) и guard, чтобы smoke не дергал `/api/archive` (404) |
 
 ---
 

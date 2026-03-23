@@ -88,6 +88,8 @@ let homeArchiveFormGender  = 'M';  // default gender for next player
 // ── ARCHIVE FILTERS STATE ─────────────────────────────────
 let archiveSearch = '';
 let archiveSort   = 'date_desc'; // 'date_desc' | 'date_asc' | 'players' | 'pts'
+let _serverArchive = null; // cached server archive [{id,name,date,format,division,photoUrl,results}]
+let _serverArchiveFetched = false;
 
 // ── PLAYER DATABASE STATE ───────────────────────────────────
 let playersGender = 'M';

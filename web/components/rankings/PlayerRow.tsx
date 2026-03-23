@@ -23,18 +23,28 @@ function RankBadge({ rank }: { rank: number }) {
 }
 
 export default function PlayerRow({ entry }: PlayerRowProps) {
+  // Runtime hardening: leaderboard data should always contain `playerId`,
+  // but if the API payload shape drifts (e.g. `player_id`), avoid generating broken links.
+  const rawPlayerId = (entry as any)?.playerId ?? (entry as any)?.player_id ?? (entry as any)?.id;
+  const playerId =
+    typeof rawPlayerId === 'string' && rawPlayerId.trim().length > 0 ? rawPlayerId.trim() : null;
+
   return (
     <tr className="border-b border-surface-lighter hover:bg-surface-light transition-colors">
       <td className="py-3 px-4 w-12 text-center">
         <RankBadge rank={entry.rank} />
       </td>
       <td className="py-3 px-4">
-        <Link
-          href={`/players/${entry.playerId}`}
-          className="text-text-primary hover:text-brand transition-colors font-medium"
-        >
-          {entry.name}
-        </Link>
+        {playerId ? (
+          <Link
+            href={`/players/${encodeURIComponent(playerId)}`}
+            className="text-text-primary hover:text-brand transition-colors font-medium"
+          >
+            {entry.name}
+          </Link>
+        ) : (
+          <span className="text-text-primary/80 font-medium">{entry.name}</span>
+        )}
       </td>
       <td className="py-3 px-4 text-right">
         <span className="text-brand font-condensed font-semibold text-lg">

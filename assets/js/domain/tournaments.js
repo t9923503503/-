@@ -182,6 +182,7 @@ function loadManualTournaments() {
         playersCount: t.participants?.length || 0,
         winner: winnerName,
         playerResults: pResults,
+        photoUrl: t.photoUrl || '',
       };
     });
 }
@@ -198,6 +199,7 @@ function saveManualTournaments(manualRecords) {
     level: 'medium', capacity: t.playersCount || 0, prize: '',
     status: 'finished', source: t.source || 'manual',
     participants: [], waitlist: [], winners: t.winner ? [t.winner] : [],
+    photoUrl: t.photoUrl || '',
   }));
   saveTournaments([...nonFinished, ...finished]);
 }

@@ -20,6 +20,7 @@ const links = [
   { href: '/admin/overrides', label: 'Overrides' },
   { href: '/admin/audit', label: 'Audit' },
   { href: '/admin/reports', label: 'Отчеты' },
+  { href: '/admin/archive', label: '📚 Архив' },
 ];
 
 export default function AdminShell({ role, actorId, children }: AdminShellProps) {

@@ -275,6 +275,42 @@
 
 ---
 
+## Фаза 6 — Production Hardening (внешний аудит) 🔄 2026-03-23
+
+**Цель:** закрыть критичные внешние риски релиза: auth/redirect, негативные сценарии API, базовый security perimeter.
+
+### Расклад на 2 ИИ
+
+| Роль | Агент | Зона |
+|------|-------|------|
+| **ARCH** | **ИИ-1** | `web/middleware.ts`, `web/app/api/*`, `web/next.config.ts`, `web/app/(robots|sitemap).ts` |
+| **FORMAT** | **ИИ-2** | `web/app/calendar/*`, `web/components/calendar/*`, `web/components/rankings/*` |
+
+### ARCH (ИИ-1)
+
+| ID | Задача | Файлы | Статус |
+|----|--------|-------|--------|
+| S6.1 | Исправить редирект `/sudyam` без `localhost` leak (учесть reverse proxy headers) | `web/middleware.ts`, `web/app/sudyam/page.tsx` | ✅ `ARCH 2026-03-23→2026-03-23` |
+| S6.2 | Негативный сценарий `tournamentId`: `404/400` вместо `500` | `web/app/api/tournament-register/route.ts` | ✅ `ARCH 2026-03-23→2026-03-23` |
+| S6.3 | Добавить базовые security headers + `robots/sitemap` | `web/next.config.ts`, `web/app/robots.ts`, `web/app/sitemap.ts` | ✅ `ARCH 2026-03-23→2026-03-23` |
+| S6.5 | Усилить auth судей: rate limit + lock window + `Retry-After` | `web/app/api/sudyam-auth/route.ts` | ✅ `ARCH 2026-03-23→2026-03-23` |
+
+### FORMAT (ИИ-2)
+
+| ID | Задача | Файлы | Статус |
+|----|--------|-------|--------|
+| S6.4 | UX-polish закрытых турниров: скрыть/заблокировать form path и выровнять CTA | `web/app/calendar/[id]/page.tsx`, `web/app/calendar/[id]/register/page.tsx` | ✅ `FORMAT 2026-03-23→2026-03-23` |
+| S6.6 | Проверить и выровнять player links рейтинга + guard для `/api/archive` в smoke (чтобы не падал gate) | `web/components/rankings/PlayerRow.tsx`, `assets/js/screens/home.js` | ✅ `FORMAT 2026-03-23→2026-03-23` |
+
+### Контрольная точка
+- `/sudyam` не редиректит на localhost извне
+- `/api/tournament-register` на несуществующий id возвращает `404`
+- `/api/sudyam-auth` ограничивает brute-force (`429`, `Retry-After`)
+- В проде есть `robots.txt` и `sitemap.xml`
+- Применены базовые security headers на публичных страницах
+
+---
+
 ## Приоритеты (если время ограничено — отбрасываем снизу)
 
 1. **MUST:** A1.1-A1.3 (error handling, CSP, auth fix) — без этого продакшен небезопасен

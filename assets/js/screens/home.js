@@ -24,11 +24,12 @@ function submitManualTournament() {
   const playerResults = [...homeArchiveFormPlayers].sort((a,b) => b.pts - a.pts);
   const playersCount  = playerResults.length || (parseInt(v('arch-inp-players')||'0')||0);
   const winner        = playerResults[0]?.name || (v('arch-inp-winner')||'').trim();
+  const photoUrl      = (v('arch-inp-photo') || '').trim();
 
   // Save to archive
   const arr = loadManualTournaments();
   arr.unshift({ id: Date.now(), name, date, format, division,
-    playersCount, winner, playerResults, source: 'manual' });
+    playersCount, winner, playerResults, source: 'manual', photoUrl });
   saveManualTournaments(arr);
 
   // Sync players → playerDB (each player gets +1 tournament, +pts)
@@ -102,6 +103,53 @@ function _archPlrListHtml() {
     <span class="arch-plr-row-pts">${p.pts}</span>
     <button class="arch-plr-row-del" onclick="removeArchFormPlayer(${i})">✕</button>
   </div>`).join('') + '</div>';
+}
+
+// ════════════════════════════════════════════════════════════
+// SERVER ARCHIVE LOADER
+// ════════════════════════════════════════════════════════════
+async function _loadApiArchive() {
+  if (_serverArchiveFetched) return;
+  // Smoke tests run with a plain static server (no Next.js API handlers),
+  // so calling `/api/archive` would trigger a 404 console error and fail the gate.
+  // In real deployments APP_CONFIG is expected to be populated (at least Supabase creds).
+  const cfg = globalThis.APP_CONFIG || {};
+  const hasBackend =
+    Boolean(String(cfg.apiBase || '').trim()) ||
+    Boolean(String(cfg.supabaseUrl || '').trim()) ||
+    Boolean(String(cfg.supabaseAnonKey || '').trim());
+  if (!hasBackend) {
+    _serverArchiveFetched = true;
+    return;
+  }
+  _serverArchiveFetched = true;
+  try {
+    const res = await fetch('/api/archive', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!Array.isArray(data)) return;
+    _serverArchive = data.map(t => ({
+      id: 'srv_' + t.id,
+      name: t.name,
+      date: t.date,
+      format: t.format || 'King of the Court',
+      division: t.division || '',
+      source: 'server',
+      photoUrl: t.photoUrl || t.photo_url || '',
+      playersCount: Array.isArray(t.results) ? t.results.length : 0,
+      winner: Array.isArray(t.results) && t.results.length > 0 ? t.results[0].playerName : '',
+      playerResults: Array.isArray(t.results)
+        ? t.results.map(r => ({ name: r.playerName, pts: r.points, gender: r.gender }))
+        : [],
+    }));
+    // Re-render archive tab if it's active
+    if (homeActiveTab === 'archive') {
+      const s = document.getElementById('screen-home');
+      if (s) s.innerHTML = renderHome();
+    }
+  } catch (e) {
+    // silently ignore network errors, fallback to localStorage
+  }
 }
 
 function renderHome() {
@@ -252,13 +300,17 @@ function renderHome() {
   // ── Archive content builder ─────────────────────────────
   function archCardHtml(trn) {
     const isApp = trn.source === 'app';
+    const isSrv = trn.source === 'server';
     let dateStr = '—';
     dateStr = fmtDateLong(trn.date);
     const winner = trn.winner || (trn.players && trn.players[0] ? trn.players[0].name : '');
     const cnt    = trn.playersCount || (trn.players ? trn.players.length : 0);
     const rds    = trn.rPlayed ? '🏐 ' + tr('home.roundsCount', { n: trn.rPlayed }) : '';
+    const srcLabel = isSrv ? tr('home.serverBadge') : (isApp ? tr('home.appBadge') : tr('home.manualBadge'));
+    const srcCls   = isSrv ? 'server' : (isApp ? 'app' : 'manual');
+    const clickAttr = isSrv ? '' : `onclick="showTournamentDetails(${trn.id})" style="cursor:pointer"`;
     return `
-<div class="arch-card" onclick="showTournamentDetails(${trn.id})" style="cursor:pointer">
+<div class="arch-card" ${clickAttr}>
   <div class="arch-card-accent"></div>
   <div class="arch-card-body">
     <div class="arch-card-top">
@@ -267,8 +319,8 @@ function renderHome() {
         <div class="arch-date">📅 ${dateStr}</div>
       </div>
       <div class="arch-badges">
-        <span class="arch-src ${isApp?'app':'manual'}">${isApp?tr('home.appBadge'):tr('home.manualBadge')}</span>
-        ${!isApp?`<button class="arch-del-btn" onclick="event.stopPropagation();deleteManualTournament(${trn.id})" title="${escAttr(tr('home.deleteTitle'))}">✕</button>`:''}
+        <span class="arch-src ${srcCls}">${srcLabel}</span>
+        ${!isApp && !isSrv?`<button class="arch-del-btn" onclick="event.stopPropagation();deleteManualTournament(${trn.id})" title="${escAttr(tr('home.deleteTitle'))}">✕</button>`:''}
       </div>
     </div>
     <div class="arch-meta">
@@ -278,6 +330,7 @@ function renderHome() {
       ${rds?`<span class="arch-chip blue">${rds}</span>`:''}
       ${winner?`<span class="arch-chip gold">🥇 ${esc(winner)}</span>`:''}
     </div>
+    ${trn.photoUrl?`<a class="trd-photo-link" href="${escAttr(trn.photoUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📸 ${tr('home.viewPhotos')}</a>`:''}
     ${trn.playerResults?.length>1 ? `
     <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:3px">
       ${trn.playerResults.slice(0,5).map((p,i)=>{
@@ -301,8 +354,10 @@ function renderHome() {
             format: row.format||'King of the Court', division: row.division||tr('home.divMixed')}));
       } catch(e){ return []; }
     })();
-    const manT = loadManualTournaments();
-    let all  = [...appT, ...manT];
+    const srvT = Array.isArray(_serverArchive) ? _serverArchive : [];
+    // Kick off server fetch if not yet started (will re-render when ready)
+    if (!_serverArchiveFetched) _loadApiArchive();
+    let all  = [...srvT, ...appT];
 
     // Apply search filter
     const q = archiveSearch.toLowerCase().trim();
@@ -335,71 +390,28 @@ function renderHome() {
       </select>
     </div>`;
 
-    const formHtml = homeArchiveFormOpen ? `
-<div class="arch-add-form">
-  <div class="arch-form-title">${tr('home.formTitle')}</div>
-  <div class="arch-form-grid">
-    <input class="arch-form-inp arch-form-full" id="arch-inp-name"
-      type="text" placeholder="${escAttr(tr('home.tournamentNamePh'))}">
-    <input class="arch-form-inp" id="arch-inp-date"
-      type="date" value="${new Date().toISOString().split('T')[0]}">
-    <select class="arch-form-sel" id="arch-inp-fmt">
-      <option>King of the Court</option>
-      <option>Round Robin</option>
-      <option>${tr('home.formatOlympic')}</option>
-      <option>${tr('home.formatOther')}</option>
-    </select>
-    <select class="arch-form-sel" id="arch-inp-div">
-      <option>${tr('home.divMen')}</option>
-      <option>${tr('home.divWomen')}</option>
-      <option>${tr('home.divMixed')}</option>
-    </select>
-  </div>
-
-  <!-- Player results section -->
-  <div class="arch-plr-section">
-    <div class="arch-plr-section-title">${tr('home.playerResultsTitle')}</div>
-    <div class="arch-plr-add-row">
-      <input class="arch-form-inp arch-plr-name" id="arch-plr-inp"
-        type="text" placeholder="${escAttr(tr('home.placeholderSurnameShort'))}"
-        onkeydown="if(event.key==='Enter')addArchFormPlayer()">
-      <input class="arch-form-inp arch-plr-pts" id="arch-plr-pts-inp"
-        type="number" min="0" max="999" placeholder="${escAttr(tr('home.placeholderPts'))}"
-        onkeydown="if(event.key==='Enter')addArchFormPlayer()">
-      <div class="arch-plr-gender-wrap">
-        <button id="arch-g-btn-M" class="arch-plr-g-btn sel-M" onclick="setArchFormGender('M')">${tr('home.genderM')}</button>
-        <button id="arch-g-btn-W" class="arch-plr-g-btn" onclick="setArchFormGender('W')">${tr('home.genderW')}</button>
-      </div>
-      <button class="arch-plr-add-btn" onclick="addArchFormPlayer()">+</button>
-    </div>
-    <div id="arch-plr-list-wrap">${_archPlrListHtml()}</div>
-  </div>
-
-  <button class="arch-save-btn" onclick="submitManualTournament()">
-    ${homeArchiveFormPlayers.length ? tr('home.saveBtnPlayers', { n: homeArchiveFormPlayers.length }) : tr('home.saveBtnArchive')}
-  </button>
-</div>` : '';
-
     const listHtml = all.length === 0 ? `
 <div class="arch-empty">
   <div class="arch-empty-icon">🏆</div>
-  ${tr('home.archiveEmpty')}
+  ${_serverArchiveFetched ? tr('home.archiveEmpty') : `<span style="opacity:.6">${tr('home.loadingServer')}</span>`}
 </div>` : (() => {
+      const srvOnes = all.filter(t=>t.source==='server');
       const appOnes = all.filter(t=>t.source==='app');
-      const manOnes = all.filter(t=>t.source==='manual');
       let html = '';
+      if (srvOnes.length) {
+        html += srvOnes.map(archCardHtml).join('');
+      }
+      if (!_serverArchiveFetched && !srvOnes.length) {
+        html += `<div class="arch-empty" style="padding:16px 0"><span style="opacity:.5">🌐 ${tr('home.loadingServer')}</span></div>`;
+      }
       if (appOnes.length) {
         html += `<div class="arch-divider"><div class="arch-divider-line"></div><span class="arch-divider-txt">📱 ${tr('home.fromApp')} (${appOnes.length})</span><div class="arch-divider-line"></div></div>`;
         html += appOnes.map(archCardHtml).join('');
       }
-      if (manOnes.length) {
-        html += `<div class="arch-divider"><div class="arch-divider-line"></div><span class="arch-divider-txt">✏️ ${tr('home.addedManually')} (${manOnes.length})</span><div class="arch-divider-line"></div></div>`;
-        html += manOnes.map(archCardHtml).join('');
-      }
       return html;
     })();
 
-    return searchHtml + formHtml + listHtml;
+    return searchHtml + listHtml;
   })();
 
   return `
@@ -505,9 +517,9 @@ function renderHome() {
     <button class="home-tab-btn ${isC?'active':''}" onclick="setHomeTab('calendar')" style="font-size:11px">
       📅 ${tr('home.tabCalendar')}
     </button>
-    <button class="home-tab-btn ${isA?'active':''}" onclick="setHomeTab('archive')" style="font-size:11px">
+    <a class="home-tab-btn" href="/archive" style="font-size:11px;text-decoration:none">
       🏆 ${tr('home.tabArchive')}
-    </button>
+    </a>
   </div>
 
   <!-- Schedule -->
@@ -526,18 +538,6 @@ function renderHome() {
       <span class="home-sec-count">${tr('home.calRange')}</span>
     </div>
     ${calHtml}
-  </div>
-
-  <!-- Archive -->
-  <div style="display:${isA?'block':'none'}">
-    <div class="home-sec-hdr">
-      <span class="home-sec-title">${tr('home.archTitle')} <span>${tr('home.archSub')}</span></span>
-    </div>
-    ${_buildProgressionChart()}
-    <button class="arch-add-toggle" onclick="toggleArchiveForm()">
-      ${homeArchiveFormOpen ? tr('home.collapseForm') : tr('home.addPast')}
-    </button>
-    ${archiveHtml}
   </div>
 </div>`;
 }
@@ -724,8 +724,17 @@ function showTournamentDetails(trnId) {
       ${highlightsHtml}
       ${rankingHtml}
 
+      ${trn.photoUrl ? `
+      <a class="trd-photo-link" href="${escAttr(trn.photoUrl)}" target="_blank" rel="noopener">
+        ${tr('home.viewPhotos')}
+      </a>` : ''}
+
       <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
         <button class="trd-share-btn" onclick="event.stopPropagation();_shareTournamentResult(${trnId})">📤 ${tr('home.share')}</button>
+        <button class="trd-share-btn" style="background:#1a3a5e;border-color:#2a5a8e"
+          onclick="event.stopPropagation();_setTournamentPhoto(${trnId})">
+          ${trn.photoUrl ? tr('home.editPhoto') : tr('home.addPhoto')}
+        </button>
         ${enriched.length && !trn.serverFinalized
           ? `<button id="td-finalize-btn" class="trd-share-btn" style="background:#1a6a3a;border-color:#2a8a4a"
               onclick="event.stopPropagation();_hubFinalizeTournament(${trnId},'history')">📤 На сервер</button>`
@@ -738,6 +747,43 @@ function showTournamentDetails(trnId) {
   </div>`;
 
   document.body.appendChild(overlay);
+}
+
+function _setTournamentPhoto(trnId) {
+  const current = (() => {
+    const h = loadHistory().find(x => x.id === trnId);
+    if (h) return h.photoUrl || '';
+    const m = loadManualTournaments().find(x => x.id === trnId);
+    return m?.photoUrl || '';
+  })();
+
+  const url = window.prompt(tr('home.photoPrompt'), current);
+  if (url === null) return; // cancelled
+  const trimmed = url.trim();
+
+  // Try history (kotc3_history)
+  const hist = loadHistory();
+  const hi = hist.findIndex(x => x.id === trnId);
+  if (hi !== -1) {
+    hist[hi] = { ...hist[hi], photoUrl: trimmed };
+    saveHistory(hist);
+    showToast(tr('home.photoSaved'));
+    showTournamentDetails(trnId);
+    return;
+  }
+
+  // Try tournaments store (kotc3_tournaments — manual/finished)
+  const trns = getTournaments();
+  const ti = trns.findIndex(x => String(x.id) === String(trnId));
+  if (ti !== -1) {
+    trns[ti] = { ...trns[ti], photoUrl: trimmed };
+    saveTournaments(trns);
+    showToast(tr('home.photoSaved'));
+    showTournamentDetails(trnId);
+    return;
+  }
+
+  showToast(tr('home.tournamentNotFound'));
 }
 
 function _buildHighlights(t, enriched, avgGlobal) {

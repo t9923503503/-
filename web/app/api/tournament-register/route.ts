@@ -39,6 +39,25 @@ export async function POST(request: NextRequest) {
 
     const pool = getPool();
 
+    const tournamentRes = await pool.query(
+      `SELECT id, status FROM tournaments WHERE id = $1 LIMIT 1`,
+      [tId]
+    );
+    const tournament = tournamentRes.rows?.[0];
+    if (!tournament) {
+      return NextResponse.json(
+        { error: 'Tournament not found' },
+        { status: 404 }
+      );
+    }
+
+    if (!['open', 'full'].includes(String(tournament.status || ''))) {
+      return NextResponse.json(
+        { error: 'Registration is closed for this tournament' },
+        { status: 400 }
+      );
+    }
+
     const { rows } = await pool.query(
       `SELECT submit_player_request($1, $2, $3, $4) AS result`,
       [pName, pGender, pPhone, tId]

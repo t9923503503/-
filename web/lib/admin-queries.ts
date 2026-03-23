@@ -13,6 +13,18 @@ export interface AdminTournament {
   capacity: number;
   status: string;
   participantCount: number;
+  photoUrl: string;
+}
+
+export interface ArchiveResult {
+  playerName: string;
+  gender: 'M' | 'W';
+  placement: number;
+  points: number;
+}
+
+export interface ArchiveTournament extends AdminTournament {
+  results: ArchiveResult[];
 }
 
 export interface AdminPlayer {
@@ -40,6 +52,7 @@ function mapTournament(row: Record<string, unknown>): AdminTournament {
     capacity: Number(row.capacity ?? 0),
     status: String(row.status ?? 'open'),
     participantCount: Number(row.participant_count ?? 0),
+    photoUrl: String(row.photo_url ?? ''),
   };
 }
 
@@ -82,9 +95,9 @@ export async function createTournament(input: Partial<AdminTournament>): Promise
   const id = String(input.id || randomUUID());
   const { rows } = await pool.query(
     `INSERT INTO tournaments
-      (id, name, date, time, location, format, division, level, capacity, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-     RETURNING id, name, date, time, location, format, division, level, capacity, status`,
+      (id, name, date, time, location, format, division, level, capacity, status, photo_url)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url`,
     [
       id,
       String(input.name || '').trim(),
@@ -96,6 +109,7 @@ export async function createTournament(input: Partial<AdminTournament>): Promise
       String(input.level || ''),
       Number(input.capacity || 0),
       String(input.status || 'open'),
+      String(input.photoUrl || '') || null,
     ]
   );
   const data = rows[0] ?? {};
@@ -109,9 +123,9 @@ export async function updateTournament(
   const pool = getPool();
   const { rows } = await pool.query(
     `UPDATE tournaments
-     SET name=$2, date=$3, time=$4, location=$5, format=$6, division=$7, level=$8, capacity=$9, status=$10
+     SET name=$2, date=$3, time=$4, location=$5, format=$6, division=$7, level=$8, capacity=$9, status=$10, photo_url=$11
      WHERE id=$1
-     RETURNING id, name, date, time, location, format, division, level, capacity, status`,
+     RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url`,
     [
       id,
       String(input.name || '').trim(),
@@ -123,6 +137,7 @@ export async function updateTournament(
       String(input.level || ''),
       Number(input.capacity || 0),
       String(input.status || 'open'),
+      String(input.photoUrl || '') || null,
     ]
   );
   const data = rows[0];
@@ -675,6 +690,98 @@ export async function mergeTempPlayer(
 
     await client.query('COMMIT');
     return { ok: true, moved, message: `Merged: ${moved} tournaments moved` };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ARCHIVE: Завершённые турниры с результатами
+// ═══════════════════════════════════════════════════════════
+
+export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
+  if (!process.env.DATABASE_URL) return [];
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    SELECT t.id, t.name, t.date, t.time, t.location, t.format, t.division,
+           t.level, t.capacity, t.status, t.photo_url,
+           0 AS participant_count,
+           COALESCE(
+             json_agg(
+               json_build_object(
+                 'playerName', p.name,
+                 'gender', p.gender,
+                 'placement', tr.placement,
+                 'points', tr.points
+               ) ORDER BY tr.placement ASC
+             ) FILTER (WHERE tr.id IS NOT NULL),
+             '[]'
+           ) AS results
+    FROM tournaments t
+    LEFT JOIN tournament_results tr ON tr.tournament_id = t.id
+    LEFT JOIN players p ON p.id = tr.player_id
+    WHERE t.status = 'finished'
+    GROUP BY t.id
+    ORDER BY t.date DESC
+  `);
+  return rows.map((row) => ({
+    ...mapTournament(row),
+    results: (row.results as ArchiveResult[]) ?? [],
+  }));
+}
+
+export async function setTournamentPhotoUrl(
+  id: string,
+  photoUrl: string
+): Promise<AdminTournament | null> {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `UPDATE tournaments SET photo_url = $2 WHERE id = $1
+     RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url`,
+    [id, photoUrl || null]
+  );
+  const data = rows[0];
+  if (!data) return null;
+  const countRes = await pool.query(
+    `SELECT COUNT(*)::int AS participant_count FROM tournament_participants WHERE tournament_id = $1`,
+    [id]
+  );
+  return { ...mapTournament(data), participantCount: Number(countRes.rows[0]?.participant_count ?? 0) };
+}
+
+export async function upsertTournamentResults(
+  tournamentId: string,
+  results: Array<{ playerName: string; gender: 'M' | 'W'; placement: number; points: number }>
+): Promise<number> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM tournament_results WHERE tournament_id = $1`, [tournamentId]);
+    let inserted = 0;
+    for (const r of results) {
+      const gender = r.gender === 'W' ? 'W' : 'M';
+      const playerRes = await client.query(
+        `INSERT INTO players (name, gender, status)
+         VALUES ($1, $2, 'active')
+         ON CONFLICT (lower(name), gender) DO UPDATE SET name = EXCLUDED.name
+         RETURNING id`,
+        [r.playerName.trim(), gender]
+      );
+      const playerId = String(playerRes.rows[0]?.id ?? '');
+      if (!playerId) continue;
+      await client.query(
+        `INSERT INTO tournament_results (tournament_id, player_id, placement, points)
+         VALUES ($1, $2, $3, $4)`,
+        [tournamentId, playerId, Number(r.placement), Number(r.points)]
+      );
+      inserted++;
+    }
+    await client.query('COMMIT');
+    return inserted;
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;

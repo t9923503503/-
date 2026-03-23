@@ -8,11 +8,17 @@ export const metadata: Metadata = {
 
 // Middleware уже проверил PIN — если мы здесь, доступ разрешён
 export default async function SudyamPage() {
-  const kotcUrl = process.env.NEXT_PUBLIC_KOTC_URL ?? 'http://localhost:8000';
   const headerStore = await headers();
   const host = headerStore.get('x-forwarded-host') ?? headerStore.get('host') ?? '';
   const proto = headerStore.get('x-forwarded-proto') ?? (host.includes('localhost') ? 'http' : 'https');
   const siteUrl = host ? `${proto}://${host}/` : '/';
+  const configuredKotcUrl = String(process.env.NEXT_PUBLIC_KOTC_URL || '').trim();
+  const kotcUrl =
+    configuredKotcUrl && !(process.env.NODE_ENV === 'production' && configuredKotcUrl.includes('localhost'))
+      ? configuredKotcUrl
+      : host
+        ? `${proto}://${host}/kotc/`
+        : '/kotc/';
 
   let iframeSrc = kotcUrl;
   try {

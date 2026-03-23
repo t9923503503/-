@@ -4,6 +4,30 @@ import { ADMIN_COOKIE_NAME } from '@/lib/admin-constants';
 
 const FALLBACK_SUDYAM_PIN = '7319';
 
+function getExpectedSudyamPin(): string {
+  const configuredPin = String(process.env.SUDYAM_PIN || '').trim();
+  if (configuredPin) return configuredPin;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SUDYAM_PIN env var is required in production');
+  }
+  return FALLBACK_SUDYAM_PIN;
+}
+
+function buildRedirectUrl(request: NextRequest, targetPath: string): URL {
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+  const url = request.nextUrl.clone();
+  url.pathname = targetPath;
+  url.search = '';
+  if (forwardedHost) {
+    url.host = forwardedHost;
+  }
+  if (forwardedProto) {
+    url.protocol = `${forwardedProto}:`;
+  }
+  return url;
+}
+
 function getAdminSessionSecret(): string {
   const secret = String(process.env.ADMIN_SESSION_SECRET || '').trim();
   if (secret) return secret;
@@ -57,9 +81,9 @@ export async function middleware(request: NextRequest) {
   const isSudyamLogin = pathname.startsWith('/sudyam/login');
   if (isSudyam && !isSudyamLogin) {
     const token = request.cookies.get(COOKIE_NAME)?.value;
-    const expectedPin = String(process.env.SUDYAM_PIN || FALLBACK_SUDYAM_PIN);
+    const expectedPin = getExpectedSudyamPin();
     if (!token || token !== expectedPin) {
-      return NextResponse.redirect(new URL('/sudyam/login', request.url));
+      return NextResponse.redirect(buildRedirectUrl(request, '/sudyam/login'));
     }
   }
 
@@ -68,7 +92,7 @@ export async function middleware(request: NextRequest) {
   if (isAdmin && !isAdminLogin) {
     const token = request.cookies.get(ADMIN_COOKIE_NAME)?.value;
     if (!token || !(await isValidAdminSession(token))) {
-      return NextResponse.redirect(new URL('/admin/login', request.url));
+      return NextResponse.redirect(buildRedirectUrl(request, '/admin/login'));
     }
   }
 
