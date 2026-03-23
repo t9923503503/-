@@ -11,7 +11,17 @@ const nextConfig: NextConfig = {
       { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
       {
         key: 'Content-Security-Policy',
-        value: "default-src 'self'; base-uri 'self'; frame-ancestors 'self'; object-src 'none';",
+        value: [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline'",
+          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+          "font-src 'self' https://fonts.gstatic.com",
+          "img-src 'self' data: https:",
+          "connect-src 'self'",
+          "base-uri 'self'",
+          "frame-ancestors 'self'",
+          "object-src 'none'",
+        ].join('; '),
       },
     ];
 
