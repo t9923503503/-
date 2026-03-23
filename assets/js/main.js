@@ -149,7 +149,9 @@ async function registerServiceWorker() {
 })();
 
 async function bootstrapApp() {
-  loadState();
+  // Some deployments may serve an outdated/missing classic bundle.
+  // Guard to avoid hard crash on boot; state will be defaulted.
+  if (typeof loadState === 'function') loadState();
   loadTimerState();
   sbLoadConfig();
   gshLoadConfig();
