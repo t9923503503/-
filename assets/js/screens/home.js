@@ -724,8 +724,14 @@ function showTournamentDetails(trnId) {
       ${highlightsHtml}
       ${rankingHtml}
 
-      <div style="display:flex;gap:8px;margin-top:16px">
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
         <button class="trd-share-btn" onclick="event.stopPropagation();_shareTournamentResult(${trnId})">📤 ${tr('home.share')}</button>
+        ${enriched.length && !trn.serverFinalized
+          ? `<button id="td-finalize-btn" class="trd-share-btn" style="background:#1a6a3a;border-color:#2a8a4a"
+              onclick="event.stopPropagation();_hubFinalizeTournament(${trnId},'history')">📤 На сервер</button>`
+          : trn.serverFinalized
+          ? `<button class="trd-share-btn" disabled style="opacity:.5">✅ Отправлено</button>`
+          : ''}
         <button onclick="this.closest('.td-overlay').remove()" style="flex:1;padding:10px;background:#2a2a44;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px">${tr('home.close')}</button>
       </div>
     </div>

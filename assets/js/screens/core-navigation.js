@@ -128,9 +128,9 @@ function buildNav() {
       const queryUrl = params.get('siteUrl');
       if (queryUrl) siteUrl = queryUrl;
     } catch (_) {}
+    if (!siteUrl) siteUrl = (typeof SITE_URL !== 'undefined' && SITE_URL) || '';
     if (!siteUrl) { try { if (document.referrer) siteUrl = new URL('/', document.referrer).href; } catch (_) {} }
     if (!siteUrl) { try { siteUrl = new URL('/', window.location.href).href; } catch (_) { siteUrl = '/'; } }
-    if (!siteUrl) siteUrl = (typeof SITE_URL !== 'undefined' && SITE_URL) || '/';
     try {
       if (window.top !== window.self) window.top.location.href = siteUrl;
       else window.location.href = siteUrl;

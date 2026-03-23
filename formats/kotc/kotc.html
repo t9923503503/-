@@ -6,6 +6,8 @@
   <meta name="theme-color" content="#0d0d1a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://sv-ugra.ru; img-src 'self' data:;">
   <title>KOTC — Лютые Пляжники</title>
 
   <link rel="stylesheet" href="../../shared/base.css">
@@ -17,7 +19,7 @@
        TOP NAVIGATION
        ══════════════════════════════════════════════════════= -->
   <nav class="fmt-nav" id="kotc-nav">
-    <button class="fmt-nav-back" onclick="history.length>1?history.back():location.href='../../index.html'">← Хаб</button>
+    <button class="fmt-nav-back" id="kotc-back-btn">← Хаб</button>
     <span class="fmt-nav-title" id="kotc-nav-title">👑 King of the Court</span>
     <div class="fmt-nav-sep"></div>
     <div class="pill-tabs" id="kotc-round-tabs" role="tablist" aria-label="Раунды"></div>

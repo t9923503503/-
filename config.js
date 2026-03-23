@@ -8,4 +8,4 @@ window.APP_CONFIG = {
 };
 
 // URL основного сайта (для кнопки ВЫХОД)
-var SITE_URL = 'https://lpvolley.ru';
+var SITE_URL = 'https://sv-ugra.ru';

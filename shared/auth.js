@@ -20,13 +20,23 @@ export function hasOrgAuth() {
 
 /** Return the stored org secret token (for API auth header). */
 export function getOrgSecret() {
-  try { return localStorage.getItem(_SECRET_KEY) || ''; }
+  try {
+    // S6.5: secrets in sessionStorage (cleared on tab close)
+    return sessionStorage.getItem(_SECRET_KEY)
+      || localStorage.getItem(_SECRET_KEY)  // migration fallback
+      || '';
+  }
   catch (_) { return ''; }
 }
 
 /** Persist an org secret token. */
 export function setOrgSecret(secret) {
-  try { localStorage.setItem(_SECRET_KEY, secret); }
+  try {
+    // S6.5: secrets in sessionStorage (cleared on tab close)
+    sessionStorage.setItem(_SECRET_KEY, secret);
+    // Remove from localStorage if migrated
+    localStorage.removeItem(_SECRET_KEY);
+  }
   catch (_) {}
 }
 

@@ -20,6 +20,11 @@ function makePlayers(nc: number) {
 }
 
 test.describe('Q2.2 — KOTC E2E flow', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('kotc3_locale', 'ru');
+    });
+  });
 
   test('kotc.html loads and shows roster panel', async ({ page }) => {
     const trnId = 'kotc_e2e_load_' + Date.now();

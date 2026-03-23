@@ -79,7 +79,7 @@ function _getAuthHeader() {
   try {
     const secret = typeof globalThis.sharedAuth !== 'undefined'
       ? globalThis.sharedAuth.getOrgSecret?.()
-      : localStorage.getItem('kotc3_org_secret');
+      : (sessionStorage.getItem('kotc3_org_secret') || localStorage.getItem('kotc3_org_secret'));
     return secret ? { 'X-Org-Secret': secret } : {};
   } catch (_) { return {}; }
 }
@@ -189,10 +189,111 @@ export function syncTournamentAsync(tournament) {
   saveTournamentToServer(tournament).catch(() => {});
 }
 
+// ── S8.3: Finalize tournament via Supabase RPC ─────────────
+/**
+ * Call finalize_tournament RPC.
+ * @param {string} tournamentId
+ * @param {Array<{player_id:string, placement:number, points:number, format?:string, division?:string}>} results
+ * @returns {Promise<{ok:boolean, results_count?:number, error?:string}>}
+ */
+export async function finalizeTournament(tournamentId, results) {
+  try {
+    const res = await apiPost('/rpc/finalize_tournament', {
+      p_tournament_id: tournamentId,
+      p_results: results,
+    });
+    return res || { ok: false, error: 'EMPTY_RESPONSE' };
+  } catch (err) {
+    console.warn('[api] finalizeTournament failed:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+// ── S8.4: Sync player DB with server ────────────────────────
+/**
+ * Pull players from server, merge with local DB, push local-only players.
+ * Server is authoritative on conflicts (same player ID → server wins).
+ * @returns {Promise<{synced:boolean, count:number}>}
+ */
+export async function syncPlayersWithServer() {
+  try {
+    const remote = await apiGet('/rpc/get_rating_leaderboard');
+    if (!Array.isArray(remote)) return { synced: false, count: 0 };
+
+    const local = globalThis.sharedPlayers?.loadPlayerDB?.() || [];
+    const remoteMap = new Map(remote.map(p => [String(p.player_id || p.id), p]));
+    const localMap = new Map(local.map(p => [String(p.id), p]));
+
+    const merged = [];
+    const localOnlyPlayers = [];
+
+    // Server players: authoritative
+    for (const [rid, rp] of remoteMap) {
+      const lp = localMap.get(rid);
+      merged.push({
+        ...(lp || {}),
+        id: rid,
+        name: rp.name || lp?.name || '',
+        gender: rp.gender || lp?.gender || 'M',
+        status: 'active',
+        totalPts: rp.total_pts ?? lp?.totalPts ?? 0,
+        tournaments: rp.tournaments ?? lp?.tournaments ?? 0,
+      });
+      localMap.delete(rid);
+    }
+
+    // Local-only players: keep + mark for push
+    for (const [lid, lp] of localMap) {
+      merged.push(lp);
+      localOnlyPlayers.push(lp);
+    }
+
+    // Save merged locally
+    if (globalThis.sharedPlayers?.savePlayerDB) {
+      globalThis.sharedPlayers.savePlayerDB(merged);
+    }
+
+    // Push local-only to server (best effort)
+    if (localOnlyPlayers.length > 0) {
+      try {
+        await apiPost('/api/players/bulk', localOnlyPlayers.map(p => ({
+          id: p.id,
+          name: p.name,
+          gender: p.gender,
+          status: p.status || 'active',
+        })));
+      } catch (_) {
+        // Push failed — will retry on next sync
+      }
+    }
+
+    return { synced: true, count: merged.length };
+  } catch (err) {
+    console.warn('[api] syncPlayersWithServer failed (offline?):', err.message);
+    return { synced: false, count: 0 };
+  }
+}
+
+// ── S8.9: Get rating history for a player ───────────────────
+/**
+ * @param {string} playerId
+ * @returns {Promise<Array<{tournament_id:string, delta:number, new_total:number, recorded_at:string}>>}
+ */
+export async function getPlayerRatingHistory(playerId) {
+  try {
+    const res = await apiPost('/rpc/get_rating_history', { p_player_id: playerId });
+    return Array.isArray(res) ? res : [];
+  } catch (err) {
+    console.warn('[api] getPlayerRatingHistory failed:', err.message);
+    return [];
+  }
+}
+
 export { _safeSetItem as safeSetItem };
 
 const _api = { apiGet, apiPost, saveTournamentToServer, loadTournamentFromServer,
-               updatePlayerRatings, syncTournamentAsync, safeSetItem: _safeSetItem };
+               updatePlayerRatings, syncTournamentAsync, safeSetItem: _safeSetItem,
+               finalizeTournament, syncPlayersWithServer, getPlayerRatingHistory };
 
 try {
   if (typeof globalThis !== 'undefined') {

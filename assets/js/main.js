@@ -134,6 +134,20 @@ async function registerServiceWorker() {
   }
 }
 
+// ── S7.4: Judge mode from URL parameters ─────────────────────
+// URL: index.html?trnId=X&court=0&token=AAA
+(function initJudgeMode() {
+  const p = new URLSearchParams(location.search);
+  const court = p.get('court');
+  globalThis.judgeMode = Object.freeze({
+    active:    !!(p.get('trnId') && court !== null),
+    trnId:     p.get('trnId') || '',
+    court:     court !== null ? parseInt(court, 10) : -1,
+    token:     p.get('token') || '',
+    judgeName: p.get('judge') || '',
+  });
+})();
+
 async function bootstrapApp() {
   loadState();
   loadTimerState();
@@ -146,7 +160,7 @@ async function bootstrapApp() {
   }
 
   buildAll();
-  const startTab = (activeTabId != null && activeTabId !== 'home') ? activeTabId : 'roster';
+  const startTab = (activeTabId != null && activeTabId !== 'roster') ? activeTabId : 'home';
   await switchTab(startTab);
 
   if (sbConfig.roomCode && sbConfig.roomSecret) {

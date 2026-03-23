@@ -884,6 +884,9 @@ function buildNav() {
       }
     } catch (_) {}
     if (!siteUrl) {
+      siteUrl = (typeof SITE_URL !== 'undefined' && SITE_URL) || '';
+    }
+    if (!siteUrl) {
       try {
         if (document.referrer) {
           siteUrl = new URL('/', document.referrer).href;
@@ -896,9 +899,6 @@ function buildNav() {
       } catch (_) {
         siteUrl = '/';
       }
-    }
-    if (!siteUrl) {
-      siteUrl = (typeof SITE_URL !== 'undefined' && SITE_URL) || '/';
     }
     try {
       // Если в iframe — выходим на родительскую страницу

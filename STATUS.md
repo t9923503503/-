@@ -9,7 +9,7 @@
 
 ---
 
-## Текущий этап: ФАЗА 5 — FORMAT (S5.9–S5.11). ARCH S5.1–S5.7 ✅ · S5.8 ✅
+## Текущий этап: ФАЗА 5 ЗАВЕРШЕНА ✅ — все задачи S5.1–S5.11 выполнены
 
 ### Фаза 5 задачи
 - [x] **S5.1** — Убрать web/.next/ из git ✅ (2026-03-22, `.gitignore`; при необходимости закоммитить staged `git rm`)
@@ -20,9 +20,9 @@
 - [x] **S5.6** — Решить судьбу web/public/kotc/ ✅ (2026-03-22, web/public/kotc/DEPRECATED.md)
 - [x] **S5.7** — Realtime: snapshot после reconnect ✅ (2026-03-22, shared/realtime.js, tests/unit/realtime.test.js)
 - [x] **S5.8** — i18n: home.js (FORMAT) ✅ (2026-03-22, `assets/js/screens/home.js`, `locales/ru.json`, `locales/en.json` — `tr()` + ключи `home.*`)
-- [ ] **S5.9** — i18n: roster screens (FORMAT)
-- [ ] **S5.10** — i18n: navigation + runtime (FORMAT)
-- [ ] **S5.11** — i18n: format pages (FORMAT)
+- [x] **S5.9** — i18n: roster screens (FORMAT) ✅ (2026-03-23, уже полностью на `tr()`, все ключи в locales)
+- [x] **S5.10** — i18n: navigation + runtime (FORMAT) ✅ (2026-03-23, `runtime.js` fmtDateLong locale-aware, `components.js` tooltip i18n)
+- [x] **S5.11** — i18n: format pages (FORMAT) ✅ (2026-03-23, `kotc.html` + `kotc.js` — _boot() уже заменяет HTML placeholder'ы через i18n)
 
 ### Предыдущие этапы
 - ФАЗА 4 ЗАВЕРШЕНА ✅ (A4.1 ✅, Q4.1 ✅, A4.3 ✅, F4.1 ✅, A4.2 ✅, Q4.2 ✅, Q4.3 ✅)

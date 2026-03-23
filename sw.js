@@ -1,9 +1,10 @@
-const CACHE_VERSION = 'volley-static-v59';
+const CACHE_VERSION = 'volley-static-v62';
 const CORE_ASSETS = [
   './',
   './index.html',
   './register.html',
   './admin.html',
+  './admin-init.js',
   './admin.css',
   './profile.html',
   './player-card.html',
@@ -48,6 +49,11 @@ const CORE_ASSETS = [
   './formats/kotc/kotc.js',
   './formats/kotc/kotc-format.js',
   './formats/kotc/kotc.css',
+  './formats/thai/thai.html',
+  './formats/thai/thai-boot.js',
+  './formats/thai/thai-format.js',
+  './formats/thai/thai-roster.js',
+  './formats/thai/thai.css',
   './shared/export-utils.js',
   './shared/i18n.js',
   './shared/realtime.js',

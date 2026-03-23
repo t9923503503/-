@@ -254,9 +254,22 @@ function sbRandomSecret() {
 
 function sbLoadConfig() {
   try {
-    const c = localStorage.getItem('kotc3_sb');
+    // S6.5: secrets in sessionStorage (cleared on tab close)
+    const c = sessionStorage.getItem('kotc3_sb');
     if (c) sbConfig = { ...sbConfig, ...JSON.parse(c) };
   } catch(e) { console.warn('[sbLoadConfig] Config parse error:', e); }
+  // Migrate: if old localStorage key exists, move to sessionStorage and remove
+  if (!sbConfig.roomCode) {
+    try {
+      const old = localStorage.getItem('kotc3_sb');
+      if (old) {
+        const parsed = JSON.parse(old);
+        sbConfig = { ...sbConfig, ...parsed };
+        sessionStorage.setItem('kotc3_sb', old);
+        localStorage.removeItem('kotc3_sb');
+      }
+    } catch(e) {}
+  }
   sbConfig.roomCode = sbNormalizeRoomCode(sbConfig.roomCode);
   sbConfig.roomSecret = (sbConfig.roomSecret || '').trim();
 }
@@ -293,7 +306,8 @@ async function syncPendingPlayerRequests() {
 function sbSaveConfig() {
   sbConfig.roomCode = sbNormalizeRoomCode(sbConfig.roomCode);
   sbConfig.roomSecret = (sbConfig.roomSecret || '').trim();
-  localStorage.setItem('kotc3_sb', JSON.stringify(sbConfig));
+  // S6.5: secrets in sessionStorage (cleared on tab close)
+  sessionStorage.setItem('kotc3_sb', JSON.stringify(sbConfig));
 }
 function sbGenerateSecret(refresh = true) {
   sbConfig.roomSecret = sbRandomSecret();
@@ -328,7 +342,10 @@ function sbStartRealtime() {
   try {
     sbRealtimeChannel = sbClient
       .channel('room:' + sbConfig.roomCode)
-      .on('broadcast', { event: 'state_updated' }, () => {
+      .on('broadcast', { event: 'state_updated' }, (msg) => {
+        // S7.6: In judge mode, ignore broadcasts from own court (echo prevention)
+        const jm = globalThis.judgeMode;
+        if (jm?.active && msg?.payload?.courtId === jm.court) return;
         // Signal received — fetch actual state via secure RPC
         sbPollOnce();
       })
@@ -535,9 +552,17 @@ function sbPush() {
       if (!data?.ok) throw new Error(data?.message || data?.error || 'Ошибка записи комнаты');
       sbLastRemoteUpdatedAt = data.updated_at || sbLastRemoteUpdatedAt;
       // Notify other devices via Broadcast (best-effort, no await)
+      // S7.6: include courtId so receivers know which court changed
       if (sbRealtimeChannel) {
-        sbRealtimeChannel.send({ type: 'broadcast', event: 'state_updated', payload: {} })
-          .catch(() => {}); // non-critical
+        const jm = globalThis.judgeMode;
+        sbRealtimeChannel.send({
+          type: 'broadcast',
+          event: 'state_updated',
+          payload: {
+            courtId: jm?.active ? jm.court : -1,
+            ts: Date.now()
+          }
+        }).catch(() => {}); // non-critical
       }
       // Flash top bar
       const bar = document.getElementById('sync-topbar');

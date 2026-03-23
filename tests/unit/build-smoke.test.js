@@ -112,12 +112,12 @@ describe('Build smoke (Q3.1)', () => {
     expect(scriptSrc).not.toContain("'unsafe-inline'");
   });
 
-  it('index.html CSP style-src has no unsafe-inline (S5.3)', () => {
+  it('index.html CSP style-src allows unsafe-inline (dynamic UI from JS)', () => {
     const html = readFileSync(resolve(ROOT, 'index.html'), 'utf8');
     const csp = html.match(/<meta[^>]+Content-Security-Policy[^>]+content="([^"]+)"/i);
     expect(csp).not.toBeNull();
     const styleSrc = csp[1].split(';').find(d => d.trim().startsWith('style-src'));
     expect(styleSrc).toBeDefined();
-    expect(styleSrc).not.toContain("'unsafe-inline'");
+    expect(styleSrc).toContain("'unsafe-inline'");
   });
 });

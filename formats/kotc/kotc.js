@@ -43,6 +43,11 @@ injectUiKitCSS();
   document.body.classList.toggle('solar', solar);
 })();
 
+// ── S6.3: Back button (replaced inline onclick) ─────────────
+document.getElementById('kotc-back-btn')?.addEventListener('click', () => {
+  history.length > 1 ? history.back() : (location.href = '../../index.html');
+});
+
 // ════════════════════════════════════════════════════════════
 // URL params → session config
 // ════════════════════════════════════════════════════════════
@@ -327,7 +332,16 @@ function _renderCourts() {
   const meta = COURT_META[ci];
   const ct = _session.courts[ci];
 
+  // S7.5: Court-lock — judge can only edit their assigned court
+  const jm = globalThis.judgeMode;
+  const locked = jm?.active && jm.court !== ci;
+
   let html = '';
+
+  // S7.5: Lock banner for non-assigned courts
+  if (locked) {
+    html += `<div style="background:rgba(255,200,0,.1);border:1px solid rgba(255,200,0,.25);border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:.85em;color:var(--gold);text-align:center">🔒 Просмотр — редактирование доступно только на вашем корте (${esc(COURT_META[jm.court]?.name || '')})</div>`;
+  }
 
   // Round tabs
   html += '<div style="display:flex;gap:4px;margin-bottom:10px">';
@@ -353,9 +367,10 @@ function _renderCourts() {
     html += `<div class="kotc-match-row">`;
     html += `<div class="kotc-team-name left">${esc(teamAName)}</div>`;
     html += `<div class="kotc-score-col">`;
-    html += `<button class="kotc-sc-btn" onclick="window._kotcScore(${ci},${miA},${ri},-1)">−</button>`;
+    const lockAttr = locked ? ' disabled style="opacity:.35;pointer-events:none"' : '';
+    html += `<button class="kotc-sc-btn"${lockAttr} onclick="window._kotcScore(${ci},${miA},${ri},-1)">−</button>`;
     html += `<span class="kotc-sc-val">${scoreA === '' ? '–' : scoreA}</span>`;
-    html += `<button class="kotc-sc-btn" onclick="window._kotcScore(${ci},${miA},${ri},+1)">+</button>`;
+    html += `<button class="kotc-sc-btn"${lockAttr} onclick="window._kotcScore(${ci},${miA},${ri},+1)">+</button>`;
     html += `</div>`;
     html += `<div class="kotc-team-name right">${esc(teamBName)}</div>`;
     html += `</div>`;
@@ -363,9 +378,9 @@ function _renderCourts() {
     html += `<div class="kotc-match-row" style="border-top:none;padding-top:0">`;
     html += `<div></div>`;
     html += `<div class="kotc-score-col">`;
-    html += `<button class="kotc-sc-btn" onclick="window._kotcScore(${ci},${miB},${ri},-1)">−</button>`;
+    html += `<button class="kotc-sc-btn"${lockAttr} onclick="window._kotcScore(${ci},${miB},${ri},-1)">−</button>`;
     html += `<span class="kotc-sc-val">${scoreB === '' ? '–' : scoreB}</span>`;
-    html += `<button class="kotc-sc-btn" onclick="window._kotcScore(${ci},${miB},${ri},+1)">+</button>`;
+    html += `<button class="kotc-sc-btn"${lockAttr} onclick="window._kotcScore(${ci},${miB},${ri},+1)">+</button>`;
     html += `</div>`;
     html += `<div></div>`;
     html += `</div>`;
@@ -409,6 +424,9 @@ window._kotcGoRound = function(ci, ri) {
 
 window._kotcScore = function(ci, mi, ri, delta) {
   if (!_session) return;
+  // S7.5: Court-lock — judge can only edit their assigned court
+  const jm = globalThis.judgeMode;
+  if (jm?.active && jm.court !== ci) return;
   const cur = _session.scores[ci]?.[mi]?.[ri];
   const next = Math.max(0, (cur ?? 0) + delta);
   _session.scores[ci][mi][ri] = next;
@@ -663,6 +681,16 @@ function _renderFinished() {
   html += '  <button class="pill-tab" onclick="window._kotcExportCSV()">CSV</button>';
   html += '</div>';
 
+  // S8.7: Finalize — send results to server
+  const alreadyFinalized = _session.finalized;
+  html += '<div style="display:flex;justify-content:center;margin:12px 0">';
+  if (alreadyFinalized) {
+    html += '<div style="color:var(--muted);font-size:.85em">✅ Результаты отправлены на сервер</div>';
+  } else {
+    html += '<button class="pill-tab" style="background:var(--gold);color:#000;font-weight:700" onclick="window._kotcFinalize()">📤 Отправить результаты</button>';
+  }
+  html += '</div>';
+
   content.innerHTML = html;
 }
 
@@ -719,6 +747,56 @@ window._kotcExportCSV = function() {
   }
   const dateStr = (_session.meta?.date || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
   exportToCSV(headers, rows, 'kotc_' + dateStr + '.csv');
+};
+
+// ── S8.7: Finalize — send results to server ─────────────────
+window._kotcFinalize = async function() {
+  if (!_session || _session.finalized) return;
+  const divKeys = kotcActiveDivKeys(_session.nc);
+  const results = [];
+
+  for (const key of divKeys) {
+    for (const gender of ['M', 'W']) {
+      const ranked = kotcRankDivision({
+        divScores: _session.divScores, divRoster: _session.divRoster, key, gender,
+      });
+      for (const r of ranked) {
+        if (!r.playerId && !r.name) continue;
+        results.push({
+          player_id: r.playerId || r.name,
+          placement: r.place || 0,
+          points: r.pts || 0,
+          format: 'KOTC',
+          division: key.toUpperCase(),
+        });
+      }
+    }
+  }
+
+  if (!results.length) {
+    showToast('Нет результатов для отправки', 'warn');
+    return;
+  }
+
+  const trnId = _session.trnId || _trnId;
+  try {
+    const api = globalThis.sharedApi;
+    if (!api?.finalizeTournament) {
+      showToast('API недоступен — результаты сохранены локально', 'warn');
+      return;
+    }
+    const res = await api.finalizeTournament(trnId, results);
+    if (res?.ok) {
+      _session.finalized = true;
+      _saveSession();
+      showToast('✅ Результаты отправлены на сервер', 'success');
+      _renderFinished();
+    } else {
+      showToast('❌ ' + (res?.error || 'Ошибка отправки'), 'error');
+    }
+  } catch (err) {
+    showToast('❌ Ошибка: ' + err.message, 'error');
+  }
 };
 
 // ════════════════════════════════════════════════════════════

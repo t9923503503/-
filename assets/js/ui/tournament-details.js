@@ -1,5 +1,85 @@
 'use strict'; // ── Tournament Details modal ──
 
+// ── S8.6: Finalize tournament from hub ──────────────────────
+async function _hubFinalizeTournament(trnId, source) {
+  const api = globalThis.sharedApi;
+  if (!api?.finalizeTournament) {
+    showToast('⚠️ API не подключён — работаем офлайн', 'warn');
+    return;
+  }
+
+  // Collect results from the appropriate source
+  let results = [];
+
+  if (source === 'tournaments') {
+    // From kotc3_tournaments — winners array
+    const arr = getTournaments();
+    const trn = arr.find(t => t.id === trnId);
+    if (!trn) { showToast('⚠️ Турнир не найден'); return; }
+    if (trn.serverFinalized) { showToast('ℹ️ Уже отправлено на сервер'); return; }
+    const db = loadPlayerDB();
+    (trn.winners || []).forEach(slot => {
+      (slot.playerIds || []).forEach(pid => {
+        const p = db.find(x => x.id === pid);
+        results.push({
+          player_id: pid,
+          placement: slot.place || 0,
+          points: slot.points || 0,
+          format: trn.format || 'King of the Court',
+          division: trn.division || '',
+        });
+      });
+    });
+  } else if (source === 'history') {
+    // From kotc3_history — players array sorted by ranking
+    const history = loadHistory();
+    const trn = history.find(h => h.id === trnId);
+    if (!trn) { showToast('⚠️ Турнир не найден'); return; }
+    if (trn.serverFinalized) { showToast('ℹ️ Уже отправлено на сервер'); return; }
+    (trn.players || []).forEach((p, i) => {
+      results.push({
+        player_id: p.id || p.name,
+        placement: i + 1,
+        points: p.totalPts ?? p.pts ?? 0,
+        format: trn.format || 'King of the Court',
+        division: trn.division || '',
+      });
+    });
+  }
+
+  if (!results.length) {
+    showToast('⚠️ Нет результатов для отправки', 'warn');
+    return;
+  }
+
+  // Disable button to prevent double-click
+  const btn = document.getElementById('td-finalize-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Отправка…'; }
+
+  const res = await api.finalizeTournament(String(trnId), results);
+
+  if (res?.ok) {
+    // Mark as finalized locally
+    if (source === 'tournaments') {
+      const arr = getTournaments();
+      const trn = arr.find(t => t.id === trnId);
+      if (trn) { trn.serverFinalized = true; saveTournaments(arr); }
+    } else {
+      const history = loadHistory();
+      const trn = history.find(h => h.id === trnId);
+      if (trn) { trn.serverFinalized = true; saveHistory(history); }
+    }
+    showToast('✅ Результаты отправлены на сервер', 'success');
+    if (btn) { btn.textContent = '✅ Отправлено'; }
+  } else {
+    const errMsg = res?.error === 'ALREADY_FINALIZED'
+      ? 'Турнир уже финализирован на сервере'
+      : (res?.error || 'Ошибка сервера');
+    showToast('❌ ' + errMsg, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '📤 Отправить на сервер'; }
+  }
+}
+
 // ══ Tournament Details Modal ══════════════════════════════════
 function openTrnDetails(trnId) {
   document.getElementById('td-modal')?.remove();
@@ -98,6 +178,12 @@ function openTrnDetails(trnId) {
         : trn.format === 'IPT Mixed' && (trn.ipt?.rounds || trn.ipt?.groups)
           ? `<button class="td-btn-reg" onclick="openIPT('${escAttr(trn.id)}')">📊 Просмотр IPT</button>`
           : ''}
+      ${isFinished && trn.winners?.length && !trn.serverFinalized
+        ? `<button id="td-finalize-btn" class="td-btn-reg" style="background:#1a6a3a"
+            onclick="_hubFinalizeTournament('${escAttr(trn.id)}','tournaments')">📤 Отправить на сервер</button>`
+        : isFinished && trn.serverFinalized
+        ? `<button class="td-btn-reg" disabled style="opacity:.5">✅ Отправлено</button>`
+        : ''}
       <button class="td-btn-close" onclick="document.getElementById('td-modal')?.remove()">Закрыть</button>
     </div>
   </div>`;

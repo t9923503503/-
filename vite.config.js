@@ -26,30 +26,6 @@ function copyDirSync(src, dest) {
   }
 }
 
-/**
- * Vite injects style-src 'unsafe-inline' into CSP meta during HTML transform; strip so
- * production output matches strict CSP (S5.3).
- */
-function stripStyleSrcUnsafeInlineFromHtml() {
-  return {
-    name: 'strip-style-src-unsafe-inline-html',
-    enforce: 'post',
-    transformIndexHtml: {
-      order: 'post',
-      handler(html, ctx) {
-        const id = String(ctx.filename || ctx.path || '');
-        // register.html / profile.html still use inline <style> — keep unsafe-inline until extracted to CSS
-        if (/(?:^|[\\/])register\.html$/i.test(id) || /(?:^|[\\/])profile\.html$/i.test(id)) {
-          return html;
-        }
-        return html
-          .replace(/\bstyle-src 'self' 'unsafe-inline' /g, "style-src 'self' ")
-          .replace(/\bstyle-src 'self' 'unsafe-inline'/g, "style-src 'self'");
-      },
-    },
-  };
-}
-
 function copyStaticAssets() {
   return {
     name: 'copy-static-assets',
@@ -116,5 +92,5 @@ export default defineConfig({
     target: 'es2020',
   },
 
-  plugins: [stripStyleSrcUnsafeInlineFromHtml(), copyStaticAssets()],
+  plugins: [copyStaticAssets()],
 });

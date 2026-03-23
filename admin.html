@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0d0d1a">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://sv-ugra.ru; img-src 'self' data:;">
+  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://sv-ugra.ru; img-src 'self' data:;">
 <meta name="description" content="Админ-панель — Лютые пляжники">
 <title>Админ-панель — Лютые пляжники</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -65,7 +65,9 @@
       </button>
       <button class="tab-btn" data-tab="players">Игроки</button>
       <button class="tab-btn" data-tab="tournaments">Турниры</button>
+      <button class="tab-btn" data-tab="judges">Судьи</button>
       <button class="tab-btn" data-tab="history">История</button>
+      <button class="tab-btn" data-tab="rating">Рейтинг</button>
     </div>
 
     <!-- ── ЗАЯВКИ ───────────────────────────────────────────── -->
@@ -142,19 +144,66 @@
       <div class="card card-padded">
         <div class="card-heading-sm">⚡ Быстрый запуск формата</div>
         <div class="flex-row">
-          <button class="btn btn-accent" onclick="quickLaunch('thai')">🌴 Thai</button>
-          <button class="btn btn-accent" onclick="quickLaunch('ipt')">👑 IPT</button>
-          <button class="btn btn-accent" onclick="quickLaunch('kotc')">👑 KOTC</button>
-          <button class="btn btn-muted" onclick="window.open('index.html','_blank')">🏐 Стандарт</button>
+          <button class="btn btn-accent" data-launch="thai">🌴 Thai</button>
+          <button class="btn btn-accent" data-launch="ipt">👑 IPT</button>
+          <button class="btn btn-accent" data-launch="kotc">👑 KOTC</button>
+          <button class="btn btn-muted" id="btn-launch-standard">🏐 Стандарт</button>
         </div>
       </div>
 
       <!-- Active / Finished split -->
       <div class="flex-row-mb">
-        <button class="btn btn-accent trn-view-btn active" data-view="active" onclick="switchTrnView('active')">🟢 Активные</button>
-        <button class="btn btn-muted trn-view-btn" data-view="finished" onclick="switchTrnView('finished')">✅ Завершённые</button>
+        <button class="btn btn-accent trn-view-btn active" data-view="active">🟢 Активные</button>
+        <button class="btn btn-muted trn-view-btn" data-view="finished">✅ Завершённые</button>
       </div>
       <div id="tournaments-list"><div class="empty-state">Загрузка...</div></div>
+    </div>
+
+    <!-- ── СУДЬИ ───────────────────────────────────────────── -->
+    <div class="section" id="sec-judges">
+      <div class="section-title">Назначение судей на турнир</div>
+
+      <!-- Tournament selector -->
+      <div class="card card-padded">
+        <div class="card-heading-sm">Выберите турнир</div>
+        <select class="filter-select w-full" id="judge-trn-select">
+          <option value="">— Выберите активный турнир —</option>
+        </select>
+      </div>
+
+      <!-- Judge assignment form -->
+      <div class="card card-padded" id="judge-assign-card" style="display:none">
+        <div class="card-heading">Назначение судей (4 корта)</div>
+        <div class="form-grid">
+          <div class="field">
+            <label>Судья Корт 1</label>
+            <input class="filter-input" id="judge-name-0" type="text" placeholder="Имя судьи (необязательно)">
+          </div>
+          <div class="field">
+            <label>Судья Корт 2</label>
+            <input class="filter-input" id="judge-name-1" type="text" placeholder="Имя судьи (необязательно)">
+          </div>
+          <div class="field">
+            <label>Судья Корт 3</label>
+            <input class="filter-input" id="judge-name-2" type="text" placeholder="Имя судьи (необязательно)">
+          </div>
+          <div class="field">
+            <label>Судья Корт 4</label>
+            <input class="filter-input" id="judge-name-3" type="text" placeholder="Имя судьи (необязательно)">
+          </div>
+        </div>
+        <button class="btn btn-accent mt-12" id="btn-assign-judges">
+          Назначить судей и выдать ссылки
+        </button>
+        <div id="judge-msg" class="msg mt-10 mb-0"></div>
+      </div>
+
+      <!-- Generated links -->
+      <div class="card card-padded" id="judge-links-card" style="display:none">
+        <div class="card-heading">Ссылки для судей</div>
+        <div id="judge-links-list"></div>
+        <button class="btn btn-muted mt-12" id="btn-copy-all-links">Копировать все ссылки</button>
+      </div>
     </div>
 
     <!-- ── ИСТОРИЯ ──────────────────────────────────────────── -->
@@ -167,483 +216,24 @@
       <div id="history-list"><div class="empty-state">Загрузка...</div></div>
     </div>
 
+    <!-- ── РЕЙТИНГ ────────────────────────────────────────────── -->
+    <div class="section" id="sec-rating">
+      <div class="section-title">Рейтинг игроков</div>
+      <div class="filter-row">
+        <select class="filter-select" id="rating-gender-filter">
+          <option value="all">Все</option>
+          <option value="M">Мужчины</option>
+          <option value="W">Женщины</option>
+        </select>
+        <input class="filter-input" id="rating-search" type="search" placeholder="Поиск по имени...">
+        <button class="btn btn-muted" id="btn-refresh-rating">↻ Обновить</button>
+      </div>
+      <div id="rating-list"><div class="empty-state">Загрузка...</div></div>
+    </div>
+
   </div><!-- /admin-content -->
 </div><!-- /admin-page -->
 
-<script>
-(function () {
-  'use strict';
-
-  const API      = 'https://sv-ugra.ru/api/rest/v1';
-  const TOKEN_KEY = 'admin_jwt';
-
-  // ── Auth helpers ──────────────────────────────────────────
-  function getToken()          { return sessionStorage.getItem(TOKEN_KEY); }
-  function setToken(t)         { sessionStorage.setItem(TOKEN_KEY, t); }
-  function clearToken()        { sessionStorage.removeItem(TOKEN_KEY); }
-  function authHeaders() {
-    return {
-      'Content-Type':  'application/json',
-      'Accept':        'application/json',
-      'Authorization': 'Bearer ' + getToken()
-    };
-  }
-
-  // ── API ───────────────────────────────────────────────────
-  async function apiFetch(path, opts = {}) {
-    const res = await fetch(API + path, {
-      headers: authHeaders(),
-      ...opts
-    });
-    if (res.status === 401) { logout(); return null; }
-    const data = res.headers.get('content-type')?.includes('json')
-      ? await res.json() : await res.text();
-    if (!res.ok) throw new Error(data?.message || data?.hint || JSON.stringify(data) || res.statusText);
-    return data;
-  }
-
-  // ── Login ─────────────────────────────────────────────────
-  const loginPage = document.getElementById('login-page');
-  const adminPage = document.getElementById('admin-page');
-
-  async function doLogin() {
-    const email = document.getElementById('login-email').value.trim();
-    const pwd   = document.getElementById('login-pwd').value;
-    const errEl = document.getElementById('login-error');
-    const btn   = document.getElementById('btn-login');
-
-    errEl.className = 'msg';
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>Вход...';
-
-    try {
-      const res = await fetch(`${API}/rpc/admin_login`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body:    JSON.stringify({ p_email: email, p_password: pwd })
-      });
-      const data = await res.json().catch(() => ({}));
-
-      if (res.ok && data.token) {
-        setToken(data.token);
-        showAdminPanel();
-      } else {
-        errEl.textContent = data.message || 'Неверный email или пароль';
-        errEl.className = 'msg error';
-        btn.disabled = false;
-        btn.textContent = 'Войти';
-      }
-    } catch (e) {
-      errEl.textContent = 'Ошибка соединения';
-      errEl.className = 'msg error';
-      btn.disabled = false;
-      btn.textContent = 'Войти';
-    }
-  }
-
-  function logout() {
-    clearToken();
-    adminPage.style.display = 'none';
-    loginPage.style.display = 'flex';
-    document.getElementById('login-pwd').value = '';
-    document.getElementById('login-email').value = '';
-    document.getElementById('btn-login').textContent = 'Войти';
-    document.getElementById('btn-login').disabled = false;
-  }
-
-  function showAdminPanel() {
-    loginPage.style.display = 'none';
-    adminPage.style.display = 'block';
-    loadRequests();
-    loadPlayers();
-    loadTournaments();
-  }
-
-  document.getElementById('btn-login').addEventListener('click', doLogin);
-  document.getElementById('login-pwd').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-  document.getElementById('btn-logout').addEventListener('click', logout);
-
-  // ── Tab switching ─────────────────────────────────────────
-  const tabMap = {
-    requests:    'sec-requests',
-    players:     'sec-players',
-    tournaments: 'sec-tournaments',
-    history:     'sec-history'
-  };
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById(tabMap[btn.dataset.tab]).classList.add('active');
-      if (btn.dataset.tab === 'history') loadHistory();
-    });
-  });
-
-  // ── esc helper ────────────────────────────────────────────
-  function esc(str) {
-    return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  // ════════════════════════════════════════════════════════════
-  //  REQUESTS TAB
-  // ════════════════════════════════════════════════════════════
-  async function loadRequests() {
-    const status = document.getElementById('req-filter').value;
-    const el = document.getElementById('requests-list');
-    el.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
-
-    try {
-      const data = await apiFetch(`/player_requests?status=eq.${status}&order=created_at.asc`);
-      if (!data) return;
-
-      // Update badge
-      const pendingCount = status === 'pending' ? data.length : 0;
-      const badge = document.getElementById('requests-badge');
-      if (pendingCount > 0) {
-        badge.textContent = pendingCount;
-        badge.style.display = '';
-      } else {
-        badge.style.display = 'none';
-      }
-
-      if (!data.length) {
-        el.innerHTML = '<div class="empty-state">Нет заявок со статусом «' + esc(status) + '»</div>';
-        return;
-      }
-
-      el.innerHTML = data.map(req => `
-        <div class="card-row" id="req-row-${esc(req.id)}">
-          <div style="flex:1; min-width:130px;">
-            <div class="card-name">${esc(req.name)}</div>
-            <div class="card-meta">${esc(req.email || '—')}</div>
-          </div>
-          <span class="badge badge-${req.gender === 'M' ? 'm' : 'w'}">${req.gender === 'M' ? '♂ М' : '♀ Ж'}</span>
-          <span class="badge badge-${esc(req.status)}">${esc(req.status)}</span>
-          <div class="card-meta">${req.created_at ? new Date(req.created_at).toLocaleDateString('ru') : '—'}</div>
-          ${status === 'pending' ? `
-            <button class="btn btn-success" onclick="approveReq('${esc(req.id)}')">✓ Одобрить</button>
-            <button class="btn btn-danger"  onclick="rejectReq('${esc(req.id)}')">✕ Отклонить</button>
-          ` : ''}
-        </div>
-      `).join('');
-    } catch (e) {
-      el.innerHTML = '<div class="empty-state" style="color:var(--danger)">Ошибка: ' + esc(e.message) + '</div>';
-    }
-  }
-
-  window.approveReq = async function(id) {
-    const row = document.getElementById('req-row-' + id);
-    if (row) row.style.opacity = '0.5';
-    try {
-      await apiFetch('/rpc/approve_player_request', {
-        method: 'POST',
-        body: JSON.stringify({ p_request_id: id })
-      });
-      loadRequests();
-    } catch (e) {
-      alert('Ошибка: ' + e.message);
-      if (row) row.style.opacity = '1';
-    }
-  };
-
-  window.rejectReq = async function(id) {
-    if (!confirm('Отклонить заявку?')) return;
-    const row = document.getElementById('req-row-' + id);
-    if (row) row.style.opacity = '0.5';
-    try {
-      await apiFetch('/rpc/reject_player_request', {
-        method: 'POST',
-        body: JSON.stringify({ p_request_id: id, p_reason: 'Отклонено администратором' })
-      });
-      loadRequests();
-    } catch (e) {
-      alert('Ошибка: ' + e.message);
-      if (row) row.style.opacity = '1';
-    }
-  };
-
-  document.getElementById('req-filter').addEventListener('change', loadRequests);
-  document.getElementById('btn-refresh-req').addEventListener('click', loadRequests);
-
-  // ════════════════════════════════════════════════════════════
-  //  PLAYERS TAB
-  // ════════════════════════════════════════════════════════════
-  let allPlayers = [];
-
-  async function loadPlayers() {
-    const el = document.getElementById('players-list');
-    el.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
-    try {
-      const status = document.getElementById('players-status').value;
-      allPlayers = await apiFetch(`/players?status=eq.${status}&order=name.asc&select=id,name,email,gender,status,total_pts,tournaments`) || [];
-      renderPlayers();
-    } catch (e) {
-      el.innerHTML = '<div class="empty-state" style="color:var(--danger)">Ошибка: ' + esc(e.message) + '</div>';
-    }
-  }
-
-  function renderPlayers() {
-    const el     = document.getElementById('players-list');
-    const search = document.getElementById('players-search').value.toLowerCase();
-    const gender = document.getElementById('players-gender').value;
-
-    const list = allPlayers.filter(p => {
-      const nameMatch  = !search || (p.name || '').toLowerCase().includes(search) || (p.email || '').toLowerCase().includes(search);
-      const genderMatch = !gender || p.gender === gender;
-      return nameMatch && genderMatch;
-    });
-
-    if (!list.length) {
-      el.innerHTML = '<div class="empty-state">Игроки не найдены</div>';
-      return;
-    }
-
-    el.innerHTML = '<div class="card">' + list.map(p => `
-      <div class="card-row">
-        <div style="flex:1; min-width:130px;">
-          <div class="card-name">${esc(p.name)}</div>
-          <div class="card-meta">${esc(p.email || '—')}</div>
-        </div>
-        <span class="badge badge-${p.gender === 'M' ? 'm' : 'w'}">${p.gender === 'M' ? '♂' : '♀'}</span>
-        <div class="card-meta">${p.total_pts || 0} очков · ${p.tournaments || 0} турниров</div>
-        <button class="btn btn-muted"  onclick="editPlayer('${esc(p.id)}', '${esc(p.name)}', '${esc(p.gender)}')">✎</button>
-        <button class="btn btn-danger" onclick="banPlayer('${esc(p.id)}', '${esc(p.name)}', '${esc(p.status)}')">
-          ${p.status === 'banned' ? '✓ Разбан' : '⊘ Бан'}
-        </button>
-      </div>
-    `).join('') + '</div>';
-  }
-
-  window.editPlayer = async function(id, name, gender) {
-    const newName = prompt('Изменить имя:', name);
-    if (!newName || newName.trim() === name) return;
-    try {
-      await apiFetch(`/players?id=eq.${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ name: newName.trim() })
-      });
-      loadPlayers();
-    } catch (e) { alert('Ошибка: ' + e.message); }
-  };
-
-  window.banPlayer = async function(id, name, status) {
-    const newStatus = status === 'banned' ? 'active' : 'banned';
-    const msg = newStatus === 'banned'
-      ? `Заблокировать игрока "${name}"?`
-      : `Разблокировать игрока "${name}"?`;
-    if (!confirm(msg)) return;
-    try {
-      await apiFetch(`/players?id=eq.${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: newStatus })
-      });
-      loadPlayers();
-    } catch (e) { alert('Ошибка: ' + e.message); }
-  };
-
-  document.getElementById('players-search').addEventListener('input', renderPlayers);
-  document.getElementById('players-gender').addEventListener('change', renderPlayers);
-  document.getElementById('players-status').addEventListener('change', loadPlayers);
-
-  // ════════════════════════════════════════════════════════════
-  //  TOURNAMENTS TAB
-  // ════════════════════════════════════════════════════════════
-  let trnView = 'active'; // 'active' | 'finished'
-
-  window.quickLaunch = function(fmt) {
-    const urls = {
-      thai: 'formats/thai/thai.html?mode=MF&n=8&seed=1',
-      ipt:  'index.html',
-      kotc: 'formats/kotc/kotc.html?nc=4&ppc=4'
-    };
-    window.open(urls[fmt] || 'index.html', '_blank');
-  };
-
-  window.switchTrnView = function(view) {
-    trnView = view;
-    document.querySelectorAll('.trn-view-btn').forEach(b => {
-      const isActive = b.dataset.view === view;
-      b.className = 'btn ' + (isActive ? 'btn-accent' : 'btn-muted') + ' trn-view-btn' + (isActive ? ' active' : '');
-    });
-    renderTournamentList();
-  };
-
-  let allTournaments = [];
-
-  const FORMAT_NAMES = {
-    kotc: 'King of the Court',
-    ipt_mixed: 'IPT Mixed',
-    classic: 'Классика',
-    swiss: 'Швейцарская',
-    double_elim: 'Double Elimination'
-  };
-  const STATUS_LABELS = {
-    open: '🟢 Открыт', full: '🟡 Заполнен',
-    in_progress: '🔵 Идёт', finished: '✅ Завершён', cancelled: '🔴 Отменён'
-  };
-
-  async function loadTournaments() {
-    const el = document.getElementById('tournaments-list');
-    el.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
-    try {
-      allTournaments = await apiFetch('/tournaments?order=date.desc&select=id,name,date,format,format_code,status,max_players,capacity') || [];
-      renderTournamentList();
-    } catch (e) {
-      el.innerHTML = '<div class="empty-state" style="color:var(--danger)">Ошибка: ' + esc(e.message) + '</div>';
-    }
-  }
-
-  function renderTournamentList() {
-    const el = document.getElementById('tournaments-list');
-    const finishedStatuses = ['finished', 'cancelled'];
-    const data = allTournaments.filter(t =>
-      trnView === 'finished' ? finishedStatuses.includes(t.status) : !finishedStatuses.includes(t.status)
-    );
-
-    if (!data.length) {
-      el.innerHTML = '<div class="empty-state">' + (trnView === 'finished' ? 'Нет завершённых турниров' : 'Нет активных турниров') + '</div>';
-      return;
-    }
-    el.innerHTML = data.map(t => {
-      const fmt  = FORMAT_NAMES[t.format_code] || t.format || '—';
-      const stat = STATUS_LABELS[t.status] || t.status || '—';
-      const date = t.date ? new Date(t.date).toLocaleDateString('ru') : '—';
-      const fmtCode = t.format_code || '';
-      const launchBtn = (fmtCode === 'kotc' || fmtCode === 'ipt_mixed')
-        ? `<button class="btn btn-accent" style="font-size:0.75rem;padding:5px 10px" onclick="quickLaunch('${fmtCode === 'kotc' ? 'kotc' : 'ipt'}')">▶ Открыть</button>`
-        : '';
-      return `
-        <div class="trn-card">
-          <div class="trn-info">
-            <div class="trn-name">${esc(t.name)}</div>
-            <div class="trn-meta">${esc(fmt)} · ${date} · ${stat}</div>
-            ${t.max_players ? `<div class="trn-meta">Лимит: ${t.max_players} игроков</div>` : ''}
-          </div>
-          <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:flex-start;">
-            ${launchBtn}
-            <select class="filter-select" onchange="changeTrnStatus('${esc(t.id)}', this.value)">
-              <option ${t.status==='open'?'selected':''} value="open">Открыт</option>
-              <option ${t.status==='full'?'selected':''} value="full">Заполнен</option>
-              <option ${t.status==='in_progress'?'selected':''} value="in_progress">Идёт</option>
-              <option ${t.status==='finished'?'selected':''} value="finished">Завершён</option>
-              <option ${t.status==='cancelled'?'selected':''} value="cancelled">Отменён</option>
-            </select>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  window.changeTrnStatus = async function(id, status) {
-    try {
-      await apiFetch(`/tournaments?id=eq.${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status })
-      });
-    } catch (e) { alert('Ошибка: ' + e.message); loadTournaments(); }
-  };
-
-  document.getElementById('btn-create-trn').addEventListener('click', async () => {
-    const name    = document.getElementById('trn-name').value.trim();
-    const date    = document.getElementById('trn-date').value;
-    const format  = document.getElementById('trn-format').value;
-    const maxP    = parseInt(document.getElementById('trn-max').value) || null;
-    const msgEl   = document.getElementById('trn-msg');
-
-    if (!name) { msgEl.textContent = 'Введите название турнира'; msgEl.className = 'msg error'; return; }
-
-    const btn = document.getElementById('btn-create-trn');
-    btn.disabled = true;
-    msgEl.className = 'msg';
-
-    try {
-      await apiFetch('/tournaments', {
-        method: 'POST',
-        headers: { ...authHeaders(), 'Prefer': 'return=minimal' },
-        body: JSON.stringify({
-          name,
-          date: date || null,
-          format: FORMAT_NAMES[format] || format,
-          format_code: format,
-          status: 'open',
-          max_players: maxP,
-          capacity: maxP
-        })
-      });
-      msgEl.textContent = '✓ Турнир создан';
-      msgEl.className = 'msg success';
-      document.getElementById('trn-name').value = '';
-      document.getElementById('trn-date').value = '';
-      loadTournaments();
-    } catch (e) {
-      msgEl.textContent = 'Ошибка: ' + e.message;
-      msgEl.className = 'msg error';
-    }
-    btn.disabled = false;
-  });
-
-  // ════════════════════════════════════════════════════════════
-  //  HISTORY TAB
-  // ════════════════════════════════════════════════════════════
-  let allHistory = [];
-
-  async function loadHistory() {
-    const el = document.getElementById('history-list');
-    el.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
-    try {
-      allHistory = await apiFetch(
-        '/rating_history?order=created_at.desc&limit=200&select=id,points_changed,new_total_rating,place,created_at,format_code,player_id,players(name),tournaments(name)'
-      ) || [];
-      renderHistory();
-    } catch (e) {
-      el.innerHTML = '<div class="empty-state" style="color:var(--danger)">Ошибка: ' + esc(e.message) + '</div>';
-    }
-  }
-
-  function renderHistory() {
-    const el     = document.getElementById('history-list');
-    const search = document.getElementById('history-search').value.toLowerCase();
-
-    const list = allHistory.filter(h => {
-      const pname = h.players?.name || '';
-      return !search || pname.toLowerCase().includes(search);
-    });
-
-    if (!list.length) {
-      el.innerHTML = '<div class="empty-state">История пуста</div>';
-      return;
-    }
-
-    el.innerHTML = '<div class="card">' + list.map(h => {
-      const date  = h.created_at ? new Date(h.created_at).toLocaleDateString('ru') : '—';
-      const pname = h.players?.name || '—';
-      const tname = h.tournaments?.name || '—';
-      const delta = h.points_changed >= 0 ? '+' + h.points_changed : h.points_changed;
-      const dColor = h.points_changed >= 0 ? 'var(--success)' : 'var(--danger)';
-      return `
-        <div class="card-row">
-          <div style="flex:1; min-width:120px;">
-            <div class="card-name">${esc(pname)}</div>
-            <div class="card-meta">${esc(tname)}</div>
-          </div>
-          <div style="font-weight:700; color:${dColor}">${delta} очков</div>
-          ${h.new_total_rating != null ? `<div class="card-meta">Итого: ${h.new_total_rating}</div>` : ''}
-          ${h.place ? `<div class="card-meta">#${h.place} место</div>` : ''}
-          <div class="card-meta">${date}</div>
-        </div>
-      `;
-    }).join('') + '</div>';
-  }
-
-  document.getElementById('history-search').addEventListener('input', renderHistory);
-  document.getElementById('btn-refresh-history').addEventListener('click', loadHistory);
-
-  // ── Init ──────────────────────────────────────────────────
-  if (getToken()) {
-    showAdminPanel();
-  }
-})();
-</script>
+<script src="admin-init.js"></script>
 </body>
 </html>

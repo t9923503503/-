@@ -37,10 +37,12 @@ function detectLocale() {
 async function loadLocale(code) {
   if (_strings[code]) return _strings[code];
   try {
-    // Resolve path relative to the app root (works both dev & dist)
-    const base = typeof document !== 'undefined' && document.baseURI
-      ? new URL('.', document.baseURI).href : '/';
-    const url = new URL(`locales/${code}.json`, base).href;
+    // Always load from site root (/locales/…). Subpaths like formats/kotc/kotc.html
+    // must not resolve locales relative to the page URL (would 404 under formats/kotc/locales/).
+    const url =
+      typeof window !== 'undefined' && window.location?.origin
+        ? new URL(`/locales/${code}.json`, window.location.origin).href
+        : `/locales/${code}.json`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     _strings[code] = await res.json();

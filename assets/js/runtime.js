@@ -110,6 +110,9 @@ function scoreClickHandler(e) {
   } else {
     // Court score
     const ci   = +btn.dataset.ci;
+    // S7.5: Court-lock — judge can only edit their assigned court
+    const jm = globalThis.judgeMode;
+    if (jm?.active && jm.court !== ci) return;
     const old  = scores[ci]?.[mi]?.[ri] ?? null;
     const base = old === null ? (dir > 0 ? 0 : -1) : old;
     const next = Math.max(0, Math.min(15, base + dir));
@@ -281,12 +284,13 @@ function loadJSON(key, fallback) {
   catch(e) { return fallback; }
 }
 
-/** Format a RU date string from ISO: "3 марта 2026" */
+/** Format a localized date string from ISO: "3 марта 2026" / "March 3, 2026" */
 function fmtDateLong(iso) {
   if (!iso) return '—';
   try {
+    const loc = (typeof globalThis.i18n?.getLocale === 'function' ? globalThis.i18n.getLocale() : 'ru') === 'en' ? 'en-US' : 'ru-RU';
     return new Date(iso+'T12:00:00')
-      .toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric'});
+      .toLocaleDateString(loc,{day:'numeric',month:'long',year:'numeric'});
   } catch(e) { return '—'; }
 }
 let _toastTimer=null;

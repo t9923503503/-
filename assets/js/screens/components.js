@@ -355,7 +355,7 @@ function showPlayerCard(name, gender) {
     if (!sessionScores.length) return '';
     const max = Math.max(...sessionScores, 1);
     return `<div class="pcard-histogram">
-      ${sessionScores.map(sc => `<div class="pcard-hist-bar${sc === 0 ? ' rest' : ''}" style="height:${Math.max(sc/max*100, 4)}%" title="${sc} оч"></div>`).join('')}
+      ${sessionScores.map(sc => `<div class="pcard-hist-bar${sc === 0 ? ' rest' : ''}" style="height:${Math.max(sc/max*100, 4)}%" title="${sc} ${tr('home.pts')}"></div>`).join('')}
     </div>`;
   })();
 
