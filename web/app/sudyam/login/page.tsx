@@ -21,8 +21,7 @@ export default function SudyamLoginPage() {
     });
 
     if (res.ok) {
-      router.push('/sudyam');
-      router.refresh();
+      window.location.href = '/sudyam';
     } else {
       setError('Неверный PIN');
       setLoading(false);
