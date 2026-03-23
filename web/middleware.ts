@@ -15,16 +15,14 @@ function getExpectedSudyamPin(): string {
 
 function buildRedirectUrl(request: NextRequest, targetPath: string): URL {
   const forwardedHost = request.headers.get('x-forwarded-host');
-  const forwardedProto = request.headers.get('x-forwarded-proto');
+  const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+  if (forwardedHost) {
+    const hostname = forwardedHost.split(':')[0];
+    return new URL(targetPath, `${forwardedProto}://${hostname}`);
+  }
   const url = request.nextUrl.clone();
   url.pathname = targetPath;
   url.search = '';
-  if (forwardedHost) {
-    url.host = forwardedHost;
-  }
-  if (forwardedProto) {
-    url.protocol = `${forwardedProto}:`;
-  }
   return url;
 }
 
