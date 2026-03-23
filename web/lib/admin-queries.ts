@@ -43,7 +43,7 @@ function mapTournament(row: Record<string, unknown>): AdminTournament {
   return {
     id: String(row.id ?? ''),
     name: String(row.name ?? ''),
-    date: String(row.date ?? ''),
+    date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date ?? ''),
     time: String(row.time ?? ''),
     location: String(row.location ?? ''),
     format: String(row.format ?? ''),
@@ -723,7 +723,7 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
     FROM tournaments t
     LEFT JOIN tournament_results tr ON tr.tournament_id = t.id
     LEFT JOIN players p ON p.id = tr.player_id
-    WHERE t.status = 'finished'
+    WHERE t.status = 'finished' AND t.name != '__playerdb__'
     GROUP BY t.id
     ORDER BY t.date DESC
   `);
