@@ -35,6 +35,7 @@ function copyStaticAssets() {
         'assets/images',
         'assets/sounds',
         'assets/app.css',
+        'assets/favicon.png',
         'admin.css',
         'shared',
         'config.js',

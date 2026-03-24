@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'volley-static-v51';
+const CACHE_VERSION = 'volley-static-v52';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const CORE_ASSETS = [
   './player-card.html',
   './manifest.webmanifest',
   './icon.svg',
+  './assets/favicon.png',
   './assets/app.css',
   './assets/js/main.js',
   './assets/js/state/app-state.js',
