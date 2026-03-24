@@ -13,6 +13,12 @@ const TOURNAMENTS_COLUMN: Record<RatingType, string> = {
   Mix: 'tournaments_mix',
 };
 
+function toIsoDate(value: unknown): string {
+  if (!value) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value);
+}
+
 export async function fetchLeaderboard(
   type: RatingType = 'M',
   limit = 50
@@ -100,7 +106,7 @@ export async function fetchTournaments(
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
-    date: row.date,
+    date: toIsoDate(row.date),
     time: row.time ?? '',
     location: row.location ?? '',
     format: row.format ?? '',
@@ -162,7 +168,7 @@ export async function fetchTournamentById(
   return {
     id: data.id,
     name: data.name,
-    date: data.date,
+    date: toIsoDate(data.date),
     time: data.time ?? '',
     location: data.location ?? '',
     format: data.format ?? '',
