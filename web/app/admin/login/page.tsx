@@ -45,6 +45,7 @@ export default function AdminLoginPage() {
           value={id}
           onChange={(e) => setId(e.target.value)}
           placeholder="ID (если настроен)"
+          autoComplete="username"
           className="px-4 py-3 rounded-lg bg-surface border border-white/20 focus:outline-none focus:border-brand text-center"
         />
         <input
@@ -52,6 +53,7 @@ export default function AdminLoginPage() {
           value={pin}
           onChange={(e) => setPin(e.target.value)}
           placeholder="Введите PIN"
+          autoComplete="current-password"
           className="px-4 py-3 rounded-lg bg-surface border border-white/20 focus:outline-none focus:border-brand text-center text-xl"
         />
         {error ? <p className="text-sm text-red-400 text-center">{error}</p> : null}

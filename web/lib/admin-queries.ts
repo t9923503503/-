@@ -547,7 +547,7 @@ export async function approveRequest(
     const playerRes = await client.query(
       `INSERT INTO players (name, gender, status, phone)
        VALUES ($1, $2, 'active', $3)
-       ON CONFLICT (lower(name), gender) DO UPDATE SET phone = COALESCE(NULLIF($3, ''), players.phone)
+       ON CONFLICT (lower(trim(name)), gender) DO UPDATE SET phone = COALESCE(NULLIF($3, ''), players.phone)
        RETURNING id`,
       [req.name, req.gender, req.phone || '']
     );
@@ -767,7 +767,7 @@ export async function upsertTournamentResults(
       const playerRes = await client.query(
         `INSERT INTO players (name, gender, status)
          VALUES ($1, $2, 'active')
-         ON CONFLICT (lower(name), gender) DO UPDATE SET name = EXCLUDED.name
+         ON CONFLICT (lower(trim(name)), gender) DO UPDATE SET name = EXCLUDED.name
          RETURNING id`,
         [r.playerName.trim(), gender]
       );

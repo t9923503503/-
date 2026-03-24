@@ -18,6 +18,7 @@ const nextConfig: NextConfig = {
           "font-src 'self' https://fonts.gstatic.com",
           "img-src 'self' data: https:",
           "connect-src 'self'",
+          "worker-src 'self' blob:",
           "base-uri 'self'",
           "frame-ancestors 'self'",
           "object-src 'none'",
