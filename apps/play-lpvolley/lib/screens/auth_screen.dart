@@ -98,8 +98,34 @@ class AuthNotifier extends AutoDisposeNotifier<AuthState> {
   }
 
   Future<void> resetPassword(String email) async {
-    // TODO: реализовать после подключения email-сервиса
-    state = state.copyWith(isLoading: false);
+    state = state.copyWith(isLoading: true, error: _kClear);
+    try {
+      await ref.read(dioProvider).post('/auth/reset-password', data: {
+        'email': email,
+      });
+      state = state.copyWith(isLoading: false, isSuccess: true);
+    } on DioException catch (e) {
+      final msg = ((e.response?.data as Map?)?['error'] as String?) ?? 'Ошибка отправки';
+      state = state.copyWith(isLoading: false, error: msg);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: 'Ошибка отправки');
+    }
+  }
+
+  Future<void> confirmReset(String token, String newPassword) async {
+    state = state.copyWith(isLoading: true, error: _kClear);
+    try {
+      await ref.read(dioProvider).post('/auth/reset-password/confirm', data: {
+        'token': token,
+        'password': newPassword,
+      });
+      state = state.copyWith(isLoading: false, isSuccess: true);
+    } on DioException catch (e) {
+      final msg = ((e.response?.data as Map?)?['error'] as String?) ?? 'Ошибка сброса';
+      state = state.copyWith(isLoading: false, error: msg);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: 'Ошибка сброса пароля');
+    }
   }
 
   void logout() {
@@ -431,7 +457,15 @@ class _ResetSheetContentState extends ConsumerState<_ResetSheetContent> {
                     await ref
                         .read(authProvider.notifier)
                         .resetPassword(_resetCtrl.text.trim());
-                    if (context.mounted) Navigator.pop(context);
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Если аккаунт существует, письмо отправлено на указанный email'),
+                          duration: Duration(seconds: 4),
+                        ),
+                      );
+                    }
                   }
                 },
               ),
