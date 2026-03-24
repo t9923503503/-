@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: Request) {
   const cookieHeader = req.headers.get('cookie') || '';
   const match = cookieHeader.match(new RegExp(`${PLAYER_COOKIE}=([^;]+)`));
-  const token = match?.[1];
+  const token = match?.[1] ? decodeURIComponent(match[1]) : undefined;
 
   if (!token) {
     return NextResponse.json({ error: 'Не авторизован' }, { status: 401 });
