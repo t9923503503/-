@@ -547,7 +547,7 @@ class _VKButton extends StatelessWidget {
               'VK',
               style: TextStyle(
                 color: Color(0xFF2787F5),
-                fontWeight: FontWeight.black,
+                fontWeight: FontWeight.w900,
                 fontSize: 18,
               ),
             ),
