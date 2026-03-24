@@ -6,10 +6,12 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import 'dart:ui';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:universal_html/html.dart' as html;
+import '../providers/api.dart';
 
 class AuthState {
   final bool isLoading;
@@ -55,70 +57,52 @@ class AuthNotifier extends AutoDisposeNotifier<AuthState> {
     }
   }
 
-  static void _setAuthCookie(String token) {
-    html.document.cookie = 'auth_token=$token; '
-        'Path=/; '
-        'Domain=.lpvolley.ru; '
-        'Secure; '
-        'SameSite=Lax; '
-        'Max-Age=2592000';
-  }
-
-  static void _clearAuthCookie() {
-    html.document.cookie = 'auth_token=; '
-        'Path=/; '
-        'Domain=.lpvolley.ru; '
-        'Max-Age=0';
-  }
-
   Future<void> login(String email, String pass) async {
     state = state.copyWith(isLoading: true, error: _kClear);
     try {
-      await Future.delayed(const Duration(milliseconds: 1500));
-      final mockToken = 'jwt_token_${DateTime.now().millisecondsSinceEpoch}';
-      _setAuthCookie(mockToken);
-      state = state.copyWith(isLoading: false, isSuccess: true);
+      final response = await ref.read(dioProvider).post('/auth/login', data: {
+        'email': email,
+        'password': pass,
+      });
+      if (response.statusCode == 200) {
+        state = state.copyWith(isLoading: false, isSuccess: true);
+      }
+    } on DioException catch (e) {
+      final msg = ((e.response?.data as Map?)?['error'] as String?) ?? 'Ошибка входа';
+      state = state.copyWith(isLoading: false, error: msg);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: 'Ошибка входа: ${e.toString()}');
+      state = state.copyWith(isLoading: false, error: 'Ошибка входа');
     }
   }
 
   Future<void> loginWithVK() async {
-    state = state.copyWith(isLoading: true, error: _kClear);
-    try {
-      await Future.delayed(const Duration(milliseconds: 1000));
-      final mockToken = 'vk_jwt_${DateTime.now().millisecondsSinceEpoch}';
-      _setAuthCookie(mockToken);
-      state = state.copyWith(isLoading: false, isSuccess: true);
-    } catch (e) {
-      state = state.copyWith(isLoading: false, error: 'Ошибка VK Auth: ${e.toString()}');
-    }
+    // TODO: реализовать VK ID OAuth
+    state = state.copyWith(error: 'VK OAuth будет добавлен позже');
   }
 
   Future<void> register(String name, String email, String pass) async {
     state = state.copyWith(isLoading: true, error: _kClear);
     try {
-      await Future.delayed(const Duration(milliseconds: 2000));
-      final mockToken = 'jwt_token_new_${DateTime.now().millisecondsSinceEpoch}';
-      _setAuthCookie(mockToken);
-      state = state.copyWith(isLoading: false, isSuccess: true);
+      await ref.read(dioProvider).post('/auth/register', data: {
+        'email': email,
+        'password': pass,
+        'full_name': name,
+      });
+      await login(email, pass);
+    } on DioException catch (e) {
+      final msg = ((e.response?.data as Map?)?['error'] as String?) ?? 'Ошибка регистрации';
+      state = state.copyWith(isLoading: false, error: msg);
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: 'Ошибка регистрации: ${e.toString()}');
+      state = state.copyWith(isLoading: false, error: 'Ошибка регистрации');
     }
   }
 
   Future<void> resetPassword(String email) async {
-    state = state.copyWith(isLoading: true, error: _kClear);
-    try {
-      await Future.delayed(const Duration(milliseconds: 1500));
-      state = state.copyWith(isLoading: false);
-    } catch (e) {
-      state = state.copyWith(isLoading: false, error: 'Ошибка сброса: ${e.toString()}');
-    }
+    // TODO: реализовать после подключения email-сервиса
+    state = state.copyWith(isLoading: false);
   }
 
   void logout() {
-    _clearAuthCookie();
     state = AuthState(returnUrl: state.returnUrl);
   }
 }
