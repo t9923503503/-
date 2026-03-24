@@ -524,18 +524,93 @@
     listEl.innerHTML = sessions.map(s => {
       const url = `${baseUrl}?trnId=${encodeURIComponent(judgeTrnId)}&court=${s.court}&token=${encodeURIComponent(s.token)}${s.judge_name ? '&judge=' + encodeURIComponent(s.judge_name) : ''}`;
       judgeLinks.push({ court: s.court, url, name: s.judge_name || '' });
+
+      // S7.3: QR code (rendered async after makeQrSvg is available)
+      const qrId = `qr-court-${s.court}`;
+      setTimeout(() => {
+        const el = document.getElementById(qrId);
+        if (!el) return;
+        try {
+          if (typeof globalThis.makeQrSvg === 'function') {
+            el.innerHTML = globalThis.makeQrSvg(url, { size: 120, dark: '#fff', light: '#1a1a2e', padding: 6 });
+          } else {
+            el.textContent = '—';
+          }
+        } catch (e) { el.textContent = '!'; }
+      }, 200);
+
       return `
-        <div class="card-row" style="flex-wrap:wrap;gap:8px">
+        <div class="card-row" style="flex-wrap:wrap;gap:8px;align-items:flex-start">
+          <div id="${esc(qrId)}" style="flex-shrink:0;width:120px;height:120px;background:#1a1a2e;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:0.7rem">QR...</div>
           <div style="flex:1;min-width:120px">
             <div class="card-name">Корт ${s.court + 1}${s.judge_name ? ' — ' + esc(s.judge_name) : ''}</div>
             <div class="card-meta" style="word-break:break-all;font-size:0.7rem;opacity:0.7">${esc(url)}</div>
           </div>
-          <button class="btn btn-accent" style="font-size:0.75rem;padding:5px 10px"
+          <button class="btn btn-accent" style="font-size:0.75rem;padding:5px 10px;align-self:flex-start"
             onclick="copyToClipboard('${esc(url.replace(/'/g, "\\'"))}')">Копировать</button>
         </div>
       `;
     }).join('');
+
+    // S7.7: Show live courts card
+    _renderLiveCourts(sessions);
   }
+
+  // S7.7: Live court overview
+  let _liveRefreshTimer = null;
+  function _renderLiveCourts(sessions) {
+    const card = document.getElementById('live-courts-card');
+    const grid = document.getElementById('live-courts-grid');
+    if (!card || !grid) return;
+    card.style.display = '';
+
+    // Build 4-court grid
+    const byCourt = {};
+    for (const s of sessions) byCourt[s.court] = s;
+    grid.innerHTML = [0, 1, 2, 3].map(ci => {
+      const s = byCourt[ci];
+      return `
+        <div class="card card-padded" style="padding:10px;min-width:0">
+          <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Корт ${ci + 1}</div>
+          <div class="card-name" style="font-size:0.9rem;margin:4px 0">${s ? esc(s.judge_name || '—') : '<span style="color:var(--muted)">не назначен</span>'}</div>
+          <div style="font-size:0.75rem;color:var(--muted)" id="live-court-info-${ci}">${s ? '✓ ссылка выдана' : ''}</div>
+        </div>
+      `;
+    }).join('');
+
+    // Poll judge sessions every 30s to check for activity
+    clearInterval(_liveRefreshTimer);
+    if (judgeTrnId) {
+      _liveRefreshTimer = setInterval(() => _pollLiveCourts(), 30000);
+    }
+  }
+
+  async function _pollLiveCourts() {
+    const statusEl = document.getElementById('live-courts-status');
+    if (statusEl) statusEl.textContent = '• обновление...';
+    try {
+      const result = await apiFetch('/rpc/list_judge_sessions', {
+        method: 'POST',
+        body: JSON.stringify({ p_trn_id: judgeTrnId })
+      });
+      if (statusEl) statusEl.textContent = '• ' + new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      // Update court cards with refreshed data
+      if (result && Array.isArray(result)) {
+        const byCourt = {};
+        for (const s of result) byCourt[s.court] = s;
+        for (let ci = 0; ci < 4; ci++) {
+          const el = document.getElementById(`live-court-info-${ci}`);
+          if (el && byCourt[ci]) el.textContent = '✓ ссылка выдана';
+        }
+      }
+    } catch (e) {
+      if (statusEl) statusEl.textContent = '• ошибка';
+    }
+  }
+
+  document.getElementById('btn-live-refresh')?.addEventListener('click', () => {
+    if (judgeTrnId) _pollLiveCourts();
+  });
 
   window.copyToClipboard = async function(text) {
     try {

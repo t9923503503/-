@@ -6,6 +6,7 @@
 <title>Рейтинг игроков — Лютые Пляжники</title>
 <meta name="description" content="Публичный рейтинг игроков и история турниров пляжного волейбола King of the Court">
 <meta name="theme-color" content="#0d0d1a">
+<link rel="icon" href="assets/favicon.png" type="image/png">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -353,12 +354,29 @@ body {
 const MEDALS     = ['🥇','🥈','🥉'];
 const ZONE_LIMIT = [10, 20];
 
+// ── Supabase config (public anon key — read-only access) ───
+const _SB_URL      = 'https://rscctyllkqcpxkxrveoz.supabase.co';
+const _SB_ANON     = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJzY2N0eWxsa3FjcHhreHJ2ZW96Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2NzkxNDEsImV4cCI6MjA4ODI1NTE0MX0.s7vrHQTb688zeIKtLZzxqsOwwRY6TCrRPeHdfA96RqA';
+const _LS_CACHE_KEY = 'kotc3_rating_cache';
+
+async function _sbRpc(fn, body) {
+  const r = await fetch(`${_SB_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + _SB_ANON },
+    body: body ? JSON.stringify(body) : '{}',
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!r.ok) throw new Error('SB RPC error ' + r.status);
+  return r.json();
+}
+
 // ── State ──────────────────────────────────────────────────
 let _cache          = {};    // per-tab rendered-data cache
 let _activeTab      = 'M';
 let _lastUpdated    = '';    // ISO date from JSON "updated" field
 let _rawLeaderboard = null;  // parsed leaderboard.json (all types)
 let _rawHistory     = null;  // parsed history.json
+let _dataSource     = 'static'; // 'server' | 'cache' | 'static'
 
 // ── Init ───────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => { loadTab('M'); });
@@ -380,7 +398,8 @@ async function loadTab(tab) {
     const data = tab === 'history' ? await fetchHistory() : await fetchLeaderboard(tab);
     _cache[tab] = data;
     render(tab, data);
-    setStatus('live', 'Данные загружены');
+    const src = _dataSource === 'server' ? 'сервер' : _dataSource === 'cache' ? 'кэш' : 'файл';
+    setStatus('live', 'Данные загружены · ' + src);
     setUpdated();
   } catch(e) {
     console.error(e);
@@ -390,17 +409,67 @@ async function loadTab(tab) {
 }
 
 // ── Data fetching ──────────────────────────────────────────
-// Data lives in data/leaderboard.json and data/history.json.
-// To update: use the "Скачать JSON" button in the Players screen (roster access
-// required), then git commit + push to the repo — only the repo admin can publish.
+// S8.10: try Supabase RPC first, fall back to static JSON, then localStorage cache.
+
+function _lsCacheSave(data) {
+  try { localStorage.setItem(_LS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })); } catch(_) {}
+}
+function _lsCacheLoad() {
+  try {
+    const raw = localStorage.getItem(_LS_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch(_) { return null; }
+}
+
+async function _fetchServerLeaderboard() {
+  const rows = await _sbRpc('get_rating_leaderboard');
+  if (!Array.isArray(rows) || rows.length === 0) throw new Error('empty server response');
+  // Transform {player_id, name, gender, total_pts, tournaments} → render format {name, gender, rating, tournaments, wins}
+  const all = rows.map(p => ({
+    name:        p.name       || p.player_id || '',
+    gender:      p.gender     || 'M',
+    rating:      Number(p.total_pts  || 0),
+    tournaments: Number(p.tournaments || 0),
+    wins:        0,
+  })).sort((a, b) => b.rating - a.rating);
+  return {
+    M:   all.filter(p => p.gender === 'M'),
+    W:   all.filter(p => p.gender === 'W'),
+    Mix: all,
+    updated: new Date().toISOString().slice(0, 10),
+    source: 'server',
+  };
+}
 
 async function fetchLeaderboard(type) {
   if (!_rawLeaderboard) {
-    const r = await fetch('./data/leaderboard.json');
-    if (!r.ok) throw new Error('data/leaderboard.json не найден (HTTP ' + r.status + ')');
-    _rawLeaderboard = await r.json();
+    // 1) Try server
+    try {
+      _rawLeaderboard = await _fetchServerLeaderboard();
+      _dataSource = 'server';
+      _lsCacheSave(_rawLeaderboard);
+    } catch (_) {
+      // 2) Try static JSON
+      try {
+        const r = await fetch('./data/leaderboard.json');
+        if (r.ok) {
+          _rawLeaderboard = await r.json();
+          _dataSource = 'static';
+          _lsCacheSave(_rawLeaderboard);
+        } else throw new Error('HTTP ' + r.status);
+      } catch (_2) {
+        // 3) Fallback to localStorage cache
+        const cached = _lsCacheLoad();
+        if (cached?.data) {
+          _rawLeaderboard = cached.data;
+          _dataSource = 'cache';
+        } else {
+          throw new Error('Нет данных рейтинга (офлайн и кэш пуст)');
+        }
+      }
+    }
     _lastUpdated = _rawLeaderboard.updated || '';
-    // Pre-cache all tabs so switching between М/Ж/Микст is instant
     ['M','W','Mix'].forEach(t => {
       _cache[t] = Array.isArray(_rawLeaderboard[t]) ? _rawLeaderboard[t] : [];
     });
@@ -410,10 +479,34 @@ async function fetchLeaderboard(type) {
 
 async function fetchHistory() {
   if (!_rawHistory) {
-    const r = await fetch('./data/history.json');
-    if (!r.ok) throw new Error('data/history.json не найден (HTTP ' + r.status + ')');
-    _rawHistory = await r.json();
-    if (!_lastUpdated && _rawHistory.updated) _lastUpdated = _rawHistory.updated;
+    // Try server rating_history via RPC, fall back to static JSON
+    try {
+      const rows = await _sbRpc('get_rating_leaderboard'); // reuse: has tournament counts
+      // Build history from tournament_results grouped by tournament
+      const trRows = await fetch(`${_SB_URL}/rest/v1/tournament_results?select=tournament_id,player_id,placement,points,format,division,created_at&order=created_at.desc&limit=500`, {
+        headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + _SB_ANON },
+        signal: AbortSignal.timeout(6000),
+      }).then(r => r.ok ? r.json() : []).catch(() => []);
+
+      if (trRows.length > 0) {
+        // Group by tournament_id
+        const byTrn = new Map();
+        for (const row of trRows) {
+          if (!byTrn.has(row.tournament_id)) byTrn.set(row.tournament_id, { id: row.tournament_id, format: row.format, date: row.created_at?.slice(0,10), players: [] });
+          byTrn.get(row.tournament_id).players.push({ name: row.player_id, place: row.placement, pts: row.points, division: row.division });
+        }
+        _rawHistory = { tournaments: [...byTrn.values()].slice(0, 20), source: 'server' };
+        if (!_lastUpdated) _lastUpdated = new Date().toISOString().slice(0, 10);
+      } else {
+        throw new Error('no server history');
+      }
+    } catch (_) {
+      // Fall back to static JSON
+      const r = await fetch('./data/history.json');
+      if (!r.ok) throw new Error('data/history.json не найден (HTTP ' + r.status + ')');
+      _rawHistory = await r.json();
+      if (!_lastUpdated && _rawHistory.updated) _lastUpdated = _rawHistory.updated;
+    }
   }
   return Array.isArray(_rawHistory.tournaments) ? _rawHistory.tournaments : [];
 }

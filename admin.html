@@ -8,6 +8,7 @@
   content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://sv-ugra.ru; img-src 'self' data:;">
 <meta name="description" content="Админ-панель — Лютые пляжники">
 <title>Админ-панель — Лютые пляжники</title>
+<link rel="icon" href="assets/favicon.png" type="image/png">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -204,6 +205,16 @@
         <div id="judge-links-list"></div>
         <button class="btn btn-muted mt-12" id="btn-copy-all-links">Копировать все ссылки</button>
       </div>
+
+      <!-- S7.7: Live court overview -->
+      <div class="card card-padded" id="live-courts-card" style="display:none">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div class="card-heading" style="margin:0">Live — корты</div>
+          <span id="live-courts-status" style="font-size:0.75rem;color:var(--muted)">• ожидание</span>
+          <button class="btn btn-muted" id="btn-live-refresh" style="font-size:0.75rem;padding:4px 10px;margin-left:auto">↻</button>
+        </div>
+        <div id="live-courts-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
+      </div>
     </div>
 
     <!-- ── ИСТОРИЯ ──────────────────────────────────────────── -->
@@ -234,6 +245,7 @@
   </div><!-- /admin-content -->
 </div><!-- /admin-page -->
 
+<script type="module" src="shared/qr-gen.js?v=2"></script>
 <script src="admin-init.js"></script>
 </body>
 </html>

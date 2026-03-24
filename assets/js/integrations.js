@@ -336,6 +336,9 @@ function sbStartPollingFallback() {
 }
 
 // ── Supabase Realtime Broadcast ──────────────────────────
+let _sbWasConnected = false;       // S7.8: detect reconnects
+let _sbSnapshotTimer = null;       // S7.8: timeout waiting for snapshot_response
+
 function sbStartRealtime() {
   sbStopRealtime();
   if (!sbClient || !sbConfig.roomCode) return;
@@ -349,12 +352,45 @@ function sbStartRealtime() {
         // Signal received — fetch actual state via secure RPC
         sbPollOnce();
       })
+      // S7.8: Respond to snapshot requests from reconnecting clients
+      .on('broadcast', { event: 'request_snapshot' }, () => {
+        if (!sbRealtimeChannel) return;
+        const state = sbGetLocalState();
+        sbRealtimeChannel.send({
+          type: 'broadcast',
+          event: 'snapshot_response',
+          payload: { state, ts: Date.now() }
+        }).catch(() => {});
+      })
+      // S7.8: Receive snapshot from another client after reconnect
+      .on('broadcast', { event: 'snapshot_response' }, (msg) => {
+        if (!_sbSnapshotTimer) return; // not expecting a snapshot
+        clearTimeout(_sbSnapshotTimer);
+        _sbSnapshotTimer = null;
+        const state = msg?.payload?.state;
+        if (state) {
+          sbApplyRemoteState(state);
+          if (typeof saveHistory === 'function') saveHistory();
+        }
+      })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           // Realtime is working — stop/slow polling as redundant safety net only
           sbRealtimeFailed = false;
           sbPollCurrentMs = 15000; // check every 15s as fallback only
           sbStartPollingFallback();
+          // S7.8: On reconnect, request peer snapshot (fallback: poll after 5s)
+          if (_sbWasConnected) {
+            sbRealtimeChannel?.send({
+              type: 'broadcast', event: 'request_snapshot',
+              payload: { reason: 'reconnect', ts: Date.now() }
+            }).catch(() => {});
+            _sbSnapshotTimer = setTimeout(() => {
+              _sbSnapshotTimer = null;
+              sbPollOnce(); // nobody responded — fetch from server
+            }, 5000);
+          }
+          _sbWasConnected = true;
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           // Realtime failed — fall back to faster polling
           console.warn('[Realtime] Channel error, falling back to polling');

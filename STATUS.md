@@ -24,6 +24,25 @@
 - [x] **S5.10** — i18n: navigation + runtime (FORMAT) ✅ (2026-03-23, `runtime.js` fmtDateLong locale-aware, `components.js` tooltip i18n)
 - [x] **S5.11** — i18n: format pages (FORMAT) ✅ (2026-03-23, `kotc.html` + `kotc.js` — _boot() уже заменяет HTML placeholder'ы через i18n)
 
+### Фаза 7 остатки (2026-03-24)
+- [x] **S6.4-extra** — CSP meta в kotc.html и thai.html ✅ (уже было сделано ранее)
+- [x] **S6.7** — CSP unit-тест ✅ (уже было — `tests/unit/csp-check.test.js`)
+- [x] **S7.3** — QR-коды для судейских ссылок ✅ (2026-03-24, `shared/qr-gen.js`, `admin-init.js`, `admin.html`)
+- [x] **S7.7** — Админ live-обзор кортов ✅ (2026-03-24, `admin-init.js`, `admin.html`)
+- [x] **S7.8** — Reconnect snapshot ✅ (2026-03-24, `assets/js/integrations.js`)
+- [x] **S7.9** — E2E тест мультисудейства ✅ (2026-03-24, `tests/e2e/multi-judge.spec.ts` — 4 теста, все прошли)
+
+### Фаза 8 — Единая БД рейтингов (2026-03-24)
+- [x] **S8.1+S8.2** — SQL миграции tournament_results + rating_history ✅ (уже было — `migrations/008_tournament_results.sql`)
+- [x] **S8.3** — RPC finalize_tournament ✅ (уже было — `migrations/009_finalize.sql`)
+- [x] **S8.4+S8.5** — Player sync ✅ (уже было — `shared/api.js` `syncPlayersWithServer()`)
+- [x] **S8.6** — Финализация из хаба ✅ (уже было — `assets/js/ui/tournament-details.js`)
+- [x] **S8.7** — KOTC финализация ✅ (уже было — `formats/kotc/kotc.js`)
+- [x] **S8.8** — Thai финализация ✅ (уже было — `formats/thai/thai-boot.js`)
+- [x] **S8.9** — Админ вкладка «Рейтинг» ✅ (уже было — `admin-init.js`, `admin.html`)
+- [x] **S8.10** — rating.html история из сервера ✅ (2026-03-24, `rating.html` — Supabase RPC → static JSON → localStorage cache)
+- [x] **S8.11** — Тесты finalize/sync ✅ (уже было — `tests/unit/finalize.test.js` 13 тестов)
+
 ### Фаза 6 задачи (2 ИИ)
 - [x] **S6.1 (ARCH / ИИ-1)** — Исправить редиректы `/sudyam` без утечки localhost ✅ (2026-03-23, `web/middleware.ts`, `web/app/sudyam/page.tsx`)
 - [x] **S6.2 (ARCH / ИИ-1)** — Обработка несуществующего `tournamentId` без 500 ✅ (2026-03-23, `web/app/api/tournament-register/route.ts`)
@@ -37,9 +56,11 @@
 
 ---
 
-## 🗺️ Квартальный план
+## 🗺️ Активные планы
 
-- Основной файл плана: `QUARTER_PRODUCT_ROADMAP.md`
+- **`CURSOR_TASK.md`** — текущие задачи (Фаза 7 остатки + Фаза 8)
+- **`PHASE6_PLAN.md`** — архитектура Фаз 7–8
+- **`PHASE6_INSTRUCTIONS.md`** — инструкции для агентов по Фазам 7–8
 
 ---
 
@@ -313,6 +334,7 @@
 | 2026-03-23 | FORMAT | S6.4 | web/app/calendar/[id]/register/page.tsx | Для finished/cancelled турниров форма скрыта и показан закрытый статус с возвратом к карточке турнира |
 | 2026-03-23 | ARCH | S6.5 | web/app/api/sudyam-auth/route.ts | Добавлен IP rate limit (429 + Retry-After), fail-secure режим при отсутствии `SUDYAM_PIN` в production |
 | 2026-03-23 | FORMAT | S6.6 | web/components/rankings/PlayerRow.tsx, assets/js/screens/home.js | Harden ссылки профилей в рейтинге (не генерировать `undefined`) и guard, чтобы smoke не дергал `/api/archive` (404) |
+| 2026-03-24 | ARCH | Favicon legacy SPA | assets/favicon.png, index.html, admin.html, rating/register/profile/ipt-session, formats/thai + kotc HTML, web/public/kotc/*, sw.js, vite.config.js, scripts/validate-static.mjs | Единая PNG-иконка во вкладке для статики + кеш SW v63 / legacy kotc v52 |
 
 ---
 

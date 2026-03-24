@@ -28,7 +28,7 @@
 
 ### Приоритет 1: Оставшиеся задачи Фазы 7
 
-#### S6.4-extra: CSP мета-теги для format-страниц
+#### ~~S6.4-extra~~: CSP мета-теги для format-страниц ✅ (уже было сделано)
 Добавить CSP `<meta>` в `formats/kotc/kotc.html` и `formats/thai/thai.html`:
 ```html
 <meta http-equiv="Content-Security-Policy"
@@ -36,14 +36,14 @@
 ```
 У этих страниц **нет** inline-скриптов (уже вынесены), поэтому `script-src 'self'` безопасен.
 
-#### S6.7: Тест CSP-валидации
+#### ~~S6.7~~: Тест CSP-валидации ✅ (уже был сделан — `tests/unit/csp-check.test.js`)
 Файл: `tests/unit/csp-check.test.js` (новый)
 - Прочитать все `.html` файлы проекта (кроме `node_modules`, `dist`, `playwright-report`)
 - Проверить: нет `<script>` без `src=` (кроме `<script type="module" src=...>`)
 - Проверить: нет `onclick=`, `onload=`, `onerror=` и прочих inline event handler'ов
 - Проверить: если есть CSP meta-tag, то `script-src` НЕ содержит `'unsafe-inline'`
 
-#### S7.3: QR-коды для судейских ссылок
+#### ~~S7.3~~: QR-коды для судейских ссылок ✅ (2026-03-24, `shared/qr-gen.js`, `admin-init.js`, `admin.html`)
 Файлы: `admin-init.js`, `shared/qr-gen.js` (новый)
 - Минимальный QR-генератор (можно взять tiny qrcode library или SVG-based)
 - В `admin-init.js` функция `showJudgeLinks()` уже генерирует текстовые ссылки
@@ -51,7 +51,7 @@
 - QR должен содержать полный URL: `{origin}/index.html?trnId=X&court=N&token=T&judge=Name`
 - Добавить `shared/qr-gen.js` в SW cache (`sw.js`)
 
-#### S7.7: Админ — обзор кортов в реальном времени
+#### ~~S7.7~~: Админ — обзор кортов в реальном времени ✅ (2026-03-24, `admin-init.js`, `admin.html` — live-карточки 4 кортов, опрос каждые 30с)
 Файлы: `admin-init.js`, `admin.html`, `admin.css`
 - Новая секция внутри вкладки «Судьи» (после назначения)
 - 4 карточки — по одной на корт — показывают:
@@ -62,7 +62,7 @@
 - Обновлять по событиям из Broadcast канала `state_updated`
 - Read-only — админ НЕ может редактировать счёт
 
-#### S7.8: Reconnect snapshot
+#### ~~S7.8~~: Reconnect snapshot ✅ (2026-03-24, `assets/js/integrations.js` — `request_snapshot`/`snapshot_response` handlers + 5s timeout fallback)
 Файлы: `assets/js/integrations.js`, `shared/realtime.js`
 - При reconnect судьи (например, потеря Wi-Fi → восстановление):
   - Запросить текущий state через Broadcast `request_snapshot`
@@ -70,7 +70,7 @@
   - Принимающий клиент мержит: для каждого корта берёт данные с бо́льшим `scoreTs`
 - Если никто не ответил за 5 сек — работаем с локальным стейтом (offline-first)
 
-#### S7.9: E2E тест мультисудейства
+#### ~~S7.9~~: E2E тест мультисудейства ✅ (2026-03-24, `tests/e2e/multi-judge.spec.ts` — 4 теста, все прошли)
 Файл: `tests/e2e/multi-judge.spec.ts` (новый)
 - 2 browser context'а (Playwright)
 - Судья 1: `?trnId=test&court=0&token=a`
@@ -83,7 +83,7 @@
 
 ### Приоритет 2: Фаза 8 — Единая БД рейтингов
 
-#### S8.1 + S8.2: SQL миграции
+#### ~~S8.1 + S8.2~~: SQL миграции ✅ (уже было — `migrations/008_tournament_results.sql`)
 Файл: `migrations/008_tournament_results.sql` (новый)
 ```sql
 CREATE TABLE tournament_results (
@@ -108,57 +108,21 @@ CREATE TABLE rating_history (
 ```
 + RLS, индексы, GRANT для authenticated.
 
-#### S8.3: RPC `finalize_tournament`
-Файл: `migrations/009_finalize.sql` (новый)
-- Принимает `p_tournament_id TEXT`, `p_results JSONB` (массив `{player_id, placement, points}`)
-- Записывает в `tournament_results`
-- Обновляет `players.total_pts` и `players.tournaments`
-- Записывает снимок в `rating_history`
-- Возвращает `{ok: true, results_count: N}`
-- Подробная схема в `PHASE6_PLAN.md` раздел S8.3
+#### ~~S8.3~~: RPC `finalize_tournament` ✅ (уже было — `migrations/009_finalize.sql`)
 
-#### S8.4 + S8.5: Player sync
-Файлы: `shared/players.js`, `shared/api.js`
-- `syncPlayers()` — pull remote → merge (server wins) → push local-only → save cache
-- Вызывается при подключении к Supabase и при ручном refresh
-- Offline: работаем с localStorage как раньше, sync при появлении сети
+#### ~~S8.4 + S8.5~~: Player sync ✅ (уже было — `syncPlayersWithServer()` в `shared/api.js`)
 
-#### S8.6: Финализация из хаба
-Файлы: `assets/js/screens/core-lifecycle.js`, `assets/js/ui/tournament-details.js`
-- Кнопка «Финализировать» → собрать placements из standings → вызвать `finalize_tournament` RPC
-- Toast при успехе/ошибке
-- Заблокировать повторную финализацию
+#### ~~S8.6~~: Финализация из хаба ✅ (уже было — `assets/js/ui/tournament-details.js`)
 
-#### S8.7: KOTC финализация
-Файл: `formats/kotc/kotc.js`
-- В `_renderFinished()` добавить кнопку «📤 Отправить результаты»
-- Собрать standings из `kotcRankAll()` → `{player_id, placement, points}`
-- Вызвать `finalize_tournament` через `shared/api.js`
+#### ~~S8.7~~: KOTC финализация ✅ (уже было — `formats/kotc/kotc.js`)
 
-#### S8.8: Thai финализация
-Файл: `formats/thai/thai-boot.js`
-- Аналогично S8.7 — в `_renderFinished()` кнопка «📤 Отправить результаты»
-- Собрать standings из `_buildR1Standings()` → формат для RPC
+#### ~~S8.8~~: Thai финализация ✅ (уже было — `formats/thai/thai-boot.js`)
 
-#### S8.9: Админ — вкладка «Рейтинг»
-Файлы: `admin-init.js`, `admin.html`, `admin.css`
-- Новый таб «Рейтинг» в `admin.html` (после «История»)
-- Таблица рейтинга из `rating_history` + `players`
-- Сортировка по `total_pts` DESC
-- Фильтр по полу (M/W)
-- Возможность сброса рейтинга для отдельного игрока (admin)
+#### ~~S8.9~~: Админ — вкладка «Рейтинг» ✅ (уже было — `admin-init.js`, `admin.html`)
 
-#### S8.10: rating.html — история из сервера
-Файл: `rating.html`
-- Сейчас показывает только текущий snapshot
-- Добавить: историю рейтинга (график или таблица) из `rating_history`
-- Fallback: если нет сети — показать последний кэш
+#### ~~S8.10~~: rating.html — история из сервера ✅ (2026-03-24, `rating.html` — Supabase RPC → static JSON → localStorage cache)
 
-#### S8.11: Тесты
-Файлы: `tests/unit/sync.test.js`, `tests/unit/finalize.test.js` (новые)
-- Тест merge logic в `syncPlayers()`
-- Тест формирования payload для `finalize_tournament`
-- Тест подсчёта рейтинга (delta calculation)
+#### ~~S8.11~~: Тесты ✅ (уже было — `tests/unit/finalize.test.js` — 13 тестов sync/finalize/delta)
 
 ---
 
