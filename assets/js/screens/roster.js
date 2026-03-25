@@ -356,7 +356,7 @@ function _renderFmtCard() {
     <div class="sc-row">
       <span class="sc-lbl">Игроков:</span>
       <div class="seg" id="seg-n">
-        ${[4,5].map(v=>`<button class="seg-btn${_ppc===v?' on':''}" onclick="setPending(_nc,${v})">${v}</button>`).join('')}
+        ${[4].map(v=>`<button class="seg-btn${_ppc===v?' on':''}" onclick="setPending(_nc,${v})">${v}</button>`).join('')}
       </div>
     </div>
     <div class="sc-info" id="sc-info">
@@ -921,7 +921,9 @@ function runThai32DraftEngine() {
 
 async function applySettings() {
   // ThaiVolley32 enforcement: ppc=4, nc=4
-  _ppc = 4; _nc = 4; fixedPairs = false;
+  _ppc = 4;
+  // Keep nc from pending settings so court-count buttons work.
+  fixedPairs = false;
   if (_ppc === ppc && _nc === nc) { showToast('Настройки не изменились'); return; }
   if (!await showConfirm(`Применить: ${_nc} кортов, ${_ppc} игроков?\n\nОчки будут сброшены!`)) return;
 

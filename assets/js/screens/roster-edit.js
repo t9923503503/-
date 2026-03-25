@@ -153,7 +153,9 @@ function runThai32DraftEngine() {
 
 async function applySettings() {
   // ThaiVolley32 enforcement: ppc=4, nc=4
-  _ppc = 4; _nc = 4; fixedPairs = false;
+  _ppc = 4;
+  // Keep nc from pending settings so court-count buttons work.
+  fixedPairs = false;
   if (_ppc === ppc && _nc === nc) { showToast(tr('roster.settingsUnchanged')); return; }
   if (!await showConfirm(tr('roster.applyConfirm', {nc: _nc, ppc: _ppc}))) return;
 

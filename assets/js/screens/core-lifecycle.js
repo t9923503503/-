@@ -30,8 +30,16 @@ function loadState() {
     }
     const cfg = localStorage.getItem('kotc3_cfg');
     if (cfg) {
-      ppc = 4; nc = 4;
-      _ppc = ppc; _nc = nc;
+      // ThaiVolley32 math requires ppc=4.
+      // Allow nc to vary so roster "Кортов" controls actually work.
+      let parsed = null;
+      try { parsed = JSON.parse(cfg); } catch (_) {}
+      ppc = 4;
+      if (parsed && Number.isFinite(parsed.nc)) {
+        nc = Math.max(1, Math.min(4, Number(parsed.nc)));
+      }
+      _ppc = ppc;
+      _nc = nc;
       fixedPairs = false;
     }
     const r = localStorage.getItem('kotc3_roster');
