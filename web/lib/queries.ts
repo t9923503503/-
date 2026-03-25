@@ -75,20 +75,56 @@ export async function fetchPlayer(id: string): Promise<Player | null> {
   const data = rows[0];
   if (!data) return null;
 
+  // Compute ratings & tournament counts from tournament_results (source of truth)
+  const valuesRows = POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
+  const { rows: computed } = await pool.query(
+    `WITH pts(place, pts) AS (VALUES ${valuesRows})
+     SELECT
+       tr.rating_type,
+       COALESCE(SUM(COALESCE(lk.pts, 1)), 0)::int AS rating,
+       COUNT(DISTINCT tr.tournament_id)::int AS tournaments,
+       COALESCE(SUM(tr.wins), 0)::int AS wins,
+       MAX(t.date) AS last_seen
+     FROM tournament_results tr
+     LEFT JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
+     LEFT JOIN pts lk ON lk.place = tr.place
+     WHERE tr.player_id = $1
+     GROUP BY tr.rating_type`,
+    [id]
+  );
+
+  let ratingM = 0, ratingW = 0, ratingMix = 0;
+  let tournamentsM = 0, tournamentsW = 0, tournamentsMix = 0;
+  let totalWins = 0;
+  let lastSeen = '';
+
+  for (const r of computed) {
+    const rating = Number(r.rating ?? 0);
+    const tournaments = Number(r.tournaments ?? 0);
+    const wins = Number(r.wins ?? 0);
+    const seen = toIsoDate(r.last_seen);
+    totalWins += wins;
+    if (seen > lastSeen) lastSeen = seen;
+
+    if (r.rating_type === 'M') { ratingM = rating; tournamentsM = tournaments; }
+    else if (r.rating_type === 'W') { ratingW = rating; tournamentsW = tournaments; }
+    else if (r.rating_type === 'Mix') { ratingMix = rating; tournamentsMix = tournaments; }
+  }
+
   return {
     id: data.id,
     name: data.name,
     gender: data.gender,
     status: data.status,
-    ratingM: data.rating_m ?? 0,
-    ratingW: data.rating_w ?? 0,
-    ratingMix: data.rating_mix ?? 0,
-    tournamentsM: data.tournaments_m ?? 0,
-    tournamentsW: data.tournaments_w ?? 0,
-    tournamentsMix: data.tournaments_mix ?? 0,
-    wins: data.wins ?? 0,
-    totalPts: data.total_pts ?? 0,
-    lastSeen: data.last_seen ?? '',
+    ratingM,
+    ratingW,
+    ratingMix,
+    tournamentsM,
+    tournamentsW,
+    tournamentsMix,
+    wins: totalWins || (data.wins ?? 0),
+    totalPts: ratingM + ratingW + ratingMix || (data.total_pts ?? 0),
+    lastSeen: lastSeen || (data.last_seen ? toIsoDate(data.last_seen) : ''),
   };
 }
 
