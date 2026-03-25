@@ -368,7 +368,7 @@ function _renderFmtCard() {
     <div class="sc-row">
       <span class="sc-lbl">${tr('format.playersLabel')}</span>
       <div class="seg" id="seg-n">
-        ${[4,5].map(v=>`<button class="seg-btn${_ppc===v?' on':''}" onclick="setPending(_nc,${v})">${v}</button>`).join('')}
+        ${[4].map(v=>`<button class="seg-btn${_ppc===v?' on':''}" onclick="setPending(_nc,${v})">${v}</button>`).join('')}
       </div>
     </div>
     <div class="sc-info" id="sc-info">
