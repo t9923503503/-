@@ -31,6 +31,7 @@ export function normalizeTournamentInput(input: Record<string, unknown>) {
     capacity: clampNonNegativeInt(input.capacity, 0),
     status,
     reason: toSafeString(input.reason),
+    settings: (typeof input.settings === 'object' && input.settings !== null) ? input.settings as Record<string, unknown> : {},
   };
 }
 

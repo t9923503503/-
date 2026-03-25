@@ -14,6 +14,7 @@ export interface AdminTournament {
   status: string;
   participantCount: number;
   photoUrl: string;
+  settings: Record<string, unknown>;
 }
 
 export interface ArchiveResult {
@@ -53,6 +54,7 @@ function mapTournament(row: Record<string, unknown>): AdminTournament {
     status: String(row.status ?? 'open'),
     participantCount: Number(row.participant_count ?? 0),
     photoUrl: String(row.photo_url ?? ''),
+    settings: (typeof row.settings === 'object' && row.settings !== null ? row.settings : {}) as Record<string, unknown>,
   };
 }
 
@@ -93,11 +95,12 @@ export async function listTournaments(query = ''): Promise<AdminTournament[]> {
 export async function createTournament(input: Partial<AdminTournament>): Promise<AdminTournament> {
   const pool = getPool();
   const id = String(input.id || randomUUID());
+  const settingsJson = input.settings ? JSON.stringify(input.settings) : '{}';
   const { rows } = await pool.query(
     `INSERT INTO tournaments
-      (id, name, date, time, location, format, division, level, capacity, status, photo_url)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-     RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url`,
+      (id, name, date, time, location, format, division, level, capacity, status, photo_url, settings)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url, settings`,
     [
       id,
       String(input.name || '').trim(),
@@ -110,6 +113,7 @@ export async function createTournament(input: Partial<AdminTournament>): Promise
       Number(input.capacity || 0),
       String(input.status || 'open'),
       String(input.photoUrl || '') || null,
+      settingsJson,
     ]
   );
   const data = rows[0] ?? {};
@@ -121,11 +125,12 @@ export async function updateTournament(
   input: Partial<AdminTournament>
 ): Promise<AdminTournament | null> {
   const pool = getPool();
+  const settingsJson = input.settings ? JSON.stringify(input.settings) : '{}';
   const { rows } = await pool.query(
     `UPDATE tournaments
-     SET name=$2, date=$3, time=$4, location=$5, format=$6, division=$7, level=$8, capacity=$9, status=$10, photo_url=$11
+     SET name=$2, date=$3, time=$4, location=$5, format=$6, division=$7, level=$8, capacity=$9, status=$10, photo_url=$11, settings=$12
      WHERE id=$1
-     RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url`,
+     RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url, settings`,
     [
       id,
       String(input.name || '').trim(),
@@ -138,6 +143,7 @@ export async function updateTournament(
       Number(input.capacity || 0),
       String(input.status || 'open'),
       String(input.photoUrl || '') || null,
+      settingsJson,
     ]
   );
   const data = rows[0];
@@ -267,7 +273,7 @@ export async function applyTournamentStatusOverride(input: {
   const pool = getPool();
   const { rows } = await pool.query(
     `UPDATE tournaments SET status = $2 WHERE id = $1
-     RETURNING id, name, date, time, location, format, division, level, capacity, status`,
+     RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url, settings`,
     [input.tournamentId, input.status]
   );
   const data = rows[0];
@@ -740,7 +746,7 @@ export async function setTournamentPhotoUrl(
   const pool = getPool();
   const { rows } = await pool.query(
     `UPDATE tournaments SET photo_url = $2 WHERE id = $1
-     RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url`,
+     RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url, settings`,
     [id, photoUrl || null]
   );
   const data = rows[0];
