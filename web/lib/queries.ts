@@ -377,3 +377,112 @@ export async function fetchRatingHistory(
     createdAt: r.created_at ? String(r.created_at) : '',
   }));
 }
+
+// ─── Extended Player Stats ──────────────────────────────────────────────
+
+export interface PlayerExtendedStats {
+  totalTournaments: number;
+  gold: number;
+  silver: number;
+  bronze: number;
+  topThreeRate: number;
+  avgPlace: number;
+  bestPlace: number;
+  totalRatingPts: number;
+  avgRatingPts: number;
+  winRate: number;
+  totalWins: number;
+  totalBalls: number;
+  avgBalls: number;
+  bestTournament: { name: string; date: string; place: number; pts: number } | null;
+  currentStreak: { type: 'top3' | 'none'; count: number };
+  rankM: number | null;
+  rankW: number | null;
+  rankMix: number | null;
+  formLast5: number[];
+}
+
+export async function fetchPlayerExtendedStats(playerId: string): Promise<PlayerExtendedStats> {
+  const empty: PlayerExtendedStats = {
+    totalTournaments: 0, gold: 0, silver: 0, bronze: 0,
+    topThreeRate: 0, avgPlace: 0, bestPlace: 0, totalRatingPts: 0, avgRatingPts: 0,
+    winRate: 0, totalWins: 0, totalBalls: 0, avgBalls: 0,
+    bestTournament: null, currentStreak: { type: 'none', count: 0 },
+    rankM: null, rankW: null, rankMix: null, formLast5: [],
+  };
+  if (!process.env.DATABASE_URL) return empty;
+  const pool = getPool();
+
+  const { rows: results } = await pool.query(
+    `SELECT tr.place, tr.game_pts, tr.rating_pts, tr.wins, tr.diff, tr.balls, tr.rating_type,
+            t.name AS tournament_name, t.date AS tournament_date, t.format
+     FROM tournament_results tr
+     JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
+     WHERE tr.player_id = $1
+     ORDER BY t.date DESC, tr.place ASC`,
+    [playerId]
+  );
+
+  if (!results.length) return empty;
+
+  const totalTournaments = results.length;
+  const gold = results.filter(r => Number(r.place) === 1).length;
+  const silver = results.filter(r => Number(r.place) === 2).length;
+  const bronze = results.filter(r => Number(r.place) === 3).length;
+  const places = results.map(r => Number(r.place)).filter(p => p > 0);
+  const avgPlace = places.length ? +(places.reduce((a, b) => a + b, 0) / places.length).toFixed(1) : 0;
+  const bestPlace = places.length ? Math.min(...places) : 0;
+  const totalRatingPts = results.reduce((s, r) => s + Number(r.rating_pts || 0), 0);
+  const avgRatingPts = totalTournaments ? +(totalRatingPts / totalTournaments).toFixed(1) : 0;
+  const totalWins = results.reduce((s, r) => s + Number(r.wins || 0), 0);
+  const totalBalls = results.reduce((s, r) => s + Number(r.balls || 0), 0);
+  const avgBalls = totalTournaments ? +(totalBalls / totalTournaments).toFixed(1) : 0;
+  const topThreeRate = totalTournaments ? Math.round((gold + silver + bronze) / totalTournaments * 100) : 0;
+  const winRate = totalTournaments > 0 ? Math.round(gold / totalTournaments * 100) : 0;
+  const formLast5 = places.slice(0, 5);
+
+  let bestTournament: PlayerExtendedStats['bestTournament'] = null;
+  let bestPts = -Infinity;
+  for (const r of results) {
+    const pts = Number(r.rating_pts || 0);
+    if (pts > bestPts) {
+      bestPts = pts;
+      bestTournament = { name: r.tournament_name, date: toIsoDate(r.tournament_date), place: Number(r.place), pts };
+    }
+  }
+
+  let streakCount = 0;
+  for (const r of results) {
+    if (Number(r.place) <= 3) streakCount++;
+    else break;
+  }
+  const currentStreak = { type: (streakCount > 0 ? 'top3' : 'none') as 'top3' | 'none', count: streakCount };
+
+  const valuesRows = POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
+  const { rows: ranks } = await pool.query(
+    `WITH pts(place, pts) AS (VALUES ${valuesRows}),
+    ranked AS (
+      SELECT tr.player_id, tr.rating_type,
+             ROW_NUMBER() OVER (PARTITION BY tr.rating_type ORDER BY SUM(COALESCE(lk.pts,1)) DESC) AS rn
+      FROM tournament_results tr
+      JOIN players p ON p.id = tr.player_id AND p.status = 'active'
+      LEFT JOIN pts lk ON lk.place = tr.place
+      GROUP BY tr.player_id, tr.rating_type
+      HAVING SUM(COALESCE(lk.pts,1)) > 0
+    )
+    SELECT rating_type, rn FROM ranked WHERE player_id = $1`,
+    [playerId]
+  );
+  let rankM: number | null = null, rankW: number | null = null, rankMix: number | null = null;
+  for (const r of ranks) {
+    if (r.rating_type === 'M') rankM = Number(r.rn);
+    if (r.rating_type === 'W') rankW = Number(r.rn);
+    if (r.rating_type === 'Mix') rankMix = Number(r.rn);
+  }
+
+  return {
+    totalTournaments, gold, silver, bronze, topThreeRate,
+    avgPlace, bestPlace, totalRatingPts, avgRatingPts, winRate, totalWins,
+    totalBalls, avgBalls, bestTournament, currentStreak, rankM, rankW, rankMix, formLast5,
+  };
+}
