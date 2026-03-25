@@ -1,17 +1,13 @@
 import { getPool } from './db';
 import type { LeaderboardEntry, Player, Tournament, RatingType, Team, RatingHistoryEntry } from './types';
 
-const RATING_COLUMN: Record<RatingType, string> = {
-  M: 'rating_m',
-  W: 'rating_w',
-  Mix: 'rating_mix',
-};
-
-const TOURNAMENTS_COLUMN: Record<RatingType, string> = {
-  M: 'tournaments_m',
-  W: 'tournaments_w',
-  Mix: 'tournaments_mix',
-};
+/* Professional Points — same table as SPA (assets/js/state/app-state.js) */
+const POINTS_TABLE = [
+  100,90,82,76,70,65,60,56,52,48,  // 1-10  HARD
+  44,42,40,38,36,34,32,30,28,26,   // 11-20 MEDIUM
+  24,22,20,18,16,14,12,10,8,7,     // 21-30
+  6,5,4,3,2,2,1,1,1,1              // 31-40 LITE
+];
 
 function toIsoDate(value: unknown): string {
   if (!value) return '';
@@ -19,22 +15,40 @@ function toIsoDate(value: unknown): string {
   return String(value);
 }
 
+/**
+ * Leaderboard computed from tournament_results.place via POINTS_TABLE.
+ * This matches exactly how the SPA (recalcAllPlayerStats) computes ratings.
+ */
 export async function fetchLeaderboard(
   type: RatingType = 'M',
   limit = 50
 ): Promise<LeaderboardEntry[]> {
   if (!process.env.DATABASE_URL) return [];
   const pool = getPool();
-  const ratingCol = RATING_COLUMN[type] ?? 'rating_m';
-  const trnCol = TOURNAMENTS_COLUMN[type] ?? 'tournaments_m';
+
+  // Build a VALUES list for the points lookup: (place, pts)
+  const valuesRows = POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
 
   const { rows } = await pool.query(
-    `SELECT id, name, gender, ${ratingCol} AS rating, ${trnCol} AS tournaments, wins, last_seen
-     FROM players
-     WHERE status = 'active' AND ${ratingCol} > 0
-     ORDER BY ${ratingCol} DESC
-     LIMIT $1`,
-    [limit]
+    `WITH pts(place, pts) AS (VALUES ${valuesRows})
+     SELECT
+       p.id,
+       p.name,
+       p.gender,
+       COALESCE(SUM(COALESCE(lk.pts, 1)), 0)::int AS rating,
+       COUNT(DISTINCT tr.tournament_id)::int AS tournaments,
+       COALESCE(SUM(tr.wins), 0)::int AS wins,
+       MAX(t.date) AS last_seen
+     FROM tournament_results tr
+     JOIN players p ON p.id = tr.player_id AND p.status = 'active'
+     LEFT JOIN tournaments t ON t.id = tr.tournament_id
+     LEFT JOIN pts lk ON lk.place = tr.place
+     WHERE tr.rating_type = $1
+     GROUP BY p.id, p.name, p.gender
+     HAVING COALESCE(SUM(COALESCE(lk.pts, 1)), 0) > 0
+     ORDER BY rating DESC
+     LIMIT $2`,
+    [type, limit]
   );
 
   return rows.map((row, i) => ({
@@ -45,7 +59,7 @@ export async function fetchLeaderboard(
     rating: row.rating ?? 0,
     tournaments: row.tournaments ?? 0,
     wins: row.wins ?? 0,
-    lastSeen: row.last_seen ?? '',
+    lastSeen: toIsoDate(row.last_seen),
   }));
 }
 
@@ -156,11 +170,12 @@ export async function fetchRankingCounts(): Promise<RankingCounts> {
   const pool = getPool();
   const { rows } = await pool.query(`
     SELECT
-      count(*) FILTER (WHERE rating_m > 0)::int AS men,
-      count(*) FILTER (WHERE rating_w > 0)::int AS women,
-      count(*) FILTER (WHERE rating_mix > 0)::int AS mix,
-      count(*)::int AS total
-    FROM players WHERE status = 'active'
+      count(DISTINCT player_id) FILTER (WHERE rating_type = 'M')::int   AS men,
+      count(DISTINCT player_id) FILTER (WHERE rating_type = 'W')::int   AS women,
+      count(DISTINCT player_id) FILTER (WHERE rating_type = 'Mix')::int AS mix,
+      count(DISTINCT player_id)::int AS total
+    FROM tournament_results tr
+    JOIN players p ON p.id = tr.player_id AND p.status = 'active'
   `);
   const r = rows[0];
   return { men: r?.men ?? 0, women: r?.women ?? 0, mix: r?.mix ?? 0, total: r?.total ?? 0 };
