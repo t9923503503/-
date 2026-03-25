@@ -1,32 +1,26 @@
 import type { Metadata } from 'next';
-import { fetchLeaderboard } from '@/lib/queries';
+import { fetchLeaderboard, fetchRankingCounts } from '@/lib/queries';
 import RankingsClient from './RankingsClient';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Рейтинги | Лютые Пляжники',
+  title: 'Рейтинг Лютых Игроков | Лютые Пляжники',
   description:
-    'Рейтинги игроков пляжного волейбола в форматах Мужской, Женский и Микст.',
+    'Рейтинги игроков пляжного волейбола — места, зоны, статистика по всем форматам.',
   openGraph: {
-    title: 'Рейтинги | Лютые Пляжники',
-    description: 'Топ игроков King of the Court по всем форматам.',
+    title: 'Рейтинг Лютых Игроков',
+    description: 'Professional Points — места, зоны, статистика.',
     type: 'website',
     locale: 'ru_RU',
   },
 };
 
 export default async function RankingsPage() {
-  const initialEntries = await fetchLeaderboard('M', 50);
+  const [initialEntries, counts] = await Promise.all([
+    fetchLeaderboard('M', 100),
+    fetchRankingCounts(),
+  ]);
 
-  return (
-    <main className="max-w-4xl mx-auto px-4 py-10">
-      <h1 className="font-heading text-4xl md:text-5xl text-text-primary mb-6 uppercase tracking-wide">
-        Рейтинги
-      </h1>
-      <div className="flex flex-col gap-6">
-        <RankingsClient initialEntries={initialEntries} initialType="M" />
-      </div>
-    </main>
-  );
+  return <RankingsClient initialEntries={initialEntries} initialType="M" counts={counts} />;
 }

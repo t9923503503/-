@@ -144,6 +144,28 @@ export async function fetchHomeStats(): Promise<HomeStats> {
   };
 }
 
+export interface RankingCounts {
+  men: number;
+  women: number;
+  mix: number;
+  total: number;
+}
+
+export async function fetchRankingCounts(): Promise<RankingCounts> {
+  if (!process.env.DATABASE_URL) return { men: 0, women: 0, mix: 0, total: 0 };
+  const pool = getPool();
+  const { rows } = await pool.query(`
+    SELECT
+      count(*) FILTER (WHERE rating_m > 0)::int AS men,
+      count(*) FILTER (WHERE rating_w > 0)::int AS women,
+      count(*) FILTER (WHERE rating_mix > 0)::int AS mix,
+      count(*)::int AS total
+    FROM players WHERE status = 'active'
+  `);
+  const r = rows[0];
+  return { men: r?.men ?? 0, women: r?.women ?? 0, mix: r?.mix ?? 0, total: r?.total ?? 0 };
+}
+
 export async function fetchTournamentById(
   id: string
 ): Promise<Tournament | null> {
