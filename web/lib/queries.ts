@@ -307,29 +307,34 @@ export async function fetchTeamsLookingForPartner(tournamentId: string): Promise
   if (!process.env.DATABASE_URL) return [];
   const pool = getPool();
 
-  const { rows } = await pool.query(
-    `SELECT
-       t.id, t.tournament_id, t.status, t.seed, t.created_at,
-       t.player1_id, p1.name AS player1_name,
-       t.player2_id, NULL AS player2_name
-     FROM teams t
-     JOIN players p1 ON p1.id = t.player1_id
-     WHERE t.tournament_id = $1 AND t.status = 'looking_for_partner'
-     ORDER BY t.created_at`,
-    [tournamentId]
-  );
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         t.id, t.tournament_id, t.status, t.seed, t.created_at,
+         t.player1_id, p1.name AS player1_name,
+         t.player2_id, NULL AS player2_name
+       FROM teams t
+       JOIN players p1 ON p1.id = t.player1_id
+       WHERE t.tournament_id = $1 AND t.status = 'looking_for_partner'
+       ORDER BY t.created_at`,
+      [tournamentId]
+    );
 
-  return rows.map((r) => ({
-    id: r.id,
-    tournamentId: r.tournament_id,
-    player1Id: r.player1_id,
-    player1Name: r.player1_name,
-    player2Id: null,
-    player2Name: null,
-    status: r.status as Team['status'],
-    seed: r.seed,
-    createdAt: r.created_at ? String(r.created_at) : '',
-  }));
+    return rows.map((r) => ({
+      id: r.id,
+      tournamentId: r.tournament_id,
+      player1Id: r.player1_id,
+      player1Name: r.player1_name,
+      player2Id: null,
+      player2Name: null,
+      status: r.status as Team['status'],
+      seed: r.seed,
+      createdAt: r.created_at ? String(r.created_at) : '',
+    }));
+  } catch {
+    // Table 'teams' may not exist yet
+    return [];
+  }
 }
 
 // ─── Rating History ──────────────────────────────────────────────────────
