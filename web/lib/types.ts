@@ -37,6 +37,9 @@ export interface Tournament {
   capacity: number;
   status: 'open' | 'full' | 'finished' | 'cancelled';
   participantCount: number;
+  prize: string;
+  photoUrl: string;
+  formatCode: string;
 }
 
 export interface TournamentResult {

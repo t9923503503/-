@@ -129,6 +129,9 @@ export async function fetchTournaments(
     capacity: row.capacity ?? 0,
     status: row.status ?? 'open',
     participantCount: row.participant_count ?? 0,
+    prize: row.prize ?? '',
+    photoUrl: row.photo_url ?? '',
+    formatCode: row.format_code ?? '',
   }));
 }
 
