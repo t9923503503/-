@@ -217,6 +217,9 @@ export async function fetchTournamentById(
     capacity: data.capacity ?? 0,
     status: data.status ?? 'open',
     participantCount: data.participant_count ?? 0,
+    prize: data.prize ?? '',
+    photoUrl: data.photo_url ?? '',
+    formatCode: data.format_code ?? '',
   };
 }
 
