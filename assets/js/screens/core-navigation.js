@@ -94,7 +94,6 @@ function buildNav() {
     { label:'👤',   tab:'players' },
     { label: tr('nav.shortSvod'), tab:'svod'    },
     { label: tr('nav.shortStats'), tab:'stats'   },
-    { label:'👥',   tab:'rating'  },
     { label:'⚙️', tab:'roster'  },
   ].forEach(({label,tab}) => {
     const b = document.createElement('button');

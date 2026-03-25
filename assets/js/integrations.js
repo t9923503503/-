@@ -835,6 +835,7 @@ async function sbPublicFetch(type = 'M') {
 
 // ── Render config card ────────────────────────────────────
 function renderSupabaseCard() {
+  return ""; // Supabase sync UI removed
   const live = sbStatus === 'live';
   const hasConfig = !!(sbConfig.url && sbConfig.anonKey);
   const ready = !!(sbNormalizeRoomCode(sbConfig.roomCode) && (sbConfig.roomSecret || '').trim());
