@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Правила | Лютые Пляжники',
+  title: 'Виды турниров | Лютые Пляжники',
   description:
     'Форматы турниров, зоны, система очков и регламент — всё что нужно знать перед первой игрой.',
 };
@@ -291,7 +291,7 @@ export default function PravilaPage() {
       {/* Hero */}
       <div className="text-center mb-12">
         <h1 className="font-heading text-5xl md:text-6xl text-brand tracking-wide uppercase">
-          Правила
+          Виды турниров
         </h1>
         <p className="mt-4 font-body text-text-secondary text-lg max-w-2xl mx-auto">
           Три игровых режима, три зоны силы, одна цель — стать королём корта.

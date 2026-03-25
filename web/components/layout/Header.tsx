@@ -5,7 +5,7 @@ const navLinks = [
   { href: "/", label: "Главная" },
   { href: "/rankings", label: "Рейтинги" },
   { href: "/calendar", label: "Календарь" },
-  { href: "/pravila", label: "Правила" },
+  { href: "/pravila", label: "Виды турниров" },
   { href: "/partner", label: "Поиск пары" },
   { href: "/profile", label: "Профиль" },
 ];
