@@ -35,6 +35,7 @@ export async function fetchLeaderboard(
        p.id,
        p.name,
        p.gender,
+       p.photo_url,
        COALESCE(SUM(COALESCE(lk.pts, 1)), 0)::int AS rating,
        COUNT(DISTINCT tr.tournament_id)::int AS tournaments,
        COALESCE(SUM(tr.wins), 0)::int AS wins,
@@ -44,7 +45,7 @@ export async function fetchLeaderboard(
      LEFT JOIN tournaments t ON t.id = tr.tournament_id
      LEFT JOIN pts lk ON lk.place = tr.place
      WHERE tr.rating_type = $1
-     GROUP BY p.id, p.name, p.gender
+     GROUP BY p.id, p.name, p.gender, p.photo_url
      HAVING COALESCE(SUM(COALESCE(lk.pts, 1)), 0) > 0
      ORDER BY rating DESC
      LIMIT $2`,
@@ -60,6 +61,7 @@ export async function fetchLeaderboard(
     tournaments: row.tournaments ?? 0,
     wins: row.wins ?? 0,
     lastSeen: toIsoDate(row.last_seen),
+    photoUrl: row.photo_url ?? '',
   }));
 }
 
@@ -125,6 +127,10 @@ export async function fetchPlayer(id: string): Promise<Player | null> {
     wins: totalWins || (data.wins ?? 0),
     totalPts: ratingM + ratingW + ratingMix || (data.total_pts ?? 0),
     lastSeen: lastSeen || (data.last_seen ? toIsoDate(data.last_seen) : ''),
+    photoUrl: data.photo_url ?? '',
+    city: data.city ?? '',
+    level: data.level ?? '',
+    bio: data.bio ?? '',
   };
 }
 

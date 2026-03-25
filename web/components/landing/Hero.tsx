@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import type { LeaderboardEntry } from '@/lib/types';
 import type { HomeStats } from '@/lib/queries';
 
@@ -11,90 +12,186 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PlayerCard({ entry, featured }: { entry: LeaderboardEntry; featured?: boolean }) {
-  const initials = (entry.name ?? '').slice(0, 2).toUpperCase();
-  const winRate = entry.tournaments > 0
-    ? Math.round((entry.wins / entry.tournaments) * 100)
-    : 0;
+/* ── Player Avatar ──────────────────────────── */
+function PlayerAvatar({ entry, size }: { entry: LeaderboardEntry; size: 'lg' | 'sm' }) {
+  const s = size === 'lg' ? 96 : 56;
+  const cls = size === 'lg'
+    ? 'w-24 h-24 rounded-2xl text-3xl'
+    : 'w-14 h-14 rounded-xl text-xl';
 
-  if (featured) {
+  if (entry.photoUrl) {
     return (
-      <article className="lg:col-span-1 glass-panel p-5 md:p-7 relative overflow-hidden neon-ice">
-        <div className="absolute -top-16 -left-16 w-56 h-56 rounded-full opacity-25 bg-[radial-gradient(circle_at_center,rgba(0,209,255,0.9),transparent_60%)]" />
-        <div className="absolute -bottom-20 -right-20 w-56 h-56 rounded-full opacity-25 bg-[radial-gradient(circle_at_center,rgba(255,90,0,0.9),transparent_60%)]" />
-
-        <div className="flex items-start justify-between relative">
-          <span className="text-text-secondary text-xs uppercase tracking-widest font-condensed">#{entry.rank}</span>
-        </div>
-
-        <div className="mt-4">
-          <div className="w-20 h-20 rounded-2xl glass-panel flex items-center justify-center border border-white/10 text-2xl font-heading text-brand">
-            {initials}
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <div className="poster-name text-4xl md:text-5xl text-transparent bg-clip-text bg-gradient-to-r from-[#FF5A00] to-[#00D1FF]">
-            {(entry.name ?? '').toUpperCase()}
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3">
-          <div className="flex flex-col">
-            <span className="text-text-secondary text-[10px] uppercase tracking-widest">Рейтинг</span>
-            <span className="font-body text-text-primary text-base font-semibold">{entry.rating}</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-text-secondary text-[10px] uppercase tracking-widest">Победы</span>
-            <span className="font-body text-text-primary text-base font-semibold">{entry.wins}</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-text-secondary text-[10px] uppercase tracking-widest">Турниры</span>
-            <span className="font-body text-text-primary text-base font-semibold">{entry.tournaments}</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-text-secondary text-[10px] uppercase tracking-widest">Win Rate</span>
-            <span className="font-body text-text-primary text-base font-semibold">{winRate}%</span>
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <Link href={`/players/${entry.playerId}`} className="btn-action w-full inline-flex items-center justify-center">
-            Профиль игрока
-          </Link>
-        </div>
-      </article>
+      <div className={`${cls} relative overflow-hidden border-2 border-white/20 shadow-lg`}>
+        <Image
+          src={entry.photoUrl}
+          alt={entry.name}
+          width={s}
+          height={s}
+          className="object-cover w-full h-full"
+        />
+      </div>
     );
   }
 
+  // Gradient initials fallback
+  const initial = (entry.name ?? '').charAt(0).toUpperCase();
+  const gradients = [
+    'from-brand to-[#FFD700]',
+    'from-[#00D1FF] to-[#6366F1]',
+    'from-[#FF69B4] to-[#FF5A00]',
+    'from-[#6ABF69] to-[#00D1FF]',
+  ];
+  const grad = gradients[entry.rank % gradients.length];
+
   return (
-    <article className="glass-panel p-5 relative overflow-hidden neon-ice">
-      <div className="flex items-start justify-between relative">
-        <span className="text-text-secondary text-xs uppercase tracking-widest font-condensed">#{entry.rank}</span>
-        <div className="w-10 h-10 rounded-xl glass-panel border border-white/10 flex items-center justify-center text-sm font-heading text-brand">
-          {initials}
-        </div>
-      </div>
+    <div className={`${cls} bg-gradient-to-br ${grad} flex items-center justify-center font-heading text-white shadow-lg border-2 border-white/20`}>
+      {initial}
+    </div>
+  );
+}
 
-      <div className="mt-4">
-        <div className="poster-name text-2xl md:text-3xl text-transparent bg-clip-text bg-gradient-to-r from-[#FF5A00] to-[#00D1FF]">
-          {(entry.name ?? '').toUpperCase()}
-        </div>
-      </div>
+/* ── Rank Badge ─────────────────────────────── */
+function RankBadge({ rank }: { rank: number }) {
+  const medal = rank === 1 ? '\u{1F947}' : rank === 2 ? '\u{1F948}' : rank === 3 ? '\u{1F949}' : null;
+  const bg = rank === 1 ? 'bg-gold/20 text-gold border-gold/40'
+    : rank === 2 ? 'bg-silver/20 text-silver border-silver/40'
+    : rank === 3 ? 'bg-bronze/20 text-bronze border-bronze/40'
+    : 'bg-white/10 text-text-secondary border-white/20';
 
-      <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
-        <div className="flex flex-col">
-          <span className="text-text-secondary text-[10px] uppercase tracking-widest">Рейтинг</span>
-          <span className="font-body text-text-primary text-sm font-semibold">{entry.rating}</span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-text-secondary text-[10px] uppercase tracking-widest">Победы</span>
-          <span className="font-body text-text-primary text-sm font-semibold">{entry.wins}</span>
-        </div>
-      </div>
+  return (
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border ${bg}`}>
+      {medal && <span>{medal}</span>}
+      #{rank}
+    </span>
+  );
+}
 
-      <div className="mt-4">
-        <Link href={`/players/${entry.playerId}`} className="btn-action-outline w-full inline-flex items-center justify-center text-sm">
+/* ── Featured Player Card (#1) ─────────────── */
+function FeaturedCard({ entry }: { entry: LeaderboardEntry }) {
+  const winRate = entry.tournaments > 0
+    ? Math.round((entry.wins / entry.tournaments) * 100) : 0;
+
+  return (
+    <article className="lg:col-span-1 relative overflow-hidden rounded-2xl border border-brand/30"
+      style={{
+        background: 'radial-gradient(ellipse 140% 80% at 20% 20%, rgba(255,90,0,0.15), transparent 60%), radial-gradient(ellipse 100% 70% at 85% 80%, rgba(0,209,255,0.12), transparent 50%), var(--bg-panel)',
+      }}>
+      {/* Decorative particles */}
+      <div className="absolute inset-0 opacity-[0.06] pointer-events-none"
+        style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.4) 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
+
+      <div className="relative p-6 md:p-8">
+        <div className="flex items-start justify-between">
+          <RankBadge rank={entry.rank} />
+          <span className="text-xs font-condensed uppercase tracking-widest text-brand/70">MVP</span>
+        </div>
+
+        <div className="mt-5 flex items-center gap-4">
+          <PlayerAvatar entry={entry} size="lg" />
+          <div className="min-w-0">
+            <h3 className="font-heading text-3xl md:text-4xl text-transparent bg-clip-text bg-gradient-to-r from-[#FF5A00] to-[#00D1FF] uppercase truncate">
+              {entry.name}
+            </h3>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${entry.gender === 'M' ? 'bg-[#00D1FF]/20 text-[#00D1FF]' : 'bg-[#FF69B4]/20 text-[#FF69B4]'}`}>
+                {entry.gender}
+              </span>
+              {winRate >= 50 && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-brand/20 text-brand">
+                  {winRate}% WIN
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Stats grid */}
+        <div className="mt-6 grid grid-cols-4 gap-3">
+          {[
+            { label: 'Rating', value: String(entry.rating), color: 'text-brand' },
+            { label: 'Wins', value: String(entry.wins), color: 'text-gold' },
+            { label: 'Tourneys', value: String(entry.tournaments), color: 'text-[#00D1FF]' },
+            { label: 'Win %', value: `${winRate}%`, color: 'text-text-primary' },
+          ].map(s => (
+            <div key={s.label} className="text-center rounded-xl bg-white/5 border border-white/10 py-3 px-2">
+              <div className={`font-heading text-xl ${s.color}`}>{s.value}</div>
+              <div className="text-text-secondary text-[9px] uppercase tracking-widest mt-0.5">{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Rating bar */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-[10px] text-text-secondary uppercase tracking-widest mb-1">
+            <span>Power Level</span>
+            <span className="text-brand">{entry.rating}</span>
+          </div>
+          <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-brand to-[#FFD700] transition-all duration-1000"
+              style={{ width: `${Math.min((entry.rating / 300) * 100, 100)}%` }}
+            />
+          </div>
+        </div>
+
+        <Link href={`/players/${entry.playerId}`}
+          className="btn-action w-full inline-flex items-center justify-center mt-5 text-sm">
+          Профиль игрока
+        </Link>
+      </div>
+    </article>
+  );
+}
+
+/* ── Regular Player Card (#2, #3) ─────────── */
+function CompactCard({ entry }: { entry: LeaderboardEntry }) {
+  const winRate = entry.tournaments > 0
+    ? Math.round((entry.wins / entry.tournaments) * 100) : 0;
+
+  return (
+    <article className="relative overflow-hidden rounded-2xl border border-white/15 hover:border-brand/30 transition-all group"
+      style={{
+        background: 'var(--bg-panel)',
+      }}>
+      <div className="p-5">
+        <div className="flex items-center gap-3">
+          <PlayerAvatar entry={entry} size="sm" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <RankBadge rank={entry.rank} />
+            </div>
+            <h3 className="font-heading text-2xl text-transparent bg-clip-text bg-gradient-to-r from-[#FF5A00] to-[#00D1FF] uppercase truncate mt-1">
+              {entry.name}
+            </h3>
+          </div>
+        </div>
+
+        {/* Stats row */}
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {[
+            { label: 'Rating', value: String(entry.rating), color: 'text-brand' },
+            { label: 'Wins', value: String(entry.wins), color: 'text-gold' },
+            { label: 'Win %', value: `${winRate}%`, color: 'text-[#00D1FF]' },
+          ].map(s => (
+            <div key={s.label} className="text-center rounded-lg bg-white/5 border border-white/10 py-2">
+              <div className={`font-heading text-lg ${s.color}`}>{s.value}</div>
+              <div className="text-text-secondary text-[9px] uppercase tracking-widest">{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Rating bar */}
+        <div className="mt-3">
+          <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-brand to-[#FFD700]"
+              style={{ width: `${Math.min((entry.rating / 300) * 100, 100)}%` }}
+            />
+          </div>
+        </div>
+
+        <Link href={`/players/${entry.playerId}`}
+          className="btn-action-outline w-full inline-flex items-center justify-center text-sm mt-4 group-hover:border-brand/60">
           Профиль
         </Link>
       </div>
@@ -102,6 +199,7 @@ function PlayerCard({ entry, featured }: { entry: LeaderboardEntry; featured?: b
   );
 }
 
+/* ── Hero Section ─────────────────────────── */
 export default function Hero({ stats, topPlayers }: { stats: HomeStats; topPlayers: LeaderboardEntry[] }) {
   const top = topPlayers[0];
   const rest = topPlayers.slice(1, 3);
@@ -136,16 +234,16 @@ export default function Hero({ stats, topPlayers }: { stats: HomeStats; topPlaye
               </span>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
-              <PlayerCard entry={top} featured />
+              <FeaturedCard entry={top} />
               <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-5">
                 {rest.map((e) => (
-                  <PlayerCard key={e.playerId} entry={e} />
+                  <CompactCard key={e.playerId} entry={e} />
                 ))}
               </div>
             </div>
             <div className="text-center mt-6">
               <Link href="/rankings" className="font-body text-sm text-brand hover:text-brand/80 transition-colors">
-                Полный рейтинг →
+                Полный рейтинг &rarr;
               </Link>
             </div>
           </>

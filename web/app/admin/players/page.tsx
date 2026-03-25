@@ -165,6 +165,32 @@ export default function AdminPlayersPage() {
           <input type="number" value={form.wins} onChange={(e) => setForm((s) => ({ ...s, wins: Number(e.target.value || 0) }))} placeholder="wins" className="px-3 py-2 rounded-lg bg-surface border border-white/20" />
           <input type="number" value={form.totalPts} onChange={(e) => setForm((s) => ({ ...s, totalPts: Number(e.target.value || 0) }))} placeholder="totalPts" className="px-3 py-2 rounded-lg bg-surface border border-white/20" />
         </div>
+        {/* Photo upload (only when editing) */}
+        {isEdit && (
+          <div className="rounded-lg border border-white/15 p-3 bg-white/5">
+            <label className="text-xs text-text-secondary uppercase tracking-wider block mb-2">Фото игрока</label>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const fd = new FormData();
+                fd.append('photo', file);
+                setMessage('Загружаем фото...');
+                const res = await fetch(`/api/admin/players/${form.id}/photo`, { method: 'POST', body: fd });
+                if (res.ok) {
+                  setMessage('Фото загружено!');
+                  await load();
+                } else {
+                  const err = await res.json().catch(() => ({}));
+                  setMessage(err?.error || 'Ошибка загрузки фото');
+                }
+              }}
+              className="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-brand file:text-white file:font-semibold file:cursor-pointer"
+            />
+          </div>
+        )}
         <div className="flex gap-2">
           <button type="submit" disabled={loading} className="px-4 py-2 rounded-lg bg-brand text-surface font-semibold disabled:opacity-60">
             {loading ? 'Сохраняем...' : 'Сохранить'}

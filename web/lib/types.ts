@@ -12,6 +12,10 @@ export interface Player {
   wins: number;
   totalPts: number;
   lastSeen: string;
+  photoUrl: string;
+  city: string;
+  level: string;
+  bio: string;
 }
 
 export interface LeaderboardEntry {
@@ -23,6 +27,7 @@ export interface LeaderboardEntry {
   tournaments: number;
   wins: number;
   lastSeen: string;
+  photoUrl: string;
 }
 
 export interface Tournament {
