@@ -1,4 +1,4 @@
-import TournamentCard from './TournamentCard';
+import EventCard, { groupTournaments } from './EventCard';
 import type { Tournament } from '@/lib/types';
 
 export default function CalendarGrid({ tournaments }: { tournaments: Tournament[] }) {
@@ -13,9 +13,10 @@ export default function CalendarGrid({ tournaments }: { tournaments: Tournament[
     );
   }
 
-  // Open/full tournaments at top (upcoming), then finished
-  const upcoming = tournaments.filter(t => t.status === 'open' || t.status === 'full');
-  const finished = tournaments.filter(t => t.status === 'finished');
+  const groups = groupTournaments(tournaments);
+
+  const upcoming = groups.filter(g => g.status === 'open' || g.status === 'full');
+  const finished = groups.filter(g => g.status === 'finished');
 
   return (
     <div className="space-y-12">
@@ -28,8 +29,8 @@ export default function CalendarGrid({ tournaments }: { tournaments: Tournament[
             </h2>
           </div>
           <div className="grid grid-cols-1 gap-6">
-            {upcoming.map((t) => (
-              <TournamentCard key={t.id} tournament={t} />
+            {upcoming.map(g => (
+              <EventCard key={g.key} group={g} />
             ))}
           </div>
         </section>
@@ -43,9 +44,9 @@ export default function CalendarGrid({ tournaments }: { tournaments: Tournament[
               Прошедшие турниры
             </h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {finished.map((t) => (
-              <TournamentCard key={t.id} tournament={t} />
+          <div className="grid grid-cols-1 gap-6">
+            {finished.map(g => (
+              <EventCard key={g.key} group={g} />
             ))}
           </div>
         </section>
