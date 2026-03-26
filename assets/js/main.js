@@ -21,6 +21,13 @@ if (typeof globalThis.escAttr !== 'function') {
   };
 }
 
+if (typeof globalThis.switchTab !== 'function') {
+  globalThis.switchTab = function queueBootstrapTab(id) {
+    globalThis.__pendingBootstrapTab = id;
+    return Promise.resolve(id);
+  };
+}
+
 // loadHistory / saveHistory defined as classic <script> in index.html
 // (ES module scope is isolated; classic scripts + dynamic loads need global access).
 
@@ -162,14 +169,20 @@ async function bootstrapApp() {
   }
 
   buildAll();
-  const startTab = (activeTabId != null && activeTabId !== 'roster') ? activeTabId : 'home';
+  // Preserve an early tab switch issued during bootstrap (e.g. tests/users opening roster
+  // immediately after DOMContentLoaded) instead of forcing the app back to home.
+  const pendingBootstrapTab = globalThis.__pendingBootstrapTab;
+  const startTab = pendingBootstrapTab != null
+    ? pendingBootstrapTab
+    : (activeTabId != null ? activeTabId : 'home');
+  globalThis.__pendingBootstrapTab = null;
   await switchTab(startTab);
 
   if (sbConfig.roomCode && sbConfig.roomSecret) {
     try {
       await sbConnect();
     } catch (error) {
-      console.warn('Supabase auto-connect failed:', error);
+      console.warn('Cloud auto-connect failed:', error);
     }
   }
 

@@ -48,8 +48,11 @@ function openIPT(trnId) {
     return;
   }
 
-  // Regenerate groups if missing or count doesn't match participants
-  const expectedGroups = Math.max(1, Math.floor(parts.length / 8));
+  // Regenerate groups if missing or count doesn't match the configured IPT courts.
+  const configuredCourts = Number.isFinite(Number(trn.ipt?.courts))
+    ? Math.max(1, Math.floor(Number(trn.ipt.courts)))
+    : 1;
+  const expectedGroups = Math.max(1, Math.min(configuredCourts, Math.floor(parts.length / 4) || 1));
   const needsGenerate  = !trn.ipt?.groups || trn.ipt.groups.length !== expectedGroups;
 
   if (needsGenerate) {
@@ -57,8 +60,9 @@ function openIPT(trnId) {
     const lim = parseInt(String(trn.ipt.pointLimit ?? ''), 10);
     trn.ipt.pointLimit   = Number.isFinite(lim) && lim >= 1 ? lim : 21;
     trn.ipt.finishType   = trn.ipt.finishType || 'hard';
+    trn.ipt.courts       = configuredCourts;
     trn.ipt.currentGroup = 0;
-    trn.ipt.groups       = generateIPTGroups(parts, trn.ipt.gender || trn.gender || 'mixed');
+    trn.ipt.groups       = generateIPTGroups(parts, trn.ipt.gender || trn.gender || 'mixed', expectedGroups);
     if (trn.status !== 'finished') trn.status = 'active';
     saveTournaments(arr);
   }

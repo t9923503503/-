@@ -69,7 +69,7 @@ const HOME_TOURNAMENTS_DEFAULT = [
 function migrateProjectData() {
   // Phase 1 — Normalize player IDs to string format "p_<ts>_<rand>"
   // Old IDs were numbers: Date.now() + Math.random() (float)
-  const db = loadPlayerDB();
+  const db = Array.isArray(loadPlayerDB()) ? loadPlayerDB() : [];
   let playersMigrated = false;
   db.forEach(p => {
     if (typeof p.id !== 'string' || !p.id.startsWith('p_')) {
@@ -160,7 +160,9 @@ function loadUpcomingTournaments() {
 }
 /** Finished tournaments in the legacy manual-archive shape */
 function loadManualTournaments() {
-  const pMap = new Map(); loadPlayerDB().forEach(p => pMap.set(p.id, p));
+  const players = Array.isArray(loadPlayerDB()) ? loadPlayerDB() : [];
+  const pMap = new Map();
+  players.forEach(p => pMap.set(p.id, p));
   return getTournaments()
     .filter(t => t.status === 'finished')
     .map(t => {
@@ -182,6 +184,7 @@ function loadManualTournaments() {
         playersCount: t.participants?.length || 0,
         winner: winnerName,
         playerResults: pResults,
+        photoUrl: t.photoUrl || '',
       };
     });
 }
@@ -198,6 +201,7 @@ function saveManualTournaments(manualRecords) {
     level: 'medium', capacity: t.playersCount || 0, prize: '',
     status: 'finished', source: t.source || 'manual',
     participants: [], waitlist: [], winners: t.winner ? [t.winner] : [],
+    photoUrl: t.photoUrl || '',
   }));
   saveTournaments([...nonFinished, ...finished]);
 }

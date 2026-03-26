@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0d0d1a">
 <meta http-equiv="Content-Security-Policy"
-  content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://sv-ugra.ru; img-src 'self' data: blob: https:;">
+  content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://sv-ugra.ru; img-src 'self' data: blob: https:;">
 <title>Профиль игрока — Лютые пляжники</title>
 <link rel="icon" href="assets/favicon.png" type="image/png">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -431,6 +431,7 @@ html, body {
   'use strict';
 
   const API = 'https://sv-ugra.ru/api/rest/v1';
+  const CAN_USE_REMOTE_API = /(^|\.)sv-ugra\.ru$/i.test(location.hostname);
 
   // ── Get player ID from URL: /profile.html?id=UUID or ?name=NAME ──
   const params   = new URLSearchParams(location.search);
@@ -445,6 +446,7 @@ html, body {
 
   // ── Load ──────────────────────────────────────────────────
   async function loadProfile() {
+    if (!CAN_USE_REMOTE_API) { showNotFound(); return; }
     try {
       let url = playerId
         ? `${API}/players?id=eq.${encodeURIComponent(playerId)}&limit=1`
@@ -537,6 +539,11 @@ html, body {
 
   // ── Results ───────────────────────────────────────────────
   async function loadResults(id) {
+    if (!CAN_USE_REMOTE_API) {
+      document.getElementById('results-body').innerHTML =
+        '<tr><td colspan="6" class="empty">Р РµР·СѓР»СЊС‚Р°С‚С‹ РґРѕСЃС‚СѓРїРЅС‹ РЅР° РѕСЃРЅРѕРІРЅРѕРј СЃР°Р№С‚Рµ</td></tr>';
+      return;
+    }
     try {
       const res  = await fetch(
         `${API}/tournament_results?player_id=eq.${id}&order=created_at.desc&limit=50` +

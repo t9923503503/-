@@ -4,6 +4,7 @@ import { safeSetItem } from '../../shared/api.js';
 describe('safeSetItem', () => {
   beforeEach(() => {
     globalThis.showToast = vi.fn();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {

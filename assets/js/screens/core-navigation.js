@@ -230,11 +230,13 @@ function syncIPTNav() {
 }
 
 // ── Tab switching ─────────────────────────────────────────
-let _switchTabBusy = false;
-async function switchTab(id) {
-  if (_switchTabBusy) return;
-  _switchTabBusy = true;
-  try { await _switchTabInner(id); } finally { _switchTabBusy = false; }
+let _switchTabQueue = Promise.resolve();
+function switchTab(id) {
+  const run = async () => {
+    await _switchTabInner(id);
+  };
+  _switchTabQueue = _switchTabQueue.then(run, run);
+  return _switchTabQueue;
 }
 
 async function _switchTabInner(id) {

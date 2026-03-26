@@ -5,10 +5,10 @@ import vm from 'node:vm';
 const root = process.cwd();
 const entrypointScript = 'assets/js/main.js';
 const appScripts = [
+  'assets/js/ui/error-handler.js',
   'assets/js/state/app-state.js',
   'assets/js/domain/players.js',
   'assets/js/domain/tournaments.js',
-  'assets/js/domain/timers.js',
   'assets/js/integrations/config.js',
   'assets/js/ui/stats-recalc.js',
   'assets/js/ui/players-controls.js',
@@ -17,9 +17,15 @@ const appScripts = [
   'assets/js/ui/tournament-form.js',
   'assets/js/ui/participants-modal.js',
   'assets/js/ui/tournament-details.js',
+  'assets/js/ui/ipt-format.js',
+  'assets/js/screens/ipt.js',
   'assets/js/registration.js',
-  'assets/js/screens/core.js',
-  'assets/js/screens/roster.js',
+  'assets/js/screens/core-render.js',
+  'assets/js/screens/core-lifecycle.js',
+  'assets/js/screens/core-navigation.js',
+  'assets/js/screens/roster-format-launcher.js',
+  'assets/js/screens/roster-edit.js',
+  'assets/js/screens/roster-list.js',
   'assets/js/screens/courts.js',
   'assets/js/screens/components.js',
   'assets/js/screens/svod.js',
@@ -27,6 +33,8 @@ const appScripts = [
   'assets/js/screens/home.js',
   'assets/js/screens/stats.js',
   'assets/js/integrations.js',
+  'assets/js/ui/kotc-sync.js',
+  'assets/js/domain/timers.js',
   'assets/js/ui/roster-auth.js',
   'assets/js/runtime.js',
 ];

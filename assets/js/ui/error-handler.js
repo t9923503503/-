@@ -57,7 +57,7 @@ function _handleError(message, source, lineno, colno) {
     col: colno || 0,
   };
   _saveError(entry);
-  // Не показываем toast на ошибки сторонних скриптов (supabase, google)
+// Не показываем toast на ошибки сторонних скриптов (cloud sdk, google)
   const isSelf = !entry.src || entry.src.startsWith('/') || entry.src.startsWith('assets/') || entry.src.startsWith('shared/');
   if (isSelf) {
     _showErrorToast(entry.msg || 'Ошибка приложения');

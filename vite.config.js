@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { createLogger, defineConfig } from 'vite';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'fs';
@@ -57,9 +57,19 @@ function copyStaticAssets() {
   };
 }
 
+const viteLogger = createLogger();
+const viteWarn = viteLogger.warn;
+viteLogger.warn = (msg, options) => {
+  if (typeof msg === 'string' && msg.includes('can\'t be bundled without type="module" attribute')) {
+    return;
+  }
+  viteWarn(msg, options);
+};
+
 export default defineConfig({
   root: '.',
   publicDir: false,
+  customLogger: viteLogger,
 
   server: {
     port: 8000,

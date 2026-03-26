@@ -144,23 +144,39 @@ function buildIPTMatchHistory(rounds) {
 
 /**
  * Generate all groups from the participants list.
- * Always splits into groups of 8 (last group may have remainder).
+ * By default splits into groups of 8, but can preserve a desired group count
+ * (for example: configured court count) as long as every group has at least 4 players.
  * @param {string[]} participants
  * @param {string} gender — 'mixed'|'male'|'female'
+ * @param {number=} desiredGroups
  * @returns {Array} groups array for trn.ipt.groups
  */
-function generateIPTGroups(participants, gender) {
+function generateIPTGroups(participants, gender, desiredGroups) {
   const n         = participants.length;
-  const numGroups = Math.max(1, Math.floor(n / 8));
+  const maxPlayableGroups = Math.max(1, Math.floor(n / 4));
+  const preferredGroups = Number.isFinite(desiredGroups) && desiredGroups > 0
+    ? Math.floor(desiredGroups)
+    : Math.max(1, Math.floor(n / 8));
+  const numGroups = Math.max(1, Math.min(preferredGroups, maxPlayableGroups));
   const names     = getIPTGroupNames(numGroups);
   const isMixed   = gender === 'mixed';
-  const db        = typeof loadPlayerDB === 'function' ? loadPlayerDB() : [];
+  // A0.2 PoC: prefer shared/players bridge; fall back to domain/players global.
+  const db        = (typeof sharedPlayers !== 'undefined' && sharedPlayers.loadPlayerDB)
+    ? sharedPlayers.loadPlayerDB()
+    : (typeof loadPlayerDB === 'function' ? loadPlayerDB() : []);
+
+  const chunks = [];
+  const baseSize = Math.floor(n / numGroups);
+  const remainder = n % numGroups;
+  let offset = 0;
+  for (let gi = 0; gi < numGroups; gi++) {
+    const groupSize = baseSize + (gi < remainder ? 1 : 0);
+    chunks.push(participants.slice(offset, offset + groupSize));
+    offset += groupSize;
+  }
 
   return names.map((name, gi) => {
-    const start   = gi * 8;
-    var players = gi < numGroups - 1
-      ? participants.slice(start, start + 8)
-      : participants.slice(start); // last group gets remainder
+    var players = chunks[gi] ? chunks[gi].slice() : [];
 
     // В mixed режиме — сортируем: сначала М (0..3), потом Ж (4..7)
     if (isMixed && players.length === 8) {
@@ -175,7 +191,7 @@ function generateIPTGroups(participants, gender) {
       // 4М + 4Ж — идеальный mixed
       players = men.slice(0, 4).concat(women.slice(0, 4));
       // Если не хватает — добираем
-      var rest = participants.slice(start, start + 8)
+      var rest = (chunks[gi] || [])
         .filter(function(id) { return players.indexOf(id) === -1; });
       while (players.length < 8 && rest.length > 0) players.push(rest.shift());
     }
@@ -411,7 +427,7 @@ async function finishIPT(trnId) {
 
   saveTournaments(arr);
   recalcAllPlayerStats(false);
-  switchTab('home');
+  switchTab('roster');
   showToast('🏆 IPT турнир завершён! Результаты записаны.', 'success');
 }
 

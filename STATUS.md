@@ -40,7 +40,7 @@
 - [x] **S8.7** — KOTC финализация ✅ (уже было — `formats/kotc/kotc.js`)
 - [x] **S8.8** — Thai финализация ✅ (уже было — `formats/thai/thai-boot.js`)
 - [x] **S8.9** — Админ вкладка «Рейтинг» ✅ (уже было — `admin-init.js`, `admin.html`)
-- [x] **S8.10** — rating.html история из сервера ✅ (2026-03-24, `rating.html` — Supabase RPC → static JSON → localStorage cache)
+- [x] **S8.10** — rating.html история из сервера ✅ (2026-03-24, `rating.html` — static JSON → localStorage cache)
 - [x] **S8.11** — Тесты finalize/sync ✅ (уже было — `tests/unit/finalize.test.js` 13 тестов)
 
 ### Фаза 6 задачи (2 ИИ)
@@ -313,7 +313,7 @@
 | 2026-03-22 | QA | Q4.1 i18n тесты | tests/unit/i18n.test.js | 10 тестов: key parity, non-empty, 50+ keys, translation ratio, exports, placeholders |
 | 2026-03-22 | ARCH | A4.3 Ratings | shared/ratings.js, tests/unit/ratings.test.js | FORMAT_MULTIPLIERS (7 форматов), PLACEMENT_POINTS (24), calcRatingPoints, participation bonus |
 | 2026-03-22 | FORMAT | F4.1 a11y | shared/ui-kit.js, assets/js/runtime.js, assets/js/screens/components.js, assets/js/screens/core-navigation.js | FocusTrap в confirm/player card/tournament modal, AriaTabList в nav pills + top nav |
-| 2026-03-22 | ARCH | A4.2 Realtime | shared/realtime.js, sw.js | WebSocket realtime sync через Supabase Broadcast channels, auto-reconnect, tournament sync helpers, SW v57 |
+| 2026-03-22 | ARCH | A4.2 Realtime | shared/realtime.js, sw.js | WebSocket realtime sync через broadcast channels, auto-reconnect, tournament sync helpers, SW v57 |
 | 2026-03-22 | QA | Q4.2 Realtime тесты | tests/unit/realtime.test.js | 14 тестов: noop channel, mock WebSocket connect/join/broadcast/reconnect/destroy, tournament sync helpers |
 | 2026-03-22 | QA | Q4.3 Финальный аудит | STATUS.md, DEVELOPMENT_PLAN.md | 193 unit + 7 smoke = все зелёные. Фаза 4 завершена. |
 | 2026-03-22 | ARCH | S5.1 .gitignore | .gitignore | web/.next/ и web/.env.local добавлены в .gitignore |

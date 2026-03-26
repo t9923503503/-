@@ -112,7 +112,7 @@ async function _loadApiArchive() {
   if (_serverArchiveFetched) return;
   // Smoke tests run with a plain static server (no Next.js API handlers),
   // so calling `/api/archive` would trigger a 404 console error and fail the gate.
-  // In real deployments APP_CONFIG is expected to be populated (at least Supabase creds).
+// In real deployments APP_CONFIG is expected to be populated (at least cloud sync creds).
   const cfg = globalThis.APP_CONFIG || {};
   const hasBackend =
     Boolean(String(cfg.apiBase || '').trim()) ||

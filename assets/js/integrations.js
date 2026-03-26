@@ -1,18 +1,18 @@
 'use strict';
 
 // ════════════════════════════════════════════════════════════
-// SUPABASE SYNC MODULE
+// CLOUD SYNC MODULE
 // Безопасная комнатная синхронизация через room_code + room_secret
 // ════════════════════════════════════════════════════════════
 let sbConfig = { ...DEFAULT_SB_CONFIG };
-let sbClient  = null;    // Supabase client instance
+let sbClient  = null;    // cloud sync client instance
 let sbStatus  = 'idle';  // idle | connecting | live | offline
 let sbIsApplying = false; // prevent echo loop when we apply remote state
 let sbSaveTimer  = null;  // debounce remote saves
 let sbPollTimer  = null;  // polling interval fallback
 let sbIsPolling  = false;
 let sbLastRemoteUpdatedAt = '';
-let sbRealtimeChannel = null;  // Supabase Broadcast channel
+let sbRealtimeChannel = null;  // realtime broadcast channel
 let sbRealtimeFailed  = false; // true when Realtime is unavailable → use polling
 const SB_POLL_MS      = 1500;
 const SB_POLL_MAX_MS  = 30000; // max backoff for polling fallback
@@ -335,7 +335,7 @@ function sbStartPollingFallback() {
   sbPollTimer = setInterval(() => { sbPollOnce(); }, sbPollCurrentMs);
 }
 
-// ── Supabase Realtime Broadcast ──────────────────────────
+// ── Realtime Broadcast ───────────────────────────────────
 let _sbWasConnected = false;       // S7.8: detect reconnects
 let _sbSnapshotTimer = null;       // S7.8: timeout waiting for snapshot_response
 
@@ -445,7 +445,7 @@ async function sbPollOnce() {
       if (data.state) sbApplyRemoteState(data.state);
     }
   } catch (e) {
-    console.warn('Supabase poll error:', e);
+    console.warn('Cloud sync poll error:', e);
     sbSetStatus('offline');
     sbStopPolling();
     sbRefreshCard();
@@ -487,7 +487,7 @@ async function sbConnect() {
   sbClient = sbEnsureClient();
   if (!sbClient) {
     sbSetStatus('offline');
-    showToast('Синхронизация недоступна: Supabase не загружен (проверьте сеть или блокировку скриптов)');
+    showToast('Синхронизация недоступна: облачный модуль не загружен (проверьте сеть или блокировку скриптов)');
     sbRefreshCard();
     return;
   }
@@ -572,7 +572,7 @@ function sbDisconnect() {
   sbRefreshCard();
 }
 
-// ── Push local state to Supabase (debounced 400ms) ───────
+// ── Push local state to cloud sync (debounced 400ms) ─────
 function sbPush() {
   if (!sbEnsureClient() || sbStatus !== 'live' || sbIsApplying) return;
   clearTimeout(sbSaveTimer);
@@ -604,7 +604,7 @@ function sbPush() {
       const bar = document.getElementById('sync-topbar');
       if (bar) { bar.style.display = 'block'; setTimeout(()=>{ bar.style.display='none'; }, 700); }
     } catch(e) {
-      console.warn('Supabase push error:', e);
+      console.warn('Cloud sync push error:', e);
     }
   }, 400);
 }
@@ -703,16 +703,16 @@ function sbGetLocalState() {
 // ════════════════════════════════════════════════════════════
 
 /**
- * Публикует результаты завершённого турнира в Supabase.
+ * Публикует результаты завершённого турнира в облачное хранилище.
  * Вызывается после finishTournament(). Не требует активной room-сессии —
- * достаточно настроенного Supabase URL + anonKey.
+ * достаточно настроенного server URL + anonKey.
  * Идемпотентна: повторный вызов с тем же snapshot.id не создаёт дубликатов.
  *
  * @param {object} snapshot  — объект из finishTournament()
  */
 async function sbPublishTournament(snapshot) {
   const client = sbEnsureClient();
-  if (!client) return; // Supabase не настроен
+  if (!client) return; // cloud sync не настроен
 
   const db          = loadPlayerDB();
   const ratingType  = divisionToType(tournamentMeta.division || '');
@@ -803,7 +803,7 @@ async function sbPublishTournament(snapshot) {
 }
 
 /**
- * Загружает публичный рейтинг и историю турниров из Supabase.
+ * Загружает публичный рейтинг и историю турниров из облачного хранилища.
  * Работает без room-сессии — только URL + anonKey.
  * Используется для отображения публичного экрана рейтинга.
  *
@@ -834,8 +834,8 @@ async function sbPublicFetch(type = 'M') {
 }
 
 // ── Render config card ────────────────────────────────────
-function renderSupabaseCard() {
-  return ""; // Supabase sync UI removed
+function renderCloudSyncCard() {
+  return ""; // cloud sync UI removed
   const live = sbStatus === 'live';
   const hasConfig = !!(sbConfig.url && sbConfig.anonKey);
   const ready = !!(sbNormalizeRoomCode(sbConfig.roomCode) && (sbConfig.roomSecret || '').trim());
@@ -845,7 +845,7 @@ function renderSupabaseCard() {
         <path d="M3 12L12 3l9 9-9 9-9-9z" fill="#3ecf8e" opacity=".25"/>
         <path d="M12 3v18M3 12h18" stroke="#3ecf8e" stroke-width="2" stroke-linecap="round"/>
       </svg>
-      Supabase · Синхронизация
+      Облако · Синхронизация
     </div>
     <div class="sb-sub">Комната защищена кодом и секретом. Для подключения другого устройства нужны оба значения.</div>
 
@@ -1000,7 +1000,7 @@ async function adminMerge(realId) {
 
   const cl = sbEnsureClient();
   if (!cl) {
-    showToast('Нет подключения к Supabase', 'error');
+    showToast('Нет подключения к облачной синхронизации', 'error');
     return;
   }
   try {
@@ -1029,7 +1029,7 @@ function renderAdminPanel() {
   if (sbStatus !== 'live') return '';
   return `<div class="sb-card admin-panel" id="admin-panel">
     <div class="sb-title">🛡 Администрирование</div>
-    <div class="sb-sub">Заявки игроков и временные профили. Требует подключения к Supabase.</div>
+    <div class="sb-sub">Заявки игроков и временные профили. Требует подключения к облачной синхронизации.</div>
     <button class="btn-sb connect" style="margin-bottom:12px" onclick="adminLoadData()">🔄 Загрузить данные</button>
     <div id="admin-panel-inner">${_renderAdminPanelInner()}</div>
   </div>`;

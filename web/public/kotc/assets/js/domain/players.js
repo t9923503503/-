@@ -2,7 +2,7 @@
 
 // Player store and roster sync helpers.
 // Внутри приложения все игроки имеют один формат (canonical). Совместимость со старым
-// localStorage и с полями Supabase (total_pts, tournaments_played) — только в адаптерах ниже.
+// localStorage и с полями remote DB (total_pts, tournaments_played) — только в адаптерах ниже.
 // Canonical frontend player shape (normalized):
 // {
 //   id: string|number,
@@ -24,7 +24,7 @@
 
 function fromLocalPlayer(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  const id = raw.id != null ? raw.id : (raw.player_id != null ? raw.player_id : (Date.now() + Math.random()));
+  const id = String(raw.id != null ? raw.id : (raw.player_id != null ? raw.player_id : ('p_' + Date.now() + '_' + Math.random().toString(36).slice(2,6))));
   const name = (raw.name || raw.full_name || raw.display_name || '').trim();
   const gender = raw.gender === 'W' ? 'W' : 'M';
   const status = raw.status || 'active';
@@ -88,19 +88,96 @@ function toLocalPlayer(player) {
   return { ...player };
 }
 
-// Supabase row → canonical player
-function fromSupabasePlayer(raw) {
+// Remote row → canonical player
+function fromRemotePlayer(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  // Reuse local adapter where possible, but Supabase often uses *_played / total_pts fields.
+// Reuse local adapter where possible, but remote rows often use *_played / total_pts fields.
   const base = fromLocalPlayer(raw);
   if (!base) return null;
-  // Preserve Supabase-specific status if present.
+// Preserve remote-specific status if present.
   base.status = raw.status || base.status || 'active';
   return base;
 }
 
 let _playerDbCache = null;
 let _playerDbCacheTs = 0;
+const DEFAULT_MALE_PLAYERS = [
+  'Президент',
+  'Жорик',
+  'Смирнов',
+  'Терехов',
+  'Жидков',
+  'Шперлинг',
+  'Когалымский',
+  'Наумчук',
+  'Привет',
+  'Камалов',
+  'Соболев',
+  'Лебедев',
+  'Майлыбаев',
+  'Никифоров',
+  'Володя',
+  'Артиков',
+  'Степанян',
+  'Рогожкин',
+  'Пекшев',
+  'Салим',
+  'Грузин',
+  'Андрей',
+  'Салмин',
+  'Шерметов',
+  'Фатин',
+  'Гадаборшев',
+  'Паничкин',
+  'Шелгачев',
+  'Пивин',
+  'Надымов',
+  'Александр',
+  'Килатов',
+];
+
+function ensureDefaultPlayers(db) {
+  const list = Array.isArray(db) ? db.slice() : [];
+  const existing = new Set(
+    list
+      .filter(p => p && typeof p === 'object')
+      .map(p => `${String(p.name || '').trim().toLowerCase()}|${p.gender === 'W' ? 'W' : 'M'}`)
+  );
+  let changed = false;
+  const addedAt = new Date().toISOString().split('T')[0];
+
+  DEFAULT_MALE_PLAYERS.forEach(name => {
+    const normalized = String(name || '').trim();
+    if (!normalized) return;
+    const key = `${normalized.toLowerCase()}|M`;
+    if (existing.has(key)) return;
+    list.push({
+      id: `seed_m_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name: normalized,
+      gender: 'M',
+      status: 'active',
+      addedAt,
+      tournaments: 0,
+      totalPts: 0,
+      wins: 0,
+      ratingM: 0,
+      ratingW: 0,
+      ratingMix: 0,
+      tournamentsM: 0,
+      tournamentsW: 0,
+      tournamentsMix: 0,
+      lastSeen: '',
+      iptWins: 0,
+      iptDiff: 0,
+      iptPts: 0,
+      iptMatches: 0,
+    });
+    existing.add(key);
+    changed = true;
+  });
+
+  return { db: list, changed };
+}
 
 function loadPlayerDB() {
   const ts = +(localStorage.getItem('kotc3_playerdb_ts') || 0);
@@ -108,8 +185,11 @@ function loadPlayerDB() {
   try {
     const raw = JSON.parse(localStorage.getItem('kotc3_playerdb') || '[]');
     if (!Array.isArray(raw)) { _playerDbCache = []; _playerDbCacheTs = ts; return []; }
-    _playerDbCache = raw.map(fromLocalPlayer).filter(Boolean);
+    const normalized = raw.map(fromLocalPlayer).filter(Boolean);
+    const seeded = ensureDefaultPlayers(normalized);
+    _playerDbCache = seeded.db;
     _playerDbCacheTs = ts;
+    if (seeded.changed) savePlayerDB(seeded.db);
     return _playerDbCache;
   } catch(e){
     return [];

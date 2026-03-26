@@ -1,5 +1,10 @@
 import { getPool } from './db';
 import type { LeaderboardEntry, Player, Tournament, RatingType, Team, RatingHistoryEntry } from './types';
+import {
+  applyTournamentOverride,
+  applyTournamentOverrides,
+  getTournamentOverride,
+} from './tournament-overrides';
 
 /* Professional Points — same table as SPA (assets/js/state/app-state.js) */
 const POINTS_TABLE = [
@@ -187,7 +192,9 @@ export async function fetchTournaments(
   limit = 20,
   status?: string
 ): Promise<Tournament[]> {
-  if (!process.env.DATABASE_URL) return [];
+  if (!process.env.DATABASE_URL) {
+    return applyTournamentOverrides([]).slice(0, limit);
+  }
   const pool = getPool();
 
   let query = `
@@ -206,24 +213,28 @@ export async function fetchTournaments(
   params.push(limit);
   query += ` LIMIT $${params.length}`;
 
-  const { rows } = await pool.query(query, params);
+  try {
+    const { rows } = await pool.query(query, params);
 
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    date: toIsoDate(row.date),
-    time: row.time ?? '',
-    location: row.location ?? '',
-    format: row.format ?? '',
-    division: row.division ?? '',
-    level: row.level ?? '',
-    capacity: row.capacity ?? 0,
-    status: row.status ?? 'open',
-    participantCount: row.participant_count ?? 0,
-    prize: row.prize ?? '',
-    photoUrl: row.photo_url ?? '',
-    formatCode: row.format_code ?? '',
-  }));
+    return applyTournamentOverrides(rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      date: toIsoDate(row.date),
+      time: row.time ?? '',
+      location: row.location ?? '',
+      format: row.format ?? '',
+      division: row.division ?? '',
+      level: row.level ?? '',
+      capacity: row.capacity ?? 0,
+      status: row.status ?? 'open',
+      participantCount: row.participant_count ?? 0,
+      prize: row.prize ?? '',
+      photoUrl: row.photo_url ?? '',
+      formatCode: row.format_code ?? '',
+    })));
+  } catch {
+    return applyTournamentOverrides([]).slice(0, limit);
+  }
 }
 
 export interface HomeStats {
@@ -278,25 +289,84 @@ export async function fetchRankingCounts(): Promise<RankingCounts> {
 export async function fetchTournamentById(
   id: string
 ): Promise<Tournament | null> {
-  if (!process.env.DATABASE_URL) return null;
+  const override = getTournamentOverride(id);
+  if (!process.env.DATABASE_URL) {
+    if (!override) return null;
+    return applyTournamentOverride({
+      id,
+      name: '',
+      date: '',
+      time: '',
+      location: '',
+      format: '',
+      division: '',
+      level: '',
+      capacity: 0,
+      status: 'open',
+      participantCount: 0,
+      prize: '',
+      photoUrl: '',
+      formatCode: '',
+    });
+  }
   const pool = getPool();
 
-  const { rows } = await pool.query(
-    `
-      SELECT t.*, COUNT(tp.id)::int AS participant_count
-      FROM tournaments t
-      LEFT JOIN tournament_participants tp ON tp.tournament_id = t.id
-      WHERE t.id = $1
-      GROUP BY t.id
-      LIMIT 1
-    `,
-    [id]
-  );
+  let rows;
+  try {
+    const res = await pool.query(
+      `
+        SELECT t.*, COUNT(tp.id)::int AS participant_count
+        FROM tournaments t
+        LEFT JOIN tournament_participants tp ON tp.tournament_id = t.id
+        WHERE t.id = $1
+        GROUP BY t.id
+        LIMIT 1
+      `,
+      [id]
+    );
+    rows = res.rows;
+  } catch {
+    if (!override) return null;
+    return applyTournamentOverride({
+      id,
+      name: '',
+      date: '',
+      time: '',
+      location: '',
+      format: '',
+      division: '',
+      level: '',
+      capacity: 0,
+      status: 'open',
+      participantCount: 0,
+      prize: '',
+      photoUrl: '',
+      formatCode: '',
+    });
+  }
 
   const data = rows[0];
-  if (!data) return null;
+  if (!data) {
+    if (!override) return null;
+    return applyTournamentOverride({
+      id,
+      name: '',
+      date: '',
+      time: '',
+      location: '',
+      format: '',
+      division: '',
+      level: '',
+      capacity: 0,
+      status: 'open',
+      participantCount: 0,
+      prize: '',
+      photoUrl: '',
+      formatCode: '',
+    });
+  }
 
-  return {
+  return applyTournamentOverride({
     id: data.id,
     name: data.name,
     date: toIsoDate(data.date),
@@ -311,7 +381,7 @@ export async function fetchTournamentById(
     prize: data.prize ?? '',
     photoUrl: data.photo_url ?? '',
     formatCode: data.format_code ?? '',
-  };
+  });
 }
 
 export async function fetchPlayerMatches(

@@ -66,6 +66,103 @@ let _activePanel = 'roster';
 let _activeCourt = 0;    // Stage 1: which court is displayed
 let _activeDiv   = 'hard'; // Stage 2: which division
 
+function _splitInlineArgs(source) {
+  const args = [];
+  let current = '';
+  let quote = null;
+  let escaped = false;
+
+  for (const ch of source) {
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      current += ch;
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      current += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      current += ch;
+      quote = ch;
+      continue;
+    }
+    if (ch === ',') {
+      args.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+
+  if (current.trim()) args.push(current.trim());
+  return args;
+}
+
+function _decodeInlineArg(token, element) {
+  if (token === 'this.value') return element?.value ?? '';
+  if ((token.startsWith("'") && token.endsWith("'")) || (token.startsWith('"') && token.endsWith('"'))) {
+    return token.slice(1, -1).replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  }
+  const num = Number(token);
+  return Number.isFinite(num) ? num : token;
+}
+
+function _invokeInlineSource(source, element, event) {
+  if (!source) return false;
+  const statements = String(source)
+    .split(';')
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  let handled = false;
+  for (const statement of statements) {
+    if (statement === 'event.stopPropagation()') {
+      event?.stopPropagation();
+      handled = true;
+      continue;
+    }
+
+    const match = statement.match(/^(?:window\.)?([A-Za-z0-9_$.]+)\((.*)\)$/);
+    if (!match) continue;
+
+    const fnPath = match[1];
+    const fn = fnPath.split('.').reduce((acc, key) => acc?.[key], globalThis);
+    if (typeof fn !== 'function') continue;
+
+    const args = match[2].trim()
+      ? _splitInlineArgs(match[2]).map(arg => _decodeInlineArg(arg, element))
+      : [];
+    fn(...args);
+    handled = true;
+  }
+
+  return handled;
+}
+
+function _installInlineEventBridge() {
+  document.addEventListener('click', (event) => {
+    const el = event.target instanceof Element ? event.target.closest('[onclick]') : null;
+    if (!el) return;
+    const source = el.getAttribute('onclick');
+    if (_invokeInlineSource(source, el, event)) {
+      event.preventDefault();
+    }
+  });
+
+  document.addEventListener('input', (event) => {
+    const el = event.target instanceof Element ? event.target.closest('[oninput]') : null;
+    if (!el) return;
+    _invokeInlineSource(el.getAttribute('oninput'), el, event);
+  });
+}
+
 function _loadSession() {
   try {
     const raw = localStorage.getItem(_STORE_KEY);
@@ -895,6 +992,7 @@ function _init() {
 }
 
 async function _boot() {
+  _installInlineEventBridge();
   await initI18n();
   const back = document.querySelector('.fmt-nav-back');
   if (back) back.textContent = tr('kotcFmt.hubBack');

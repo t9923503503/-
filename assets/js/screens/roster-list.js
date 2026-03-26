@@ -120,7 +120,7 @@ function renderRoster() {
     <button class="btn-rsr danger"    onclick="clearRoster()">🧹 ${tr('roster.newRoster')}</button>
   </div>`;
 
-  // ── Низ: Завершить / Сброс / Supabase / GSheets / Backup / History ──
+// ── Низ: Завершить / Сброс / Cloud / GSheets / Backup / History ──
   html += `<button class="btn-finish" onclick="finishTournament()">
     🏁 ${tr('tournament.finish')}
   </button>
@@ -129,7 +129,7 @@ function renderRoster() {
     <button class="btn-reset-tournament" onclick="resetTournament()">🗑 ${tr('tournament.reset')}</button>
   </div>
 
-  ${renderSupabaseCard()}
+${renderCloudSyncCard()}
 
   ${typeof renderAdminPanel === 'function' ? renderAdminPanel() : ''}
 

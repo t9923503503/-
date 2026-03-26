@@ -409,7 +409,7 @@ function saveState() {
     localStorage.setItem('kotc3_meta',       JSON.stringify(tournamentMeta));
     localStorage.setItem('kotc3_eventlog',   JSON.stringify(tournamentHistory));
   } catch(e){ console.error('[saveState] Failed to persist state:', e); }
-  sbPush(); // синхронизировать с Supabase
+sbPush(); // синхронизировать с облаком
 }
 
 function loadState() {
@@ -723,7 +723,7 @@ async function finishTournament() {
   recalcAllPlayerStats(/*silent*/ true);
   // Sync players to database (legacy quick sync)
   syncPlayersFromTournament(players, date);
-  // Publish results to Supabase (public — visible to all site visitors)
+// Publish results to cloud sync (public — visible to all site visitors)
   if (sbEnsureClient()) {
     sbPublishTournament(snapshot).catch(e => console.warn('sbPublishTournament:', e));
   }

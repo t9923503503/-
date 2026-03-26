@@ -2,7 +2,7 @@
 -- 014: Fix permissions on tournament_results & rating_history
 --
 -- Migration 008 only granted SELECT to the 'authenticated' role
--- (Supabase convention), but Next.js connects as the table owner
+-- (hosted Postgres convention), but Next.js connects as the table owner
 -- or a direct Postgres user who needs INSERT/UPDATE/DELETE too.
 --
 -- This migration grants full access to the current DB user

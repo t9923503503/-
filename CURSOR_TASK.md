@@ -92,7 +92,7 @@
 - Судья 2: `?trnId=test&court=1&token=b`
 - Судья 1 вводит счёт на корте 0 → проверить что кнопки корта 1 disabled
 - Судья 2 вводит счёт на корте 1 → проверить что кнопки корта 0 disabled
-- Оба видят счёт друг друга (через sync, если Supabase подключён, или через localStorage)
+- Оба видят счёт друг друга (через sync, если облачный контур подключён, или через localStorage)
 
 ---
 
@@ -135,7 +135,7 @@ CREATE TABLE rating_history (
 
 #### ~~S8.9~~: Админ — вкладка «Рейтинг» ✅ (уже было — `admin-init.js`, `admin.html`)
 
-#### ~~S8.10~~: rating.html — история из сервера ✅ (2026-03-24, `rating.html` — Supabase RPC → static JSON → localStorage cache)
+#### ~~S8.10~~: rating.html — история из сервера ✅ (2026-03-24, `rating.html` — static JSON → localStorage cache)
 
 #### ~~S8.11~~: Тесты ✅ (уже было — `tests/unit/finalize.test.js` — 13 тестов sync/finalize/delta)
 
@@ -160,7 +160,7 @@ CREATE TABLE rating_history (
 
 6. **CSP**: НЕ добавляй `'unsafe-inline'` в `script-src`. Все скрипты через `src=`.
 
-7. **sessionStorage для секретов**: `kotc3_sb` (Supabase config) хранится в `sessionStorage`, НЕ `localStorage`.
+7. **sessionStorage для секретов**: `kotc3_sb` (cloud config) хранится в `sessionStorage`, НЕ `localStorage`.
 
 8. **judgeMode**: уже определён в `globalThis.judgeMode` (frozen object) при загрузке. Используй его.
    ```javascript
@@ -184,9 +184,9 @@ npx playwright test  # e2e
 
 Ключевые файлы для понимания архитектуры:
 - `assets/js/main.js` — bootstrap, script loading, judgeMode init
-- `assets/js/integrations.js` — Supabase connect, broadcast, sync
+- `assets/js/integrations.js` — cloud connect, broadcast, sync
 - `admin-init.js` — вся логика админ-панели
 - `formats/kotc/kotc.js` — KOTC format module
 - `formats/thai/thai-boot.js` — Thai format module
-- `shared/api.js` — API layer (apiFetch, Supabase RPC)
+- `shared/api.js` — API layer (apiFetch, app RPC)
 - `migrations/007_judge_sessions.sql` — текущая SQL миграция

@@ -409,7 +409,7 @@ function saveState() {
     localStorage.setItem('kotc3_meta',       JSON.stringify(tournamentMeta));
     localStorage.setItem('kotc3_eventlog',   JSON.stringify(tournamentHistory));
   } catch(e){ console.error('[saveState] Failed to persist state:', e); }
-  sbPush(); // синхронизировать с Supabase
+sbPush(); // синхронизировать с облаком
 }
 
 function loadState() {
@@ -723,7 +723,7 @@ async function finishTournament() {
   recalcAllPlayerStats(/*silent*/ true);
   // Sync players to database (legacy quick sync)
   syncPlayersFromTournament(players, date);
-  // Publish results to Supabase (public — visible to all site visitors)
+// Publish results to cloud sync (public — visible to all site visitors)
   if (sbEnsureClient()) {
     sbPublishTournament(snapshot).catch(e => console.warn('sbPublishTournament:', e));
   }
@@ -746,7 +746,7 @@ async function resetTournament() {
   ['kotc3_scores','kotc3_divscores','kotc3_divroster'].forEach(k=>localStorage.removeItem(k));
   for (let i = 0; i < 8; i++) timerReset(i);
   buildAll();
-  switchTab('home');
+  switchTab('roster');
   showToast('🗑 Турнир сброшен');
 }
 
@@ -829,16 +829,24 @@ function syncDivLock() {
 function buildNav() {
   const nav = document.getElementById('nav');
   nav.innerHTML = '';
+  const tabLabels = {
+    players: 'Игроки',
+    svod: 'Сводка',
+    stats: 'Статистика',
+    rating: 'Рейтинг',
+    roster: 'Ростер',
+  };
 
   // ── Верхняя строка: лого + утилиты ──────────────────────
   const top = document.createElement('div');
   top.className = 'nav-top';
 
-  const logo = document.createElement('div');
+  const logo = document.createElement('button');
   logo.id = 'nav-logo';
   logo.className = 'nav-logo-container';
   logo.innerHTML = '<div class="brand-main">ЛЮТЫЕ ПЛЯЖНИКИ !!</div><div class="brand-sub">King of the Court</div>';
-  logo.setAttribute('role', 'button');
+  logo.type = 'button';
+  logo.setAttribute('aria-label', 'На главную');
   logo.setAttribute('title', 'На главную');
   logo.addEventListener('click', () => switchTab('home'));
   top.appendChild(logo);
@@ -849,7 +857,6 @@ function buildNav() {
 
 
   [
-    { label:'🏠',   tab:'home'    },
     { label:'👤',   tab:'players' },
     { label:'СВОД', tab:'svod'    },
     { label:'СТАТ', tab:'stats'   },
@@ -857,22 +864,66 @@ function buildNav() {
     { label:'⚙️', tab:'roster'  },
   ].forEach(({label,tab}) => {
     const b = document.createElement('button');
+    b.type = 'button';
     b.className = 'nb'; b.dataset.tab = tab;
     b.textContent = label;
+    b.setAttribute('aria-label', tabLabels[tab] || label);
     b.addEventListener('click', ()=>switchTab(tab));
     top.appendChild(b);
   });
-  // Кнопка РЕГИСТР — открывает register.html напрямую
-  const regBtn = document.createElement('button');
-  regBtn.className = 'nb';
-  regBtn.textContent = 'РЕГИСТР';
-  regBtn.addEventListener('click', () => window.open('register.html', '_blank'));
-  top.appendChild(regBtn);
+  // Кнопка ВЫХОД — возврат на основной сайт (на месте РЕГИСТР)
+  const exitBtn = document.createElement('button');
+  exitBtn.type = 'button';
+  exitBtn.className = 'nb nb-exit';
+  exitBtn.textContent = '✕';
+  exitBtn.setAttribute('aria-label', 'Выход на основной сайт');
+  exitBtn.title = 'Выход на основной сайт';
+  exitBtn.addEventListener('click', () => {
+    if (!confirm('Выйти из раздела «Судьям»?\nВы вернётесь на основной сайт.')) return;
+    // При открытии KOTC внутри /sudyam в iframe используем явный siteUrl из
+    // query-параметра. Это надёжнее, чем старый захардкоженный SITE_URL.
+    let siteUrl = '';
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const queryUrl = params.get('siteUrl');
+      if (queryUrl) {
+        siteUrl = queryUrl;
+      }
+    } catch (_) {}
+    if (!siteUrl) {
+      siteUrl = (typeof SITE_URL !== 'undefined' && SITE_URL) || '';
+    }
+    if (!siteUrl) {
+      try {
+        if (document.referrer) {
+          siteUrl = new URL('/', document.referrer).href;
+        }
+      } catch (_) {}
+    }
+    if (!siteUrl) {
+      try {
+        siteUrl = new URL('/', window.location.href).href;
+      } catch (_) {
+        siteUrl = '/';
+      }
+    }
+    try {
+      // Если в iframe — выходим на родительскую страницу
+      if (window.top !== window.self) {
+        window.top.location.href = siteUrl;
+      } else {
+        window.location.href = siteUrl;
+      }
+    } catch(e) { window.location.href = siteUrl; }
+  });
+  top.appendChild(exitBtn);
+
   nav.appendChild(top);
 
   // ── Ряд пиллов: корты + разделитель + дивизионы ─────────
   const row = document.createElement('div');
   row.className = 'nav-pills-row';
+  row.setAttribute('aria-label', 'Навигация по кортам и дивизионам');
 
   // ── Определяем режим: IPT или стандарт ──────────────────────
   // Источник 1: активный IPT-турнир (уже запущен)
@@ -905,11 +956,13 @@ function buildNav() {
   for (let ci = 0; ci < courtCount; ci++) {
     const meta = COURT_META[ci] || COURT_META[0];
     const p = document.createElement('button');
+    p.type = 'button';
     p.className = 'nav-pill'; p.dataset.tab = ci;
     p.style.setProperty('--pill-c', meta.color);
     // Суб-лейбл: из активного турнира → из имён групп IPT → КОРТ
     const subLabel = _iptNavGroups?.[ci]?.name
       || (_isIPT ? (_IPT_NAMES[courtCount]?.[ci] || 'КОРТ') : 'КОРТ');
+    p.setAttribute('aria-label', `Корт ${ci + 1}: ${subLabel}`);
     p.innerHTML = `<span class="pill-dot"></span><span class="pill-main">К${ci+1}</span><span class="pill-sub">${subLabel}</span>`;
     p.addEventListener('click', ()=>switchTab(ci));
     row.appendChild(p);
@@ -926,8 +979,10 @@ function buildNav() {
 
   divKeys.map(id => ({id, ...ALL_DIV_DEFS[id]})).forEach(({id,icon,main,sub,color}) => {
     const p = document.createElement('button');
+    p.type = 'button';
     p.className = 'nav-pill pill-div-btn'; p.dataset.tab = id;
     p.style.setProperty('--pill-c', color);
+    p.setAttribute('aria-label', `${main} ${sub}`);
     p.innerHTML = `<span class="pill-dot"></span><span class="pill-main">${icon} ${main}</span><span class="pill-sub">${sub}</span>`;
     p.addEventListener('click', ()=>switchTab(id));
     row.appendChild(p);
@@ -942,11 +997,17 @@ function buildNav() {
 function syncNavActive() {
   // Utility buttons (nb)
   document.querySelectorAll('.nb[data-tab]').forEach(b => {
-    b.classList.toggle('active', b.dataset.tab === String(activeTabId));
+    const isActive = b.dataset.tab === String(activeTabId);
+    b.classList.toggle('active', isActive);
+    if (isActive) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
   });
   // Pill buttons
   document.querySelectorAll('.nav-pill[data-tab]').forEach(p => {
-    p.classList.toggle('active', p.dataset.tab === String(activeTabId));
+    const isActive = p.dataset.tab === String(activeTabId);
+    p.classList.toggle('active', isActive);
+    if (isActive) p.setAttribute('aria-current', 'page');
+    else p.removeAttribute('aria-current');
   });
   syncIPTNav();
 }
@@ -1018,7 +1079,7 @@ function safeRender() {
     const _focusId   = document.activeElement?.id;
     const _focusSel  = [document.activeElement?.selectionStart, document.activeElement?.selectionEnd];
     buildAll();
-    switchTab(activeTabId != null ? activeTabId : 'home');
+    switchTab((activeTabId != null && activeTabId !== 'home') ? activeTabId : 'roster');
     window.scrollTo(0, _scrollPos);
     if (_focusId) {
       const el = document.getElementById(_focusId);

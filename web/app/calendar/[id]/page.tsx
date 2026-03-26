@@ -22,7 +22,9 @@ export async function generateMetadata({
 
   return {
     title: `${tournament.name} | Лютые пляжники`,
-    description: `Детали турнира ${tournament.name}.`,
+    description: tournament.description
+      ? tournament.description.slice(0, 160)
+      : `Детали турнира ${tournament.name}.`,
   };
 }
 
@@ -143,6 +145,28 @@ export default async function TournamentPage({ params }: PageProps) {
         <p className="mt-4 font-body text-text-primary/70 text-sm">
           {ctaHelpText}
         </p>
+
+        {tournament.description ? (
+          <div className="mt-8 rounded-xl border border-white/10 bg-black/20 p-5">
+            <h2 className="font-heading text-2xl text-text-primary tracking-wide">
+              Афиша турнира
+            </h2>
+            <p className="mt-4 whitespace-pre-line font-body text-sm leading-7 text-text-primary/85">
+              {tournament.description}
+            </p>
+          </div>
+        ) : null}
+
+        {tournament.participantListText ? (
+          <div className="mt-6 rounded-xl border border-white/10 bg-black/20 p-5">
+            <h2 className="font-heading text-2xl text-text-primary tracking-wide">
+              Состав участников
+            </h2>
+            <p className="mt-4 whitespace-pre-line font-body text-sm leading-7 text-text-primary/85">
+              {tournament.participantListText}
+            </p>
+          </div>
+        ) : null}
       </section>
 
       {related.length ? (
@@ -158,4 +182,3 @@ export default async function TournamentPage({ params }: PageProps) {
     </main>
   );
 }
-

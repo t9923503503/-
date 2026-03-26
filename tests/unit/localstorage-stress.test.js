@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('localStorage stress (Q3.2)', () => {
   let storage;
+  let warnSpy;
 
   beforeEach(() => {
     storage = {};
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(k => storage[k] ?? null);
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation((k, v) => {
       const total = Object.values(storage).reduce((s, x) => s + x.length, 0) + v.length;
@@ -137,16 +139,14 @@ describe('localStorage stress (Q3.2)', () => {
     // Test that the shared export utilities produce valid output
     const { exportToJSON, exportToCSV, standingsToCSVData } = await import('../../shared/export-utils.js');
 
-    // Mock _download to capture blob content
-    const blobs = [];
+    const origClick = globalThis.HTMLAnchorElement?.prototype?.click;
     const origCreateObjectURL = globalThis.URL?.createObjectURL;
     globalThis.URL = globalThis.URL || {};
     globalThis.URL.createObjectURL = () => 'blob:mock';
     globalThis.URL.revokeObjectURL = () => {};
-    globalThis.document = globalThis.document || {
-      createElement: () => ({ click() {}, href: '', download: '' }),
-      body: { appendChild() {}, removeChild() {} },
-    };
+    if (globalThis.HTMLAnchorElement?.prototype) {
+      globalThis.HTMLAnchorElement.prototype.click = () => {};
+    }
 
     // exportToJSON should not throw
     const data = { players: [{ name: 'Тест' }], tournaments: [] };
@@ -163,5 +163,8 @@ describe('localStorage stress (Q3.2)', () => {
     expect(rows[0]).toContain('Иванов');
 
     if (origCreateObjectURL) globalThis.URL.createObjectURL = origCreateObjectURL;
+    if (origClick && globalThis.HTMLAnchorElement?.prototype) {
+      globalThis.HTMLAnchorElement.prototype.click = origClick;
+    }
   });
 });

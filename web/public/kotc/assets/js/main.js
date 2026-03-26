@@ -21,15 +21,18 @@ if (typeof globalThis.escAttr !== 'function') {
   };
 }
 
-// localStorage helpers — single source of truth for kotc3_history access
-function loadHistory() {
-  try { return JSON.parse(localStorage.getItem('kotc3_history') || '[]'); } catch(e) { return []; }
-}
-function saveHistory(arr) {
-  localStorage.setItem('kotc3_history', JSON.stringify(arr));
+if (typeof globalThis.switchTab !== 'function') {
+  globalThis.switchTab = function queueBootstrapTab(id) {
+    globalThis.__pendingBootstrapTab = id;
+    return Promise.resolve(id);
+  };
 }
 
+// loadHistory / saveHistory defined as classic <script> in index.html
+// (ES module scope is isolated; classic scripts + dynamic loads need global access).
+
 const APP_SCRIPT_ORDER = [
+  'assets/js/ui/error-handler.js',
   'assets/js/state/app-state.js',
   'assets/js/domain/players.js',
   'assets/js/domain/tournaments.js',
@@ -44,8 +47,12 @@ const APP_SCRIPT_ORDER = [
   'assets/js/ui/ipt-format.js',
   'assets/js/screens/ipt.js',
   'assets/js/registration.js',
-  'assets/js/screens/core.js',
-  'assets/js/screens/roster.js',
+  'assets/js/screens/core-render.js',
+  'assets/js/screens/core-lifecycle.js',
+  'assets/js/screens/core-navigation.js',
+  'assets/js/screens/roster-format-launcher.js',
+  'assets/js/screens/roster-edit.js',
+  'assets/js/screens/roster-list.js',
   'assets/js/screens/courts.js',
   'assets/js/screens/components.js',
   'assets/js/screens/svod.js',
@@ -94,6 +101,26 @@ function loadClassicScript(src) {
 }
 
 async function loadAppScripts() {
+  // A0.2 — Pre-load shared/ ES modules so their globalThis bridges are available
+  // to all subsequently loaded classic scripts (ipt-format.js, roster.js, etc.).
+  try {
+    await Promise.all([
+      import('/shared/utils.js'),
+      import('/shared/players.js'),
+      import('/shared/timer.js'),
+      import('/shared/table.js'),
+      import('/shared/ui-kit.js'),
+      import('/shared/format-links.js'),
+      import('/shared/api.js'),
+      import('/shared/auth.js'),
+      import('/shared/i18n.js'),
+    ]);
+    // Initialize i18n (loads locale JSON)
+    if (globalThis.i18n?.initI18n) await globalThis.i18n.initI18n();
+  } catch (e) {
+    console.warn('[shared] Module preload failed (non-fatal):', e.message);
+  }
+
   for (const src of APP_SCRIPT_ORDER) {
     await loadClassicScript(src);
   }
@@ -114,8 +141,24 @@ async function registerServiceWorker() {
   }
 }
 
+// ── S7.4: Judge mode from URL parameters ─────────────────────
+// URL: index.html?trnId=X&court=0&token=AAA
+(function initJudgeMode() {
+  const p = new URLSearchParams(location.search);
+  const court = p.get('court');
+  globalThis.judgeMode = Object.freeze({
+    active:    !!(p.get('trnId') && court !== null),
+    trnId:     p.get('trnId') || '',
+    court:     court !== null ? parseInt(court, 10) : -1,
+    token:     p.get('token') || '',
+    judgeName: p.get('judge') || '',
+  });
+})();
+
 async function bootstrapApp() {
-  loadState();
+  // Some deployments may serve an outdated/missing classic bundle.
+  // Guard to avoid hard crash on boot; state will be defaulted.
+  if (typeof loadState === 'function') loadState();
   loadTimerState();
   sbLoadConfig();
   gshLoadConfig();
@@ -126,13 +169,20 @@ async function bootstrapApp() {
   }
 
   buildAll();
-  await switchTab(activeTabId != null ? activeTabId : 'home');
+  // Preserve an early tab switch issued during bootstrap (e.g. tests/users opening roster
+  // immediately after DOMContentLoaded) instead of forcing the app back to home.
+  const pendingBootstrapTab = globalThis.__pendingBootstrapTab;
+  const startTab = pendingBootstrapTab != null
+    ? pendingBootstrapTab
+    : (activeTabId != null ? activeTabId : 'home');
+  globalThis.__pendingBootstrapTab = null;
+  await switchTab(startTab);
 
   if (sbConfig.roomCode && sbConfig.roomSecret) {
     try {
       await sbConnect();
     } catch (error) {
-      console.warn('Supabase auto-connect failed:', error);
+      console.warn('Cloud auto-connect failed:', error);
     }
   }
 

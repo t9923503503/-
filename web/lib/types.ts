@@ -45,6 +45,8 @@ export interface Tournament {
   prize: string;
   photoUrl: string;
   formatCode: string;
+  description?: string;
+  participantListText?: string;
 }
 
 export interface TournamentResult {

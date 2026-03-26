@@ -2,6 +2,14 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { createRealtimeChannel, createTournamentSync } from '../../shared/realtime.js';
 
 describe('Realtime module (A4.2)', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   // ── Noop channel when no credentials ──────────────────────
   it('returns noop channel when no channelId', () => {

@@ -1,12 +1,12 @@
 'use strict';
 
 // ══════════════════════════════════════════════════════════════
-// REGISTRATION MODULE — Supabase-backed tournament sign-up
+// REGISTRATION MODULE — cloud-backed tournament sign-up
 // ══════════════════════════════════════════════════════════════
 
 /**
  * Архитектура:
- *   Supabase = primary source для регистрации
+ *   Cloud sync = primary source для регистрации
  *   localStorage = кеш + fallback офлайн
  *
  * Потоки:
@@ -198,14 +198,14 @@ function regOnSearch(query) {
     const lq = q.toLowerCase();
     try {
       if (_regIsOnline()) {
-        // ── Supabase search (RPC) ──
+// ── Remote search (RPC) ──
         const { data, error } = await _regSb().rpc('search_players', {
           p_query: q, p_gender: null, p_limit: 10
         });
         if (error) throw error;
-        // Merge: Supabase results + local-only players (by id dedup)
+    // Merge: remote results + local-only players (by id dedup)
         const remote = data || [];
-        const remoteCanonical = remote.map(r => fromSupabasePlayer(r)).filter(Boolean);
+    const remoteCanonical = remote.map(r => fromRemotePlayer(r)).filter(Boolean);
         const local  = _searchLocal(lq);
         const seenIds = new Set(remoteCanonical.map(r => r.id));
         _regResults = [...remoteCanonical, ...local.filter(l => !seenIds.has(l.id))].slice(0, 15);
@@ -236,7 +236,7 @@ async function regSelectPlayer(playerId, playerName) {
   try {
     if (_regIsOnline()) {
       const match = _regResults.find(p => String(p.id) === String(playerId));
-      // ── Supabase RPC ──
+      // ── Remote registration call ──
       const { data, error } = await _regSb().rpc('safe_register_player', {
         p_tournament_id: _regTrnId,
         p_player_id:     playerId
@@ -406,7 +406,7 @@ async function regSubmitRequest() {
 
       _regStatusMsg = {
         type: 'success',
-        text: '📝 Заявка сохранена локально. Отправится при подключении к Supabase.'
+        text: '📝 Заявка сохранена локально. Отправится при подключении к облаку.'
       };
       _regFormMode = null;
     }
@@ -439,7 +439,7 @@ async function regSubmitTemp() {
         throw new Error(playerRpc?.message || playerRpc?.error || 'Ошибка создания игрока');
       }
       const remotePlayer = playerRpc.player;
-      upsertPlayerInDB(fromSupabasePlayer(remotePlayer) || {
+      upsertPlayerInDB(fromRemotePlayer(remotePlayer) || {
         id: remotePlayer.id,
         name: remotePlayer.name,
         gender: remotePlayer.gender || _regFormGender,
@@ -507,7 +507,7 @@ async function regSubmitTemp() {
   _regRefresh();
 }
 
-// ── Sync helper: update localStorage after Supabase registration ──
+// ── Sync helper: update localStorage after remote registration ──
 function _regSyncLocalParticipant(playerId, isWaitlist) {
   if (!_regTrnLocal?.id) return;
   try {

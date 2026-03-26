@@ -64,7 +64,7 @@ localStorage.setItem('kotc3_sb_config')  → sessionStorage.setItem('kotc3_sb_co
 │  Создать турнир → назначить судей → выдать ссылки   │
 │  Режим ОБЗОР: видит все 4 корта (read-only сводка)  │
 └──────┬──────────────────────────────────┬───────────┘
-       │ Supabase RPC: create_judge_session()         │
+│ RPC: create_judge_session()                  │
        ▼                                  ▼
 ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
 │ Судья Корт 1 │ │ Судья Корт 2 │ │ Судья Корт 3 │ │ Судья Корт 4 │
@@ -76,7 +76,7 @@ localStorage.setItem('kotc3_sb_config')  → sessionStorage.setItem('kotc3_sb_co
        │                │                │                │
        └────────────────┴────────────────┴────────────────┘
                                │
-                    Supabase Broadcast Channel
+Realtime Broadcast Channel
                     realtime:broadcast-trn_{trnId}
                     События: score_update { court, data, ts }
 ```
@@ -87,11 +87,11 @@ localStorage.setItem('kotc3_sb_config')  → sessionStorage.setItem('kotc3_sb_co
    РЕДАКТИРОВАТЬ только свой (кнопки +/− активны только для `court=N`).
    Это исключает конфликты — два судьи НИКОГДА не правят один корт.
 
-2. **Токен судьи**: UUID, генерируется админом, хранится в Supabase.
+2. **Токен судьи**: UUID, генерируется админом, хранится в серверной БД.
    Валидация — при подключении к broadcast-каналу (или при загрузке state).
    Оффлайн: токен в URL, судья работает локально, синхронизация при reconnect.
 
-3. **Без нового сервера**: всё через Supabase RPC + Broadcast (уже есть).
+3. **Без нового сервера**: всё через RPC + Broadcast (уже есть).
 
 ### Задачи
 
@@ -165,7 +165,7 @@ const isLocked = globalThis.judgeMode?.active && courtIndex !== myСourt;
 
 ```
 ┌──────────────────────────────────┐
-│  Supabase (серверная БД)         │
+│  Server DB                       │
 │  players   — единая таблица      │
 │  tournaments — история           │
 │  tournament_results — результаты  │

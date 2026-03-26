@@ -11,7 +11,7 @@
 | 🏆 Рейтинг игроков | Очки по системе Professional Points (места 1–40) |
 | 📅 История турниров | Все завершённые турниры с топ-3 и статистикой |
 | 🌐 Публичный рейтинг | `rating.html` — страница без авторизации, видна всем |
-| ☁️ Синхронизация | Реальное время через Supabase room_code + room_secret |
+| ☁️ Синхронизация | Реальное время через cloud room_code + room_secret |
 | 📊 Google Sheets | Экспорт результатов в таблицы |
 | 📱 PWA | Устанавливается на телефон, работает офлайн |
 
@@ -30,7 +30,7 @@
 │       ├── main.js             — Bootstrap: загружает скрипты по порядку
 │       ├── core.js             — Общие хелперы, finishTournament, recalcAllPlayerStats
 │       ├── registration.js     — Регистрация игроков на турниры
-│       ├── integrations.js     — Supabase sync, Google Sheets
+│       ├── integrations.js     — cloud sync, Google Sheets
 │       ├── runtime.js          — Runtime обвязка
 │       ├── state/
 │       │   └── app-state.js    — Общий state, POINTS_TABLE, calculateRanking
@@ -116,7 +116,7 @@ node scripts/validate-static.mjs
 
 Проверяет: наличие обязательных файлов, валидность манифеста, ссылки в HTML/JS, синтаксис всех скриптов.
 
-## Supabase (опционально)
+## Cloud Sync (опционально)
 
 Нужен только для **синхронизации между устройствами** в реальном времени. Без него всё работает локально.
 
@@ -138,7 +138,7 @@ node scripts/validate-static.mjs
 
 > Прямой доступ к `kotc_sessions` закрыт — все операции идут через SECURITY DEFINER RPC.
 
-### Настройка Supabase
+### Настройка Cloud Sync
 
 Создать `config.js` в корне (не коммитить в git):
 

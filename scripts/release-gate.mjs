@@ -30,9 +30,21 @@ function assertSecurityAndStorageGuards() {
   }
 }
 
+function shellQuote(value) {
+  if (!value) return '""';
+  return `"${String(value).replace(/"/g, '\\"')}"`;
+}
+
+function buildCmdLine(cmd, args) {
+  const tail = args.map(arg => /[\s"]/u.test(String(arg)) ? shellQuote(arg) : String(arg)).join(' ');
+  return tail ? `${cmd} ${tail}` : cmd;
+}
+
 function run(cmd, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: 'inherit', shell: process.platform === 'win32' });
+    const child = process.platform === 'win32'
+      ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', buildCmdLine(cmd, args)], { stdio: 'inherit', shell: false })
+      : spawn(cmd, args, { stdio: 'inherit', shell: false });
     child.on('exit', (code) => {
       if (code === 0) resolve();
       else reject(new Error(`${cmd} ${args.join(' ')} failed with exit code ${code}`));
@@ -64,4 +76,3 @@ main().catch((err) => {
   console.error('\n[gate] release gate failed:', err.message);
   process.exit(1);
 });
-

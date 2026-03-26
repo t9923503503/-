@@ -1,7 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { adminErrorResponse } from '../../web/lib/admin-errors.ts';
 
 describe('admin error response mapping', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('maps missing DATABASE_URL to 503', async () => {
     const res = adminErrorResponse(new Error('Missing DATABASE_URL env var'), 'ctx');
     expect(res.status).toBe(503);
