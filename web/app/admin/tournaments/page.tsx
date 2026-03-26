@@ -197,10 +197,10 @@ export default function AdminTournamentsPage() {
 
   async function remove(id: string) {
     if (!confirm('Удалить турнир?')) return;
-    const res = await fetch('/api/admin/tournaments', {
+    const res = await fetch(`/api/admin/tournaments/${id}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, reason: 'manual delete from admin' }),
+      body: JSON.stringify({ reason: 'manual delete from admin' }),
     });
     if (!res.ok) {
       setMessage('Удаление запрещено или не удалось');

@@ -68,10 +68,10 @@ export default function AdminPlayersPage() {
 
   async function remove(id: string) {
     if (!confirm('Удалить игрока?')) return;
-    const res = await fetch('/api/admin/players', {
+    const res = await fetch(`/api/admin/players/${id}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, reason: 'manual delete from admin' }),
+      body: JSON.stringify({ reason: 'manual delete from admin' }),
     });
     if (!res.ok) {
       setMessage('Удаление запрещено или не удалось');
