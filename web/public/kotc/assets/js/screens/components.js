@@ -1,9 +1,13 @@
 'use strict';
 
+function tr(key, params) {
+  return typeof globalThis.i18n?.t === 'function' ? globalThis.i18n.t(key, params) : key;
+}
+
 function showTournament(trnId) {
   const trn = getTournaments().find(t => t.id === trnId);
   if (!trn) {
-    showToast('❌ Турнир не найден');
+    showToast('❌ ' + tr('pcard.tournamentNotFound'));
     return;
   }
 
@@ -25,33 +29,44 @@ function showTournament(trnId) {
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
           <div style="background:#1a1e24;padding:12px;border-radius:8px;border:1px solid #1e1e34">
-            <div style="font-size:11px;color:#999">Уровень</div>
+            <div style="font-size:11px;color:#999">${tr('pcard.level')}</div>
             <div style="font-size:14px;color:#fff;font-weight:600;margin-top:4px">${(trn.level != null && String(trn.level).trim() !== '') ? esc(String(trn.level).toUpperCase()) : '—'}</div>
           </div>
           <div style="background:#1a1e24;padding:12px;border-radius:8px;border:1px solid #1e1e34">
-            <div style="font-size:11px;color:#999">Тип</div>
+            <div style="font-size:11px;color:#999">${tr('pcard.type')}</div>
             <div style="font-size:14px;color:#fff;font-weight:600;margin-top:4px">${esc(trn.division || '—')}</div>
           </div>
           <div style="background:#1a1e24;padding:12px;border-radius:8px;border:1px solid #1e1e34">
-            <div style="font-size:11px;color:#999">Участники</div>
+            <div style="font-size:11px;color:#999">${tr('pcard.participants')}</div>
             <div style="font-size:14px;color:${isFull ? '#ff6b6b' : '#4ade80'};font-weight:600;margin-top:4px">${participants}/${capacity}</div>
           </div>
           <div style="background:#1a1e24;padding:12px;border-radius:8px;border:1px solid #1e1e34">
-            <div style="font-size:11px;color:#999">Статус</div>
-            <div style="font-size:14px;color:${trn.status === 'open' ? '#4ade80' : '#ff6b6b'};font-weight:600;margin-top:4px">${trn.status === 'open' ? '🟢 ОТКРЫТ' : '🔴 ЗАПОЛНЕНО'}</div>
+            <div style="font-size:11px;color:#999">${tr('pcard.status')}</div>
+            <div style="font-size:14px;color:${trn.status === 'open' ? '#4ade80' : '#ff6b6b'};font-weight:600;margin-top:4px">${trn.status === 'open' ? tr('pcard.statusOpen') : tr('pcard.statusFull')}</div>
           </div>
         </div>
 
         ${trn.description ? `<div style="background:#1a1e24;padding:12px;border-radius:8px;border:1px solid #1e1e34;margin-bottom:16px;font-size:13px;line-height:1.5">${esc(trn.description)}</div>` : ''}
 
         <div style="display:flex;gap:8px">
-          <button onclick="switchTab('svod');this.closest('[style*=fixed]').remove()" style="flex:1;padding:12px;background:var(--gold);color:#000;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px">📋 ПЕРЕЙТИ К ЗАПИСИ</button>
-          <button onclick="this.closest('[style*=fixed]').remove()" style="flex:1;padding:12px;background:#2a2a44;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px">Закрыть</button>
+          <button onclick="switchTab('svod');this.closest('[style*=fixed]').remove()" style="flex:1;padding:12px;background:var(--gold);color:#000;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px">${tr('pcard.goToRecord')}</button>
+          <button onclick="this.closest('[style*=fixed]').remove()" style="flex:1;padding:12px;background:#2a2a44;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px">${tr('pcard.close')}</button>
         </div>
       </div>
     </div>`;
 
   document.body.insertAdjacentHTML('beforeend', html);
+  // F4.1: trap focus within tournament modal
+  const _trnOverlay = document.body.lastElementChild;
+  if (typeof FocusTrap !== 'undefined' && _trnOverlay) {
+    const _trnTrapCleanup = FocusTrap.attach(_trnOverlay);
+    _trnOverlay._focusTrapCleanup = _trnTrapCleanup;
+    // Cleanup when overlay is removed
+    const obs = new MutationObserver(() => {
+      if (!document.body.contains(_trnOverlay)) { _trnTrapCleanup(); obs.disconnect(); }
+    });
+    obs.observe(document.body, { childList: true });
+  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -93,15 +108,15 @@ function showPlayerCard(name, gender) {
 
   // ── Achievements ──────────────────────────────────────────
   const achvs = [];
-  if (wins >= 1)          achvs.push({ icon:'🥇', text:'Первая победа',         cls:'' });
-  if (wins >= 5)          achvs.push({ icon:'🏆', text:'Машина побед ×5',        cls:'' });
-  if (wins >= 10)         achvs.push({ icon:'👑', text:'Легенда кортов ×10',     cls:'' });
-  if (totalPlayed >= 5)   achvs.push({ icon:'⚡', text:'Постоянный участник',    cls:'blue' });
-  if (totalPlayed >= 10)  achvs.push({ icon:'🔥', text:'Ветеран (10+ турниров)', cls:'blue' });
-  if (totalPodiums >= 3)  achvs.push({ icon:'🎯', text:'Призёр (3+ подиума)',    cls:'green' });
+  if (wins >= 1)          achvs.push({ icon:'🥇', text: tr('pcard.achvFirstWin'),         cls:'' });
+  if (wins >= 5)          achvs.push({ icon:'🏆', text: tr('pcard.achvWin5'),        cls:'' });
+  if (wins >= 10)         achvs.push({ icon:'👑', text: tr('pcard.achvWin10'),     cls:'' });
+  if (totalPlayed >= 5)   achvs.push({ icon:'⚡', text: tr('pcard.achvPlayed5'),    cls:'blue' });
+  if (totalPlayed >= 10)  achvs.push({ icon:'🔥', text: tr('pcard.achvPlayed10'), cls:'blue' });
+  if (totalPodiums >= 3)  achvs.push({ icon:'🎯', text: tr('pcard.achvPodium3'),    cls:'green' });
   if (winrate >= 50 && totalPlayed >= 3)
-                          achvs.push({ icon:'📈', text:'Winrate 50%+',           cls:'green' });
-  if (p2cnt >= 3)         achvs.push({ icon:'🥈', text:'Серебряный мастер ×3',   cls:'purple' });
+                          achvs.push({ icon:'📈', text: tr('pcard.achvWinrate50'),           cls:'green' });
+  if (p2cnt >= 3)         achvs.push({ icon:'🥈', text: tr('pcard.achvSilver3'),   cls:'purple' });
 
   // Streak-based achievements from trnHistory
   if (trnHistory.length >= 3) {
@@ -112,13 +127,13 @@ function showPlayerCard(name, gender) {
       else if (slot?.place <= 3) { consecWins = 0; consecPodiums++; }
       else break;
     }
-    if (consecWins >= 3)    achvs.push({ icon:'🔥', text:`Серия ${consecWins} побед`,    cls:'fire' });
-    if (consecPodiums >= 5) achvs.push({ icon:'💎', text:`Призёр ${consecPodiums}× подряд`, cls:'purple' });
+    if (consecWins >= 3)    achvs.push({ icon:'🔥', text: tr('pcard.achvStreakWins', { n: consecWins }),    cls:'fire' });
+    if (consecPodiums >= 5) achvs.push({ icon:'💎', text: tr('pcard.achvPodiumStreak', { n: consecPodiums }), cls:'purple' });
   }
 
   // Activity-based
-  if (totalPlayed >= 20)  achvs.push({ icon:'🏅', text:'20+ турниров',  cls:'blue' });
-  if (totalPlayed >= 50)  achvs.push({ icon:'🌟', text:'Полтинник!',    cls:'gold' });
+  if (totalPlayed >= 20)  achvs.push({ icon:'🏅', text: tr('pcard.achvPlayed20'),  cls:'blue' });
+  if (totalPlayed >= 50)  achvs.push({ icon:'🌟', text: tr('pcard.achvPlayed50'),    cls:'gold' });
 
   // ── Stage 1 data (current session) ───────────────────────
   let s1Data = null;
@@ -146,7 +161,12 @@ function showPlayerCard(name, gender) {
   }
 
   // ── Finals data (current session) ────────────────────────
-  const DIV_LABELS = { hard:'🔥 HARD', advance:'⚡ ADVANCE', medium:'⚙️ MEDIUM', lite:'🍀 LITE' };
+  const DIV_LABELS = {
+    hard: '🔥 ' + tr('div.hard'),
+    advance: '⚡ ' + tr('div.advance'),
+    medium: '⚙️ ' + tr('div.medium'),
+    lite: '🍀 ' + tr('div.lite'),
+  };
   let finData = null;
   for (const key of activeDivKeys()) {
     const arr = gender === 'M' ? divRoster[key].men : divRoster[key].women;
@@ -171,7 +191,7 @@ function showPlayerCard(name, gender) {
   }
 
   // Require at least some data to show
-  if (!dbPlayer && !s1Data && !finData) { showToast('Нет данных'); return; }
+  if (!dbPlayer && !s1Data && !finData) { showToast(tr('pcard.noData')); return; }
 
   // ── Session summary stats ─────────────────────────────────
   const sessionScores = [];
@@ -189,11 +209,11 @@ function showPlayerCard(name, gender) {
       const isRest = score === null;
       const cls = isRest ? 'rest' : score === hi && score > 0 ? 'hi' : score === lo && played.length > 1 ? 'lo' : '';
       return `<div class="pcard-round-row">
-        <span class="pcard-r-num">Р${ri+1}</span>
-        <div class="pcard-r-score ${cls}">${isRest ? 'отд' : score}</div>
+        <span class="pcard-r-num">${tr('pcard.roundShort', { n: ri + 1 })}</span>
+        <div class="pcard-r-score ${cls}">${isRest ? tr('pcard.rest') : score}</div>
         ${!isRest
           ? `<span class="pcard-r-partner">${partnerIcon} ${esc(partnerName)}</span>`
-          : '<span class="pcard-r-partner" style="color:#555">— отдых —</span>'}
+          : '<span class="pcard-r-partner" style="color:#555">' + tr('pcard.restLong') + '</span>'}
       </div>`;
     }).join('');
   }
@@ -202,7 +222,7 @@ function showPlayerCard(name, gender) {
   const initials = String(name || '').trim().split(/\s+/).map(w=>w[0]?.toUpperCase()||'').join('').slice(0,2) || gIcon;
 
   // ── Build HTML ────────────────────────────────────────────
-  const joinedStr = dbPlayer?.addedAt ? `📅 с ${dbPlayer.addedAt}` : '';
+  const joinedStr = dbPlayer?.addedAt ? tr('pcard.joinedSince', { date: dbPlayer.addedAt }) : '';
 
   // DB stats row (only if dbPlayer exists)
   const totalRating = (dbPlayer?.ratingM||0) + (dbPlayer?.ratingW||0) + (dbPlayer?.ratingMix||0);
@@ -210,36 +230,36 @@ function showPlayerCard(name, gender) {
     <div class="pcard-summary">
       <div class="pcard-stat-box">
         <div class="pcard-stat-val">${totalRating}</div>
-        <div class="pcard-stat-lbl">🔥 Рейтинг</div>
+        <div class="pcard-stat-lbl">${tr('pcard.statRating')}</div>
       </div>
       <div class="pcard-stat-box">
         <div class="pcard-stat-val">${wins}</div>
-        <div class="pcard-stat-lbl">🎯 Победы</div>
+        <div class="pcard-stat-lbl">${tr('pcard.statWins')}</div>
       </div>
       <div class="pcard-stat-box">
         <div class="pcard-stat-val">${totalPlayed}</div>
-        <div class="pcard-stat-lbl">🏆 Турниры</div>
+        <div class="pcard-stat-lbl">${tr('pcard.statTournaments')}</div>
       </div>
       <div class="pcard-stat-box">
         <div class="pcard-stat-val">${winrate}%</div>
-        <div class="pcard-stat-lbl">📈 Winrate</div>
+        <div class="pcard-stat-lbl">${tr('pcard.statWinrate')}</div>
       </div>
     </div>
     <div class="pcard-podium">
       <div class="pcard-pod p1">
         <span class="pcard-pod-icon">🥇</span>
         <span class="pcard-pod-cnt">${p1cnt}</span>
-        <span class="pcard-pod-lbl">1 место</span>
+        <span class="pcard-pod-lbl">${tr('pcard.place1')}</span>
       </div>
       <div class="pcard-pod p2">
         <span class="pcard-pod-icon">🥈</span>
         <span class="pcard-pod-cnt">${p2cnt}</span>
-        <span class="pcard-pod-lbl">2 место</span>
+        <span class="pcard-pod-lbl">${tr('pcard.place2')}</span>
       </div>
       <div class="pcard-pod p3">
         <span class="pcard-pod-icon">🥉</span>
         <span class="pcard-pod-cnt">${p3cnt}</span>
-        <span class="pcard-pod-lbl">3 место</span>
+        <span class="pcard-pod-lbl">${tr('pcard.place3')}</span>
       </div>
     </div>
     ${(() => {
@@ -248,14 +268,14 @@ function showPlayerCard(name, gender) {
       const maxR = Math.max(rM, rW, rMix, 1);
       if (rM + rW + rMix === 0) return '';
       return `<div class="pcard-rating-breakdown">
-        ${rM ? `<div class="pcard-rb-row"><span class="pcard-rb-label">♂ Мужские</span><div class="pcard-rb-bar"><div class="pcard-rb-fill m" style="width:${Math.round(rM/maxR*100)}%"></div></div><span class="pcard-rb-val">${rM}</span><span class="pcard-rb-trn">${tM} турн.</span></div>` : ''}
-        ${rW ? `<div class="pcard-rb-row"><span class="pcard-rb-label">♀ Женские</span><div class="pcard-rb-bar"><div class="pcard-rb-fill w" style="width:${Math.round(rW/maxR*100)}%"></div></div><span class="pcard-rb-val">${rW}</span><span class="pcard-rb-trn">${tW} турн.</span></div>` : ''}
-        ${rMix ? `<div class="pcard-rb-row"><span class="pcard-rb-label">🔄 Микст</span><div class="pcard-rb-bar"><div class="pcard-rb-fill mix" style="width:${Math.round(rMix/maxR*100)}%"></div></div><span class="pcard-rb-val">${rMix}</span><span class="pcard-rb-trn">${tMix} турн.</span></div>` : ''}
+        ${rM ? `<div class="pcard-rb-row"><span class="pcard-rb-label">${tr('pcard.rbMen')}</span><div class="pcard-rb-bar"><div class="pcard-rb-fill m" style="width:${Math.round(rM/maxR*100)}%"></div></div><span class="pcard-rb-val">${rM}</span><span class="pcard-rb-trn">${tr('pcard.rbTrnShort', { n: tM })}</span></div>` : ''}
+        ${rW ? `<div class="pcard-rb-row"><span class="pcard-rb-label">${tr('pcard.rbWomen')}</span><div class="pcard-rb-bar"><div class="pcard-rb-fill w" style="width:${Math.round(rW/maxR*100)}%"></div></div><span class="pcard-rb-val">${rW}</span><span class="pcard-rb-trn">${tr('pcard.rbTrnShort', { n: tW })}</span></div>` : ''}
+        ${rMix ? `<div class="pcard-rb-row"><span class="pcard-rb-label">${tr('pcard.rbMix')}</span><div class="pcard-rb-bar"><div class="pcard-rb-fill mix" style="width:${Math.round(rMix/maxR*100)}%"></div></div><span class="pcard-rb-val">${rMix}</span><span class="pcard-rb-trn">${tr('pcard.rbTrnShort', { n: tMix })}</span></div>` : ''}
       </div>`;
     })()}` : '';
 
   const achvHtml = achvs.length ? `
-    <div class="pcard-section">🏅 Достижения</div>
+    <div class="pcard-section">${tr('pcard.achievements')}</div>
     <div class="pcard-achv-row">
       ${achvs.map(a => `<div class="pcard-achv ${a.cls}"><span>${a.icon}</span>${esc(a.text)}</div>`).join('')}
     </div>` : '';
@@ -277,15 +297,15 @@ function showPlayerCard(name, gender) {
     if (places.length >= 2) {
       const avg1 = places.slice(0, Math.ceil(places.length/2)).reduce((a,b)=>a+b,0) / Math.ceil(places.length/2);
       const avg2 = places.slice(Math.ceil(places.length/2)).reduce((a,b)=>a+b,0) / (places.length - Math.ceil(places.length/2));
-      if (avg1 < avg2 - 0.5) { trendIcon = '📈'; trendText = 'подъём'; }
-      else if (avg1 > avg2 + 0.5) { trendIcon = '📉'; trendText = 'спад'; }
-      else { trendIcon = '➡️'; trendText = 'стабильно'; }
+      if (avg1 < avg2 - 0.5) { trendIcon = '📈'; trendText = tr('pcard.trendUp'); }
+      else if (avg1 > avg2 + 0.5) { trendIcon = '📉'; trendText = tr('pcard.trendDown'); }
+      else { trendIcon = '➡️'; trendText = tr('pcard.trendFlat'); }
     }
     const winsInRow = (() => { let c = 0; for (const i of items) { if (i.place === 1) c++; else break; } return c; })();
-    if (winsInRow >= 3) { trendIcon = '🔥'; trendText = `${winsInRow} побед подряд!`; }
+    if (winsInRow >= 3) { trendIcon = '🔥'; trendText = tr('pcard.trendWinsRow', { n: winsInRow }); }
 
     return `
-    <div class="pcard-section">📈 Форма</div>
+    <div class="pcard-section">${tr('pcard.form')}</div>
     <div class="pcard-form-row">
       ${items.map((it, idx) => `${idx > 0 ? '<span class="pcard-form-arrow">→</span>' : ''}<span class="pcard-form-item">${it.medal}</span>`).join('')}
       <span class="pcard-form-label">${trendIcon} ${trendText}</span>
@@ -293,7 +313,7 @@ function showPlayerCard(name, gender) {
   })();
 
   const trnHistHtml = trnHistory.length ? `
-    <div class="pcard-section">📚 История турниров</div>
+    <div class="pcard-section">${tr('pcard.historyTitle')}</div>
     <div class="pcard-trn-list">
       ${trnHistory.map(t => {
         const slot    = (t.winners||[]).find(w => (w.playerIds||[]).includes(pid));
@@ -301,14 +321,14 @@ function showPlayerCard(name, gender) {
         const pts     = slot?.points ?? null;
         let dateStr   = t.date || '';
         try { dateStr = new Date(t.date+'T12:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'short'}); } catch(e){}
-        return `<div class="pcard-trn-row" onclick="openTrnDetails('${escAttr(t.id)}')" style="cursor:pointer">
+        return `<button type="button" class="pcard-trn-row" onclick="openTrnDetails('${escAttr(t.id)}')" aria-label="${escAttr(tr('pcard.openTournamentAria', { name: t.name }))}">
           <span class="pcard-trn-medal">${medal}</span>
-          <div class="pcard-trn-info">
-            <div class="pcard-trn-name">${esc(t.name)} <span style="font-size:10px;color:var(--muted)">→</span></div>
-            <div class="pcard-trn-date">📅 ${dateStr}${t.location ? ' · ' + esc(t.location) : ''}</div>
-          </div>
+          <span class="pcard-trn-info">
+            <span class="pcard-trn-name">${esc(t.name)} <span style="font-size:10px;color:var(--muted)">→</span></span>
+            <span class="pcard-trn-date">📅 ${dateStr}${t.location ? ' · ' + esc(t.location) : ''}</span>
+          </span>
           ${pts !== null ? `<span class="pcard-trn-pts">${pts}</span>` : ''}
-        </div>`;
+        </button>`;
       }).join('')}
     </div>` : '';
 
@@ -319,13 +339,13 @@ function showPlayerCard(name, gender) {
     if (!pairs.length) return '';
     const icon = gender === 'M' ? '👩' : '🏋️';
     return `
-    <div class="pcard-section">💜 Лучшие партнёры</div>
+    <div class="pcard-section">${tr('pcard.partnersTitle')}</div>
     <div class="pcard-partners">
       ${pairs.map((p, i) => `<div class="pcard-partner-row">
         <span class="pcard-partner-rank">${i+1}</span>
         <span class="pcard-partner-name">${icon} ${esc(p.name)}</span>
-        <span class="pcard-partner-pts">${p.pts} оч</span>
-        <span class="pcard-partner-info">${p.rounds} р.</span>
+        <span class="pcard-partner-pts">${tr('pcard.partnerPts', { n: p.pts })}</span>
+        <span class="pcard-partner-info">${tr('pcard.partnerRounds', { n: p.rounds })}</span>
       </div>`).join('')}
     </div>`;
   })();
@@ -335,19 +355,19 @@ function showPlayerCard(name, gender) {
     if (!sessionScores.length) return '';
     const max = Math.max(...sessionScores, 1);
     return `<div class="pcard-histogram">
-      ${sessionScores.map(sc => `<div class="pcard-hist-bar${sc === 0 ? ' rest' : ''}" style="height:${Math.max(sc/max*100, 4)}%" title="${sc} оч"></div>`).join('')}
+      ${sessionScores.map(sc => `<div class="pcard-hist-bar${sc === 0 ? ' rest' : ''}" style="height:${Math.max(sc/max*100, 4)}%" title="${sc} ${tr('home.pts')}"></div>`).join('')}
     </div>`;
   })();
 
   const sessionHtml = (s1Data || finData) ? `
-    <div class="pcard-section">🏐 Текущая сессия</div>
+    <div class="pcard-section">${tr('pcard.sessionTitle')}</div>
     <div class="pcard-summary" style="grid-template-columns:1fr 1fr 1fr">
-      <div class="pcard-stat-box"><div class="pcard-stat-val">${sessTotal}</div><div class="pcard-stat-lbl">Σ очков</div></div>
-      <div class="pcard-stat-box"><div class="pcard-stat-val">${sessAvg}</div><div class="pcard-stat-lbl">avg/раунд</div></div>
-      <div class="pcard-stat-box"><div class="pcard-stat-val">${sessBest}</div><div class="pcard-stat-lbl">лучший раунд</div></div>
+      <div class="pcard-stat-box"><div class="pcard-stat-val">${sessTotal}</div><div class="pcard-stat-lbl">${tr('pcard.sessTotalPts')}</div></div>
+      <div class="pcard-stat-box"><div class="pcard-stat-val">${sessAvg}</div><div class="pcard-stat-lbl">${tr('pcard.sessAvgRound')}</div></div>
+      <div class="pcard-stat-box"><div class="pcard-stat-val">${sessBest}</div><div class="pcard-stat-lbl">${tr('pcard.sessBestRound')}</div></div>
     </div>
     ${histogramHtml}
-    ${s1Data ? `<div class="pcard-section">Этап 1 · ${s1Data.courtName}</div><div class="pcard-rounds">${renderRounds(s1Data.rounds)}</div>` : ''}
+    ${s1Data ? `<div class="pcard-section">${tr('pcard.stage1', { court: s1Data.courtName })}</div><div class="pcard-rounds">${renderRounds(s1Data.rounds)}</div>` : ''}
     ${finData ? `<div class="pcard-section">${finData.label}</div><div class="pcard-rounds">${renderRounds(finData.rounds)}</div>` : ''}` : '';
 
   document.getElementById('pcard-box').innerHTML = `
@@ -356,7 +376,7 @@ function showPlayerCard(name, gender) {
         <div class="pcard-avatar ${gender}">${initials}</div>
         <div>
           <div class="pcard-name">${esc(name)}</div>
-          <div class="pcard-court">${gIcon} ${gender === 'M' ? 'Мужчина' : 'Женщина'}${s1Data ? ' · ' + s1Data.courtName : ''}</div>
+          <div class="pcard-court">${gIcon} ${gender === 'M' ? tr('pcard.genderMan') : tr('pcard.genderWoman')}${s1Data ? ' · ' + s1Data.courtName : ''}</div>
           ${joinedStr ? `<div class="pcard-joined">${joinedStr}</div>` : ''}
         </div>
       </div>
@@ -370,9 +390,14 @@ function showPlayerCard(name, gender) {
     ${sessionHtml}
   `;
   document.getElementById('pcard-overlay').classList.add('open');
+  // F4.1: trap focus within player card dialog
+  if (typeof FocusTrap !== 'undefined') {
+    window._pcardTrapCleanup = FocusTrap.attach(document.getElementById('pcard-overlay'));
+  }
 }
 
 function closePcard() {
+  if (window._pcardTrapCleanup) { window._pcardTrapCleanup(); window._pcardTrapCleanup = null; }
   document.getElementById('pcard-overlay').classList.remove('open');
 }
 
@@ -383,5 +408,5 @@ async function shareText(text) {
   try {
     if (navigator.share) { await navigator.share({ text }); return; }
   } catch(e) { /* cancelled or unsupported */ }
-  try { await navigator.clipboard.writeText(text); showToast('✅ Текст скопирован'); } catch(e) {}
+  try { await navigator.clipboard.writeText(text); showToast(tr('pcard.textCopied')); } catch(e) {}
 }

@@ -50,9 +50,12 @@ function renderCourt(ci) {
   const ct   = ALL_COURTS[ci];
   const meta = COURT_META[ci];
   const roundNavHtml = renderCourtNavInner(ci);
+  // S7.5: Court-lock — judge sees all courts but edits only their own
+  const jm = globalThis.judgeMode;
+  const locked = jm?.active && jm.court !== ci;
 
   let html = renderTimerBlock(ci, roundNavHtml) + `<div class="court-title" style="color:${meta.color}">${meta.name}</div>
-  <div class="court-sub">нажимайте + и −</div>`;
+  <div class="court-sub">${locked ? '🔒 только просмотр' : 'нажимайте + и −'}</div>`;
 
   const curRi = courtRound[ci] || 0;
   for (let ri = 0; ri < ppc; ri++) {
@@ -77,7 +80,7 @@ function renderCourt(ci) {
                 <div class="p-partner">+ ${esc(ct.women[wi]||'—')}</div>
               </div>
               <div class="score-widget">
-                <button class="score-btn minus" data-ci="${ci}" data-mi="${mi}" data-ri="${ri}" data-dir="-1"${(isNull||scVal<=0)?' disabled':''}>−</button>
+                <button class="score-btn minus" data-ci="${ci}" data-mi="${mi}" data-ri="${ri}" data-dir="-1"${(isNull||scVal<=0||locked)?' disabled':''}>−</button>
                 <div class="score-disp${mx?' mx':zr?' zr':isNull?' zr':''}" id="sd-${ci}-${mi}-${ri}">${isNull?'–':scVal}<span class="score-max-lbl">${mx?'МАХ':isNull?'':'/15'}</span></div>
               </div>
             </div>
@@ -92,12 +95,14 @@ function renderCourt(ci) {
               <div class="auto-score" id="as-${ci}-${wi}-${ri}">${isNull?'–':scVal}</div>
             </div>
           </div>
-          <button class="score-btn plus" data-ci="${ci}" data-mi="${mi}" data-ri="${ri}" data-dir="1"${scVal>=15?' disabled':''}>+</button>
+          <button class="score-btn plus" data-ci="${ci}" data-mi="${mi}" data-ri="${ri}" data-dir="1"${(scVal>=15||locked)?' disabled':''}>+</button>
         </div>
       </div>`;
     }
   }
-  html += `<button class="btn-reset-court" id="rcbtn-${ci}" onclick="resetCourtGuard(${ci},'↺ Сбросить очки ${escAttr(meta.name)}')">↺ Сбросить очки ${esc(meta.name)}</button>`;
+  html += locked
+    ? ''
+    : `<button class="btn-reset-court" id="rcbtn-${ci}" onclick="resetCourtGuard(${ci},'↺ Сбросить очки ${escAttr(meta.name)}')">↺ Сбросить очки ${esc(meta.name)}</button>`;
   return html;
 }
 
