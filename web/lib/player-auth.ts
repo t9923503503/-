@@ -42,6 +42,16 @@ export function verifyPlayerToken(token: string): { id: number; email: string } 
   }
 }
 
+export function getPlayerTokenFromCookieHeader(cookieHeader: string): string | null {
+  const match = cookieHeader.match(new RegExp(`${PLAYER_COOKIE}=([^;]+)`));
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
 export function setPlayerCookie(response: NextResponse, token: string): void {
   response.cookies.set(PLAYER_COOKIE, token, {
     domain: '.lpvolley.ru',

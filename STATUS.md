@@ -335,6 +335,9 @@
 | 2026-03-23 | ARCH | S6.5 | web/app/api/sudyam-auth/route.ts | Добавлен IP rate limit (429 + Retry-After), fail-secure режим при отсутствии `SUDYAM_PIN` в production |
 | 2026-03-23 | FORMAT | S6.6 | web/components/rankings/PlayerRow.tsx, assets/js/screens/home.js | Harden ссылки профилей в рейтинге (не генерировать `undefined`) и guard, чтобы smoke не дергал `/api/archive` (404) |
 | 2026-03-24 | ARCH | Favicon legacy SPA | assets/favicon.png, index.html, admin.html, rating/register/profile/ipt-session, formats/thai + kotc HTML, web/public/kotc/*, sw.js, vite.config.js, scripts/validate-static.mjs | Единая PNG-иконка во вкладке для статики + кеш SW v63 / legacy kotc v52 |
+| 2026-03-26 | ARCH | Partner search MVP | web/app/partner/page.tsx, web/components/calendar/TournamentRegisterForm.tsx, web/app/api/tournament-register/route.ts, web/lib/queries.ts, migrations/016_partner_search_flags.sql | Добавлены режимы регистрации (с партнёром/соло), флаг публичного поиска пары и рабочая витрина `/partner` с фильтрами по турниру/уровню/полу |
+| 2026-03-26 | ARCH | Partner confirmation flow | web/app/api/partner/requests/*, web/components/partner/PartnerRequestButton.tsx, web/components/profile/PartnerInbox.tsx, web/components/profile/TelegramLinkForm.tsx, web/app/profile/page.tsx, web/app/partner/page.tsx, web/lib/telegram.ts, migrations/017_partner_requests.sql | Связано с ближайшими турнирами и календарём; добавлены запрос/подтверждение пары в личном кабинете, Telegram-уведомления через bot API и привязка `telegram_chat_id` |
+| 2026-03-26 | ARCH | Profile SSR crash fix | web/lib/queries.ts, web/app/favicon.ico/route.ts | Добавлена UUID-валидация для player-query функций (исключает 500 при `profile?id=Имя`), добавлен роут для `/favicon.ico` с редиректом на существующую иконку |
 
 ---
 

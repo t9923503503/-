@@ -15,6 +15,16 @@ function toIsoDate(value: unknown): string {
   return String(value);
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
+function normalizeNameQuery(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
 /**
  * Leaderboard computed from tournament_results.place via POINTS_TABLE.
  * This matches exactly how the SPA (recalcAllPlayerStats) computes ratings.
@@ -67,6 +77,7 @@ export async function fetchLeaderboard(
 
 export async function fetchPlayer(id: string): Promise<Player | null> {
   if (!process.env.DATABASE_URL) return null;
+  if (!isUuid(id)) return null;
   const pool = getPool();
 
   const { rows } = await pool.query(
@@ -132,6 +143,44 @@ export async function fetchPlayer(id: string): Promise<Player | null> {
     level: data.level ?? '',
     bio: data.bio ?? '',
   };
+}
+
+export async function findPlayerIdsByName(query: string, limit = 5): Promise<string[]> {
+  if (!process.env.DATABASE_URL) return [];
+  const nameQuery = normalizeNameQuery(query);
+  if (nameQuery.length < 2) return [];
+  const pool = getPool();
+  try {
+    const { rows } = await pool.query(
+      `SELECT id
+       FROM players
+       WHERE status = 'active'
+         AND lower(name) LIKE lower($1)
+       ORDER BY
+         CASE WHEN lower(name) = lower($2) THEN 0 ELSE 1 END,
+         name ASC
+       LIMIT $3`,
+      [`%${nameQuery}%`, nameQuery, limit]
+    );
+    return rows.map((r) => String(r.id ?? '')).filter(Boolean);
+  } catch {
+    // Backward compatibility for old schemas where players.status may not exist.
+    try {
+      const { rows } = await pool.query(
+        `SELECT id
+         FROM players
+         WHERE lower(name) LIKE lower($1)
+         ORDER BY
+           CASE WHEN lower(name) = lower($2) THEN 0 ELSE 1 END,
+           name ASC
+         LIMIT $3`,
+        [`%${nameQuery}%`, nameQuery, limit]
+      );
+      return rows.map((r) => String(r.id ?? '')).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
 }
 
 export async function fetchTournaments(
@@ -270,6 +319,7 @@ export async function fetchPlayerMatches(
   limit = 20
 ) {
   if (!process.env.DATABASE_URL) return [];
+  if (!isUuid(playerId)) return [];
 
   const pool = getPool();
 
@@ -385,6 +435,90 @@ export async function fetchTeamsLookingForPartner(tournamentId: string): Promise
   }
 }
 
+export interface PartnerRequestRow {
+  id: string;
+  name: string;
+  gender: 'M' | 'W';
+  phone: string;
+  requesterUserId: number | null;
+  tournamentId: string;
+  tournamentName: string;
+  tournamentDate: string;
+  tournamentLevel: string;
+  createdAt: string;
+}
+
+export interface PartnerFilters {
+  tournamentId?: string;
+  level?: 'hard' | 'medium' | 'easy' | 'all';
+  gender?: 'M' | 'W' | 'all';
+}
+
+export async function fetchPartnerRequests(filters: PartnerFilters = {}): Promise<PartnerRequestRow[]> {
+  if (!process.env.DATABASE_URL) return [];
+  const pool = getPool();
+
+  const parts: string[] = [
+    `pr.status = 'pending'`,
+    `COALESCE(pr.registration_type, 'solo') = 'solo'`,
+    `COALESCE(pr.partner_wanted, true) = true`,
+    `t.status IN ('open', 'full')`,
+  ];
+  const params: string[] = [];
+
+  if (filters.tournamentId) {
+    params.push(filters.tournamentId);
+    parts.push(`pr.tournament_id = $${params.length}`);
+  }
+  if (filters.level && filters.level !== 'all') {
+    params.push(filters.level);
+    parts.push(`LOWER(COALESCE(t.level, '')) = $${params.length}`);
+  }
+  if (filters.gender && filters.gender !== 'all') {
+    params.push(filters.gender);
+    parts.push(`pr.gender = $${params.length}`);
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         pr.id,
+         pr.name,
+         pr.gender,
+         COALESCE(pr.phone, '') AS phone,
+         pr.requester_user_id,
+         pr.tournament_id,
+         COALESCE(t.name, '') AS tournament_name,
+         t.date AS tournament_date,
+         COALESCE(t.level, '') AS tournament_level,
+         pr.created_at
+       FROM player_requests pr
+       LEFT JOIN tournaments t ON t.id = pr.tournament_id
+       WHERE ${parts.join(' AND ')}
+       ORDER BY t.date ASC NULLS LAST, pr.created_at ASC
+       LIMIT 300`,
+      params
+    );
+
+    return rows.map((r) => ({
+      id: String(r.id ?? ''),
+      name: String(r.name ?? ''),
+      gender: String(r.gender ?? 'M') === 'W' ? 'W' : 'M',
+      phone: String(r.phone ?? ''),
+      requesterUserId:
+        r.requester_user_id != null ? Number(r.requester_user_id) : null,
+      tournamentId: String(r.tournament_id ?? ''),
+      tournamentName: String(r.tournament_name ?? ''),
+      tournamentDate: toIsoDate(r.tournament_date),
+      tournamentLevel: String(r.tournament_level ?? ''),
+      createdAt: String(r.created_at ?? ''),
+    }));
+  } catch {
+    // Backward compatible: partner columns may not exist before migration.
+    return [];
+  }
+}
+
 // ─── Rating History ──────────────────────────────────────────────────────
 
 export async function fetchRatingHistory(
@@ -392,6 +526,7 @@ export async function fetchRatingHistory(
   limit = 30
 ): Promise<RatingHistoryEntry[]> {
   if (!process.env.DATABASE_URL) return [];
+  if (!isUuid(playerId)) return [];
   const pool = getPool();
 
   const { rows } = await pool.query(
@@ -453,6 +588,7 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
     rankM: null, rankW: null, rankMix: null, formLast5: [],
   };
   if (!process.env.DATABASE_URL) return empty;
+  if (!isUuid(playerId)) return empty;
   const pool = getPool();
 
   const { rows: results } = await pool.query(
@@ -527,4 +663,50 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
     avgPlace, bestPlace, totalRatingPts, avgRatingPts, winRate, totalWins,
     totalBalls, avgBalls, bestTournament, currentStreak, rankM, rankW, rankMix, formLast5,
   };
+}
+
+// ─── Tournament Results (public page) ───────────────────────────────────
+
+export interface TournamentResultRow {
+  playerId: string;
+  playerName: string;
+  playerPhotoUrl: string;
+  place: number;
+  gamePts: number;
+  ratingPts: number;
+  wins: number;
+  diff: number;
+  balls: number;
+  ratingType: string;
+  gender: string;
+}
+
+export async function fetchTournamentResults(tournamentId: string): Promise<TournamentResultRow[]> {
+  if (!process.env.DATABASE_URL) return [];
+  const pool = getPool();
+
+  const { rows } = await pool.query(
+    `SELECT tr.player_id, p.name AS player_name, p.photo_url AS player_photo_url,
+            tr.place, tr.game_pts, tr.rating_pts, tr.wins, tr.diff, tr.balls,
+            tr.rating_type, tr.gender
+     FROM tournament_results tr
+     JOIN players p ON p.id = tr.player_id
+     WHERE tr.tournament_id = $1
+     ORDER BY tr.place ASC, tr.game_pts DESC`,
+    [tournamentId]
+  );
+
+  return rows.map(r => ({
+    playerId: r.player_id,
+    playerName: r.player_name,
+    playerPhotoUrl: r.player_photo_url ?? '',
+    place: Number(r.place ?? 0),
+    gamePts: Number(r.game_pts ?? 0),
+    ratingPts: Number(r.rating_pts ?? 0),
+    wins: Number(r.wins ?? 0),
+    diff: Number(r.diff ?? 0),
+    balls: Number(r.balls ?? 0),
+    ratingType: r.rating_type ?? '',
+    gender: r.gender ?? '',
+  }));
 }

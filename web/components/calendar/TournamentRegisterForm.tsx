@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 type Gender = "M" | "W";
+type RegistrationType = "with_partner" | "solo";
 
 export default function TournamentRegisterForm({
   tournamentId,
@@ -12,6 +13,10 @@ export default function TournamentRegisterForm({
   const [name, setName] = useState("");
   const [gender, setGender] = useState<Gender>("M");
   const [phone, setPhone] = useState("");
+  const [registrationType, setRegistrationType] =
+    useState<RegistrationType>("solo");
+  const [partnerWanted, setPartnerWanted] = useState(true);
+  const [partnerName, setPartnerName] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<
     | { type: "success"; text: string }
@@ -20,8 +25,13 @@ export default function TournamentRegisterForm({
   >(null);
 
   const canSubmit = useMemo(() => {
-    return name.trim().length >= 2 && !loading;
-  }, [name, loading]);
+    const hasBaseData = name.trim().length >= 2 && !loading;
+    if (!hasBaseData) return false;
+    if (registrationType === "with_partner") {
+      return partnerName.trim().length >= 2;
+    }
+    return true;
+  }, [name, loading, registrationType, partnerName]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,6 +39,13 @@ export default function TournamentRegisterForm({
 
     if (name.trim().length < 2) {
       setMessage({ type: "error", text: "Введите имя и фамилию (минимум 2 символа)." });
+      return;
+    }
+    if (registrationType === "with_partner" && partnerName.trim().length < 2) {
+      setMessage({
+        type: "error",
+        text: "Для регистрации с партнёром укажите имя партнёра (минимум 2 символа).",
+      });
       return;
     }
 
@@ -42,6 +59,12 @@ export default function TournamentRegisterForm({
           name,
           gender,
           phone: phone.trim().length ? phone.trim() : undefined,
+          registrationType,
+          partnerWanted: registrationType === "solo" ? partnerWanted : false,
+          partnerName:
+            registrationType === "with_partner" && partnerName.trim().length
+              ? partnerName.trim()
+              : undefined,
         }),
       });
 
@@ -64,6 +87,9 @@ export default function TournamentRegisterForm({
         setName("");
         setPhone("");
         setGender("M");
+        setRegistrationType("solo");
+        setPartnerWanted(true);
+        setPartnerName("");
       } else {
         setMessage({
           type: "error",
@@ -120,6 +146,89 @@ export default function TournamentRegisterForm({
           />
         </label>
       </div>
+
+      <div className="mt-5">
+        <div className="text-text-secondary text-xs font-body uppercase tracking-wide">
+          Тип регистрации
+        </div>
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="rounded-lg border border-white/10 bg-surface px-4 py-3 font-body text-sm text-text-primary cursor-pointer hover:border-brand/60 transition-colors">
+            <input
+              type="radio"
+              name="registration_type"
+              value="with_partner"
+              checked={registrationType === "with_partner"}
+              onChange={() => setRegistrationType("with_partner")}
+              className="mr-2 accent-brand"
+            />
+            Регистрация с партнёром
+          </label>
+          <label className="rounded-lg border border-white/10 bg-surface px-4 py-3 font-body text-sm text-text-primary cursor-pointer hover:border-brand/60 transition-colors">
+            <input
+              type="radio"
+              name="registration_type"
+              value="solo"
+              checked={registrationType === "solo"}
+              onChange={() => setRegistrationType("solo")}
+              className="mr-2 accent-brand"
+            />
+            Соло-регистрация
+          </label>
+        </div>
+      </div>
+
+      {registrationType === "with_partner" ? (
+        <div className="mt-5">
+          <label className="block">
+            <span className="text-text-secondary text-xs font-body uppercase tracking-wide">
+              Имя партнёра
+            </span>
+            <input
+              required
+              value={partnerName}
+              onChange={(e) => setPartnerName(e.target.value)}
+              className="mt-2 w-full rounded-lg bg-surface text-text-primary border border-white/10 px-4 py-3 outline-none focus:border-brand transition-colors font-body"
+              placeholder="Напр. Анна Смирнова"
+            />
+          </label>
+        </div>
+      ) : (
+        <div className="mt-5 rounded-lg border border-white/10 bg-white/5 p-4">
+          <div className="text-text-secondary text-xs font-body uppercase tracking-wide">
+            Поиск партнёра
+          </div>
+          <div className="mt-3 space-y-2">
+            <label className="flex items-center text-text-primary font-body text-sm">
+              <input
+                type="radio"
+                name="partner_wanted"
+                value="true"
+                checked={partnerWanted}
+                onChange={() => setPartnerWanted(true)}
+                className="mr-2 accent-brand"
+              />
+              Ищу партнёра
+              <span className="ml-2 text-xs text-text-secondary">
+                (буду показан(а) на странице поиска пары)
+              </span>
+            </label>
+            <label className="flex items-center text-text-primary font-body text-sm">
+              <input
+                type="radio"
+                name="partner_wanted"
+                value="false"
+                checked={!partnerWanted}
+                onChange={() => setPartnerWanted(false)}
+                className="mr-2 accent-brand"
+              />
+              Найду сам(а)
+              <span className="ml-2 text-xs text-text-secondary">
+                (без публичного размещения)
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
 
       <div className="mt-5">
         <div className="text-text-secondary text-xs font-body uppercase tracking-wide">

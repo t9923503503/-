@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   try {
     const pool = getPool();
     const res = await pool.query(
-      'SELECT id, email, full_name, nickname, avatar_url, elo_rating, created_at FROM users WHERE id = $1',
+      'SELECT id, email, full_name, nickname, avatar_url, elo_rating, telegram_chat_id, created_at FROM users WHERE id = $1',
       [payload.id],
     );
     const user = res.rows[0];
@@ -36,6 +36,7 @@ export async function GET(req: Request) {
       nickname: user.nickname,
       avatar_url: user.avatar_url,
       elo_rating: user.elo_rating,
+      telegram_chat_id: user.telegram_chat_id,
       created_at: user.created_at,
     });
   } catch (err) {
