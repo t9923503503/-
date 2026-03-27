@@ -844,7 +844,7 @@ function buildNav() {
   const logo = document.createElement('button');
   logo.id = 'nav-logo';
   logo.className = 'nav-logo-container';
-  logo.innerHTML = '<div class="brand-main">ЛЮТЫЕ ПЛЯЖНИКИ !!</div><div class="brand-sub">King of the Court</div>';
+  logo.innerHTML = '<div class="brand-main">LPVOLLEY.RU</div><div class="brand-sub">King of the Court</div>';
   logo.type = 'button';
   logo.setAttribute('aria-label', 'На главную');
   logo.setAttribute('title', 'На главную');
