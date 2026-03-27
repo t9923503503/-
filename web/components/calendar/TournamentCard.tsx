@@ -5,6 +5,31 @@ interface TournamentCardProps {
   tournament: Tournament;
 }
 
+function isLikelyDirectImageUrl(url: string): boolean {
+  const value = String(url || '').trim();
+  if (!value) return false;
+  if (value.startsWith('/')) return true;
+  try {
+    const u = new URL(value);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    // These are usually album/share links (HTML), not direct image assets.
+    if (u.hostname.includes('disk.yandex')) return false;
+    if (u.hostname === 'yadi.sk') return false;
+    if (u.hostname.includes('drive.google')) return false;
+    return /\.(png|jpe?g|webp|gif|svg)$/i.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function fallbackPosterForTournament(t: Tournament): string {
+  const fmt = (t.format || '').toLowerCase();
+  if (fmt.includes('king')) return '/images/pravila/kotc.svg';
+  if (fmt.includes('round')) return '/images/pravila/mixup.svg';
+  if (fmt.includes('double')) return '/images/pravila/double.svg';
+  return '/images/pravila/kotc.svg';
+}
+
 const statusLabels: Record<Tournament['status'], string> = {
   open: 'Открыта запись',
   full: 'Заполнен',
@@ -99,6 +124,10 @@ export default function TournamentCard({ tournament }: TournamentCardProps) {
   const fmt = formatDescriptions[tournament.format] ?? null;
   const division = tournament.division || '';
 
+  const albumUrl = String(tournament.photoUrl || '').trim();
+  const posterSrc = isLikelyDirectImageUrl(albumUrl) ? albumUrl : fallbackPosterForTournament(tournament);
+  const showAlbumLink = Boolean(albumUrl) && !isLikelyDirectImageUrl(albumUrl);
+
   return (
     <Link href={href} className="block group">
       <article className={`
@@ -109,25 +138,35 @@ export default function TournamentCard({ tournament }: TournamentCardProps) {
             ? 'border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-transparent hover:border-amber-500/50'
             : 'border-white/10 bg-surface-light/30 hover:border-white/20'}
       `}>
-        {/* Poster image if available */}
-        {tournament.photoUrl && (
-          <div className="relative w-full aspect-[2/1] overflow-hidden">
-            <img
-              src={tournament.photoUrl}
-              alt={tournament.name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/40 to-transparent" />
-            {/* Status badge on poster */}
-            <span className={`absolute top-4 right-4 px-3 py-1.5 rounded-full text-xs font-body font-semibold border backdrop-blur-sm ${badgeClass}`}>
-              {label}
-            </span>
-          </div>
-        )}
+        {/* Poster (fallback if photoUrl is an album link) */}
+        <div className="relative w-full aspect-[2/1] overflow-hidden">
+          <img
+            src={posterSrc}
+            alt={tournament.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            loading="lazy"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/40 to-transparent" />
+          {/* Status badge on poster */}
+          <span className={`absolute top-4 right-4 px-3 py-1.5 rounded-full text-xs font-body font-semibold border backdrop-blur-sm ${badgeClass}`}>
+            {label}
+          </span>
+          {showAlbumLink && (
+            <a
+              href={albumUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="absolute bottom-4 left-4 px-3 py-1.5 rounded-full text-xs font-body font-semibold border border-white/20 bg-black/30 text-text-primary/90 backdrop-blur-sm hover:border-brand/50 hover:text-brand transition-colors"
+            >
+              📸 Фото
+            </a>
+          )}
+        </div>
 
         <div className="p-6">
           {/* Status badge (no poster) */}
-          {!tournament.photoUrl && (
+          {!posterSrc && (
             <div className="flex items-center justify-between mb-4">
               <span className={`px-3 py-1.5 rounded-full text-xs font-body font-semibold border ${badgeClass}`}>
                 {label}
@@ -186,7 +225,7 @@ export default function TournamentCard({ tournament }: TournamentCardProps) {
                 {division}
               </span>
             )}
-            {tournament.photoUrl && levelLabel && (
+            {levelLabel && (
               <span className={`px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-xs font-heading tracking-wider ${levelColor}`}>
                 {levelLabel}
               </span>

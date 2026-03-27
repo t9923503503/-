@@ -74,6 +74,30 @@ const formatDescriptions: Record<string, { tagline: string; features: string[] }
   },
 };
 
+function isLikelyDirectImageUrl(url: string): boolean {
+  const value = String(url || '').trim();
+  if (!value) return false;
+  if (value.startsWith('/')) return true;
+  try {
+    const u = new URL(value);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    if (u.hostname.includes('disk.yandex')) return false;
+    if (u.hostname === 'yadi.sk') return false;
+    if (u.hostname.includes('drive.google')) return false;
+    return /\.(png|jpe?g|webp|gif|svg)$/i.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function fallbackPosterForFormat(format: string): string {
+  const fmt = (format || '').toLowerCase();
+  if (fmt.includes('king')) return '/images/pravila/kotc.svg';
+  if (fmt.includes('round')) return '/images/pravila/mixup.svg';
+  if (fmt.includes('double')) return '/images/pravila/double.svg';
+  return '/images/pravila/kotc.svg';
+}
+
 function formatDate(dateStr: string): string {
   if (!dateStr) return '';
   try {
@@ -158,6 +182,10 @@ export default function EventCard({ group }: { group: TournamentGroup }) {
   const isFinished = group.status === 'finished';
   const fmt = formatDescriptions[group.format] ?? null;
 
+  const albumUrl = String(group.photoUrl || '').trim();
+  const posterSrc = isLikelyDirectImageUrl(albumUrl) ? albumUrl : fallbackPosterForFormat(group.format || group.baseName);
+  const showAlbumLink = Boolean(albumUrl) && !isLikelyDirectImageUrl(albumUrl);
+
   const fillPercent = group.totalCapacity > 0
     ? Math.min(100, Math.round((group.totalParticipants / group.totalCapacity) * 100))
     : 0;
@@ -180,37 +208,31 @@ export default function EventCard({ group }: { group: TournamentGroup }) {
           : 'border-white/10 bg-surface-light/30 hover:border-white/20'}
     `}>
       {/* Poster */}
-      {group.photoUrl && (
-        <div className="relative w-full aspect-[2.2/1] overflow-hidden">
-          <img
-            src={group.photoUrl}
-            alt={group.baseName}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/50 to-transparent" />
-          <span className={`absolute top-4 right-4 px-3 py-1.5 rounded-full text-xs font-body font-semibold border backdrop-blur-sm ${statusStyles[group.status]}`}>
-            {statusLabels[group.status]}
-          </span>
-        </div>
-      )}
+      <div className="relative w-full aspect-[2.2/1] overflow-hidden">
+        <img
+          src={posterSrc}
+          alt={group.baseName}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          loading="lazy"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/50 to-transparent" />
+        <span className={`absolute top-4 right-4 px-3 py-1.5 rounded-full text-xs font-body font-semibold border backdrop-blur-sm ${statusStyles[group.status]}`}>
+          {statusLabels[group.status]}
+        </span>
+        {showAlbumLink && (
+          <a
+            href={albumUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute bottom-4 left-4 px-3 py-1.5 rounded-full text-xs font-body font-semibold border border-white/20 bg-black/30 text-text-primary/90 backdrop-blur-sm hover:border-brand/50 hover:text-brand transition-colors"
+          >
+            📸 Фото
+          </a>
+        )}
+      </div>
 
       <div className="p-6">
-        {/* Status + level badges (no poster) */}
-        {!group.photoUrl && (
-          <div className="flex items-center justify-between mb-4">
-            <span className={`px-3 py-1.5 rounded-full text-xs font-body font-semibold border ${statusStyles[group.status]}`}>
-              {statusLabels[group.status]}
-            </span>
-            <div className="flex gap-2">
-              {uniqueLevels.map(lvl => (
-                <span key={lvl} className={`px-2.5 py-1 rounded-lg text-xs font-heading tracking-wider border ${levelColors[lvl] ?? 'bg-white/5 text-text-primary/60 border-white/10'}`}>
-                  {levelLabels[lvl] ?? lvl}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Title */}
         <h3 className="font-heading text-3xl md:text-4xl text-text-primary leading-tight tracking-wide group-hover:text-brand transition-colors">
           {group.baseName}
