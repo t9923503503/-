@@ -1,8 +1,5 @@
-import Hero from '@/components/landing/Hero';
-import PlayerBanner from '@/components/landing/PlayerBanner';
-import UpcomingTournaments from '@/components/landing/UpcomingTournaments';
-import CTA from '@/components/landing/CTA';
-import { fetchLeaderboard, fetchTournaments, fetchHomeStats } from '@/lib/queries';
+import LandingDesktop from '@/components/landing/LandingDesktop';
+import { fetchHomeStats, fetchLeaderboard, fetchTournaments } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,15 +10,9 @@ export default async function Home() {
     fetchTournaments(6),
   ]);
 
-  // Только открытые/заполненные для "Ближайшие турниры"
-  const upcoming = tournaments.filter(t => t.status === 'open' || t.status === 'full');
-
-  return (
-    <>
-      <Hero stats={stats} topPlayers={topPlayers} />
-      <PlayerBanner stats={stats} />
-      <UpcomingTournaments tournaments={upcoming} />
-      <CTA />
-    </>
+  const upcoming = tournaments.filter(
+    (tournament) => tournament.status === 'open' || tournament.status === 'full'
   );
+
+  return <LandingDesktop stats={stats} topPlayers={topPlayers} tournaments={upcoming} />;
 }
