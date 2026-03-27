@@ -61,7 +61,7 @@ test.describe('Browser smoke', () => {
     await page.locator('#nav-logo').click();
     await expect(page.locator('#screen-home')).toHaveClass(/active/);
 
-    for (const tab of ['players', 'svod', 'stats', 'roster']) {
+    for (const tab of ['svod', 'stats', 'rating', 'roster']) {
       await page.locator(`.nb[data-tab="${tab}"]`).click();
       await expect(page.locator(`#screen-${tab}`)).toHaveClass(/active/);
     }

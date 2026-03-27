@@ -66,7 +66,6 @@ function buildNav() {
   const nav = document.getElementById('nav');
   nav.innerHTML = '';
   const tabLabels = {
-    players: tr('nav.players'),
     svod: tr('nav.svod'),
     stats: tr('nav.stats'),
     rating: tr('nav.rating'),
@@ -91,7 +90,6 @@ function buildNav() {
   leftGroup.appendChild(homeBtn);
 
   [
-    { label:'👤',   tab:'players' },
     { label: tr('nav.shortSvod'), tab:'svod' },
     { label: tr('nav.shortStats'), tab:'stats' },
     { label:'👥', tab:'rating' },
@@ -249,6 +247,7 @@ async function _switchTabInner(id) {
     id = activeDivKeys()[0] || 0;
   }
   const prevTabId = activeTabId;
+  if (id === 'players') id = 'home';
   activeTabId = id;
 
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -293,7 +292,6 @@ async function _switchTabInner(id) {
   }
 
   if (id === 'home')    screen.innerHTML = renderHome();
-  if (id === 'players') { playersSearch=''; recalcAllPlayerStats(true); screen.innerHTML = renderPlayers(); }
   if (id === 'svod')    screen.innerHTML = renderSvod();
   if (id === 'roster') {
     if (hasRosterPassword() && !rosterUnlocked) {

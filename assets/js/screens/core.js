@@ -830,7 +830,6 @@ function buildNav() {
   const nav = document.getElementById('nav');
   nav.innerHTML = '';
   const tabLabels = {
-    players: 'Игроки',
     svod: 'Сводка',
     stats: 'Статистика',
     rating: 'Рейтинг',
@@ -856,7 +855,6 @@ function buildNav() {
   leftGroup.appendChild(homeBtn);
 
   [
-    { label:'👤',   tab:'players' },
     { label:'1 тур', tab:'svod' },
     { label:'2 тур', tab:'stats' },
     { label:'👥',   tab:'rating' },
@@ -1107,6 +1105,7 @@ async function _switchTabInner(id) {
     id = activeDivKeys()[0] || 0;
   }
   const prevTabId = activeTabId;
+  if (id === 'players') id = 'home';
   activeTabId = id;
 
   // Hide all, show target
@@ -1157,7 +1156,6 @@ async function _switchTabInner(id) {
 
   // Re-render content on demand
   if (id === 'home')    screen.innerHTML = renderHome();
-  if (id === 'players') { playersSearch=''; recalcAllPlayerStats(true); screen.innerHTML = renderPlayers(); }
   if (id === 'svod')    screen.innerHTML = renderSvod();
   if (id === 'roster') {
     if (hasRosterPassword() && !rosterUnlocked) {
