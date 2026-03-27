@@ -75,9 +75,20 @@ async function isValidAdminSession(token: string): Promise<boolean> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  const isSudyam = pathname.startsWith('/sudyam');
+  // /sudyam and /sudyam/* — but NOT /sudyam2 (separate route)
+  const isSudyam = pathname === '/sudyam' || pathname.startsWith('/sudyam/');
   const isSudyamLogin = pathname.startsWith('/sudyam/login');
   if (isSudyam && !isSudyamLogin) {
+    const token = request.cookies.get(COOKIE_NAME)?.value;
+    const expectedPin = getExpectedSudyamPin();
+    if (!token || token !== expectedPin) {
+      return NextResponse.redirect(buildRedirectUrl(request, '/sudyam/login'));
+    }
+  }
+
+  // /sudyam2 — same PIN gate, but separate prefix
+  const isSudyam2 = pathname === '/sudyam2' || pathname.startsWith('/sudyam2/');
+  if (isSudyam2) {
     const token = request.cookies.get(COOKIE_NAME)?.value;
     const expectedPin = getExpectedSudyamPin();
     if (!token || token !== expectedPin) {
@@ -98,5 +109,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/sudyam', '/sudyam/:path*', '/admin', '/admin/:path*'],
+  matcher: ['/sudyam', '/sudyam/:path*', '/sudyam2', '/sudyam2/:path*', '/admin', '/admin/:path*'],
 };

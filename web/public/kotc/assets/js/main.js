@@ -66,6 +66,74 @@ const APP_SCRIPT_ORDER = [
   'assets/js/runtime.js',
 ];
 
+function getRequestedStartTab() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const rawTab = String(params.get('startTab') || '').trim();
+    if (!rawTab) return null;
+
+    if (/^[0-3]$/.test(rawTab)) return Number(rawTab);
+
+    const allowedTabs = new Set([
+      'home',
+      'players',
+      'svod',
+      'hard',
+      'advance',
+      'medium',
+      'lite',
+      'stats',
+      'rating',
+      'roster',
+      'ipt',
+    ]);
+
+    return allowedTabs.has(rawTab) ? rawTab : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function runInlineHandler(source, element, event) {
+  if (!source) return false;
+  try {
+    const fn = new Function('event', source);
+    fn.call(element, event);
+    return true;
+  } catch (error) {
+    console.warn('[inline-bridge] Handler failed:', error);
+    return false;
+  }
+}
+
+function installInlineEventBridge() {
+  document.addEventListener('click', (event) => {
+    const element = event.target instanceof Element ? event.target.closest('[onclick]') : null;
+    if (!element) return;
+    if (runInlineHandler(element.getAttribute('onclick'), element, event)) {
+      event.preventDefault();
+    }
+  });
+
+  document.addEventListener('input', (event) => {
+    const element = event.target instanceof Element ? event.target.closest('[oninput]') : null;
+    if (!element) return;
+    runInlineHandler(element.getAttribute('oninput'), element, event);
+  });
+
+  document.addEventListener('change', (event) => {
+    const element = event.target instanceof Element ? event.target.closest('[onchange]') : null;
+    if (!element) return;
+    runInlineHandler(element.getAttribute('onchange'), element, event);
+  });
+
+  document.addEventListener('focusout', (event) => {
+    const element = event.target instanceof Element ? event.target.closest('[onblur]') : null;
+    if (!element) return;
+    runInlineHandler(element.getAttribute('onblur'), element, event);
+  });
+}
+
 function waitForDomReady() {
   if (document.readyState !== 'loading') return Promise.resolve();
   return new Promise(resolve => {
@@ -171,8 +239,11 @@ async function bootstrapApp() {
   buildAll();
   // Preserve an early tab switch issued during bootstrap (e.g. tests/users opening roster
   // immediately after DOMContentLoaded) instead of forcing the app back to home.
+  const requestedStartTab = getRequestedStartTab();
   const pendingBootstrapTab = globalThis.__pendingBootstrapTab;
-  const startTab = pendingBootstrapTab != null
+  const startTab = requestedStartTab != null
+    ? requestedStartTab
+    : pendingBootstrapTab != null
     ? pendingBootstrapTab
     : (activeTabId != null ? activeTabId : 'home');
   globalThis.__pendingBootstrapTab = null;
@@ -201,6 +272,7 @@ function showBootstrapError(error) {
 (async function startApp() {
   try {
     await waitForDomReady();
+    installInlineEventBridge();
     await loadAppScripts();
     await registerServiceWorker();
     await bootstrapApp();

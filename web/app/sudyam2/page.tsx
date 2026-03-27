@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
-import { headers } from "next/headers";
-import SudyamLiveClient from "@/components/kotc-live/SudyamLiveClient";
+import type { Metadata } from 'next';
+import { headers } from 'next/headers';
+import { KotcLiveLayout } from '@/components/kotc-live/judge/KotcLiveLayout';
 
 export const metadata: Metadata = {
-  title: "Sudyam | Lutyye Plyazhniki",
-  description: "KOTC judge workspace with live seats, court controls, scores, and timers.",
+  title: 'Судьям | Лютые Пляжники (New)',
+  description: 'Приложение судьи King of the Court — управление кортами, таблицами и таймерами.',
 };
 
 function buildLegacyIframeSrc(host: string, proto: string): string {
@@ -28,12 +28,12 @@ function buildLegacyIframeSrc(host: string, proto: string): string {
   }
 }
 
-// Middleware already validates sudyam_session, so this route is authenticated.
-export default async function SudyamPage() {
+// Middleware уже проверил PIN — если мы здесь, доступ разрешён
+export default async function Sudyam2Page() {
   const headerStore = await headers();
   const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host") ?? "";
   const proto = headerStore.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const legacyIframeSrc = buildLegacyIframeSrc(host, proto);
 
-  return <SudyamLiveClient legacyIframeSrc={legacyIframeSrc} />;
+  return <KotcLiveLayout legacyIframeSrc={legacyIframeSrc} />;
 }
