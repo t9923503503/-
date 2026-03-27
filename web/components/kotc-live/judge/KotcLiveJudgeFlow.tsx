@@ -11,6 +11,7 @@ import type { KotcCourtState } from "../types";
 
 type FlowState =
   | "loading"
+  | "error"
   | "no_active_session"
   | "choose_session"
   | "choose_court"
@@ -23,10 +24,12 @@ function deriveFlowState(
   sessionsCount: number, 
   selectedSessionId: string | null, 
   role: string | null, 
-  busy: boolean
+  busy: boolean,
+  error: string | null,
 ): FlowState {
-  if (storeLoading && sessionsCount === 0 && !selectedSessionId) return "loading";
+  if (storeLoading && sessionsCount === 0 && !selectedSessionId && !error) return "loading";
   if (!selectedSessionId) {
+    if (error && sessionsCount === 0) return "error";
     if (sessionsCount === 0 && !storeLoading) return "no_active_session";
     return "choose_session";
   }
@@ -43,6 +46,7 @@ export function KotcLiveJudgeFlow() {
   const { state, actions } = useKotcLiveStore();
   const {
     backToSessionList,
+    fallbackToLegacy,
     joinAs,
     leaveSeat,
     refreshPresence,
@@ -181,7 +185,8 @@ export function KotcLiveJudgeFlow() {
     state.sessions.length, 
     state.selectedSessionId, 
     state.role, 
-    busy || state.loading
+    busy || state.loading,
+    state.error,
   );
 
   switch (flowState) {
@@ -204,6 +209,31 @@ export function KotcLiveJudgeFlow() {
           >
             Refresh
           </button>
+        </div>
+      );
+
+    case "error":
+      return (
+        <div className="w-full max-w-2xl mx-auto mt-8 p-8 rounded-2xl border border-red-500/20 bg-red-500/10 text-center">
+          <div className="text-[11px] uppercase tracking-[0.28em] text-red-200/80">Connection issue</div>
+          <h2 className="mt-3 text-2xl font-heading text-white">Live deck did not boot</h2>
+          <p className="mt-3 text-sm text-red-100/85">
+            {state.error || "KOTC Live did not answer in time."}
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => refreshSessions()}
+              className="rounded-full border border-white/15 bg-white/10 px-5 py-2 text-sm text-white transition hover:bg-white/15"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => fallbackToLegacy(state.error || "KOTC Live bootstrap timeout")}
+              className="rounded-full border border-brand/40 bg-brand/15 px-5 py-2 text-sm text-brand-light transition hover:bg-brand/25"
+            >
+              Open Old Version
+            </button>
+          </div>
         </div>
       );
 

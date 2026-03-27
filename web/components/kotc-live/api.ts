@@ -14,6 +14,7 @@ import type {
 } from "./types";
 
 const API_BASE = "/api/kotc";
+const REQUEST_TIMEOUT_MS = 8_000;
 
 function asNumber(value: unknown, fallback = 0): number {
   const num = Number(value);
@@ -55,6 +56,43 @@ async function readJson<T>(res: Response): Promise<T | null> {
     return data;
   } catch {
     return null;
+  }
+}
+
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  label: string,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutError = new Error(`${label} timeout`);
+  (timeoutError as Error & { status?: number }).status = 408;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(timeoutError);
+    }, REQUEST_TIMEOUT_MS);
+  });
+
+  try {
+    return (await Promise.race([
+      fetch(input, {
+        ...init,
+        credentials: "same-origin",
+        signal: controller.signal,
+      }),
+      timeoutPromise,
+    ])) as Response;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
   }
 }
 
@@ -228,11 +266,11 @@ function normalizeJoin(raw: unknown, fallbackSessionId: string): KotcJoinResult 
 }
 
 export async function listSessions(): Promise<KotcSessionSummary[]> {
-  const res = await fetch(`${API_BASE}/sessions/active`, {
+  const res = await fetchWithTimeout(`${API_BASE}/sessions/active`, {
     method: "GET",
     cache: "no-store",
     headers: { Accept: "application/json" },
-  });
+  }, "KOTC Live bootstrap");
   if (!res.ok) {
     const error = new Error(`Failed to load sessions: ${res.status}`);
     (error as Error & { status?: number }).status = res.status;
@@ -265,11 +303,11 @@ export async function joinSession(input: {
     device_id: input.deviceId,
     reclaim: Boolean(input.reclaim),
   };
-  const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(input.sessionId)}/join`, {
+  const res = await fetchWithTimeout(`${API_BASE}/sessions/${encodeURIComponent(input.sessionId)}/join`, {
     method: "POST",
     headers: buildHeaders(input.seatToken || undefined),
     body: JSON.stringify(body),
-  });
+  }, "KOTC Live seat join");
   const data = await readJson<unknown>(res);
   if (!res.ok) {
     const message =
@@ -291,11 +329,11 @@ export async function joinSession(input: {
 }
 
 export async function releaseSeat(sessionId: string, seatToken: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/release`, {
+  const res = await fetchWithTimeout(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/release`, {
     method: "POST",
     headers: buildHeaders(seatToken),
     body: JSON.stringify({}),
-  });
+  }, "KOTC Live seat release");
   if (!res.ok) {
     const data = await readJson<unknown>(res);
     throw new Error(asString(asObject(data).error, `Release failed (${res.status})`));
@@ -308,11 +346,11 @@ export async function fetchSnapshot(
   seatToken?: string | null,
 ): Promise<KotcSnapshot> {
   const url = `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/snapshot?scope=${scope}`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "GET",
     cache: "no-store",
     headers: buildHeaders(seatToken || undefined),
-  });
+  }, "KOTC Live snapshot");
   const data = await readJson<unknown>(res);
   if (!res.ok) {
     throw new Error(asString(asObject(data).error, `Snapshot failed (${res.status})`));
@@ -326,11 +364,11 @@ export async function fetchCourt(
   seatToken?: string | null,
 ): Promise<KotcCourtState> {
   const url = `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/courts/${courtIdx}`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "GET",
     cache: "no-store",
     headers: buildHeaders(seatToken || undefined),
-  });
+  }, "KOTC Live court snapshot");
   const data = await readJson<unknown>(res);
   if (!res.ok) {
     throw new Error(asString(asObject(data).error, `Court snapshot failed (${res.status})`));
@@ -343,11 +381,11 @@ export async function fetchPresence(
   seatToken?: string | null,
 ): Promise<KotcPresenceItem[]> {
   const url = `${API_BASE}/sessions/${encodeURIComponent(sessionId)}/presence`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "GET",
     cache: "no-store",
     headers: buildHeaders(seatToken || undefined),
-  });
+  }, "KOTC Live presence");
   const data = await readJson<unknown>(res);
   if (!res.ok) {
     throw new Error(asString(asObject(data).error, `Presence failed (${res.status})`));
@@ -383,11 +421,11 @@ export async function sendCommand(
     expected_structure_epoch: request.expectedStructureEpoch,
     payload: request.payload ?? {},
   };
-  const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(request.sessionId)}/commands`, {
+  const res = await fetchWithTimeout(`${API_BASE}/sessions/${encodeURIComponent(request.sessionId)}/commands`, {
     method: "POST",
     headers: buildHeaders(seatToken || undefined),
     body: JSON.stringify(body),
-  });
+  }, "KOTC Live command");
   const data = await readJson<unknown>(res);
   if (!res.ok) {
     const message =
@@ -413,11 +451,11 @@ export async function sendCommand(
 }
 
 export async function fetchTournamentRoster(tournamentId: string): Promise<KotcRosterEntry[]> {
-  const res = await fetch(`${API_BASE}/tournaments/${encodeURIComponent(tournamentId)}/roster`, {
+  const res = await fetchWithTimeout(`${API_BASE}/tournaments/${encodeURIComponent(tournamentId)}/roster`, {
     method: "GET",
     cache: "no-store",
     headers: { Accept: "application/json" },
-  });
+  }, "KOTC roster");
   const data = await readJson<unknown>(res);
   if (!res.ok) {
     throw new Error(asString(asObject(data).error, `Roster load failed (${res.status})`));
@@ -429,11 +467,11 @@ export async function saveTournamentRoster(
   tournamentId: string,
   roster: Array<{ displayName: string; playerId?: string | null; seed?: number | null; confirmed?: boolean; active?: boolean; dropped?: boolean }>
 ): Promise<KotcRosterEntry[]> {
-  const res = await fetch(`${API_BASE}/tournaments/${encodeURIComponent(tournamentId)}/roster`, {
+  const res = await fetchWithTimeout(`${API_BASE}/tournaments/${encodeURIComponent(tournamentId)}/roster`, {
     method: "PUT",
     headers: buildHeaders(),
     body: JSON.stringify({ roster }),
-  });
+  }, "KOTC roster save");
   const data = await readJson<unknown>(res);
   if (!res.ok) {
     throw new Error(asString(asObject(data).error, `Roster save failed (${res.status})`));
@@ -442,11 +480,11 @@ export async function saveTournamentRoster(
 }
 
 export async function fetchTournamentRounds(tournamentId: string): Promise<KotcRound[]> {
-  const res = await fetch(`${API_BASE}/tournaments/${encodeURIComponent(tournamentId)}/rounds`, {
+  const res = await fetchWithTimeout(`${API_BASE}/tournaments/${encodeURIComponent(tournamentId)}/rounds`, {
     method: "GET",
     cache: "no-store",
     headers: { Accept: "application/json" },
-  });
+  }, "KOTC rounds");
   const data = await readJson<unknown>(res);
   if (!res.ok) {
     throw new Error(asString(asObject(data).error, `Rounds load failed (${res.status})`));
@@ -455,11 +493,11 @@ export async function fetchTournamentRounds(tournamentId: string): Promise<KotcR
 }
 
 export async function generateTournamentRound1(tournamentId: string): Promise<KotcRound> {
-  const res = await fetch(`${API_BASE}/tournaments/${encodeURIComponent(tournamentId)}/rounds/round1/generate`, {
+  const res = await fetchWithTimeout(`${API_BASE}/tournaments/${encodeURIComponent(tournamentId)}/rounds/round1/generate`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify({}),
-  });
+  }, "KOTC round 1 generation");
   const data = await readJson<unknown>(res);
   if (!res.ok) {
     throw new Error(asString(asObject(data).error, `Round 1 generation failed (${res.status})`));
@@ -468,11 +506,11 @@ export async function generateTournamentRound1(tournamentId: string): Promise<Ko
 }
 
 export async function generateTournamentRound2(tournamentId: string): Promise<KotcRound> {
-  const res = await fetch(`${API_BASE}/tournaments/${encodeURIComponent(tournamentId)}/rounds/round2/generate`, {
+  const res = await fetchWithTimeout(`${API_BASE}/tournaments/${encodeURIComponent(tournamentId)}/rounds/round2/generate`, {
     method: "POST",
     headers: buildHeaders(),
     body: JSON.stringify({}),
-  });
+  }, "KOTC round 2 generation");
   const data = await readJson<unknown>(res);
   if (!res.ok) {
     throw new Error(asString(asObject(data).error, `Round 2 generation failed (${res.status})`));

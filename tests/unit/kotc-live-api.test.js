@@ -3,6 +3,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 describe('KOTC live API normalization', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('fetchSnapshot normalizes backend snapshots where courts is an array', async () => {
@@ -56,5 +57,27 @@ describe('KOTC live API normalization', () => {
     expect(snapshot.courts[1].scores.home).toBe(5);
     expect(snapshot.courts[2].roundIdx).toBe(3);
     expect(snapshot.courts[2].scores.away).toBe(7);
+  });
+
+  it('listSessions times out instead of hanging forever on bootstrap', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url, init = {}) => new Promise((_, reject) => {
+        init.signal?.addEventListener?.('abort', () => {
+          const abortError = new Error('aborted');
+          abortError.name = 'AbortError';
+          reject(abortError);
+        });
+      })),
+    );
+
+    const { listSessions } = await import('../../web/components/kotc-live/api.ts');
+    const promise = listSessions();
+    const assertion = expect(promise).rejects.toThrow('KOTC Live bootstrap timeout');
+
+    await vi.advanceTimersByTimeAsync(8_100);
+
+    await assertion;
   });
 });
