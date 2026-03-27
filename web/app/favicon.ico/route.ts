@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-export const dynamic = 'force-static';
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const filePath = path.join(process.cwd(), 'public', 'kotc', 'assets', 'favicon.png');
