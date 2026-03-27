@@ -6,17 +6,21 @@ This legacy app still renders a lot of UI through HTML strings with inline handl
 
 `web/public/kotc/index.html` uses a CSP that blocks native inline handlers.
 Because of that, legacy controls only work through the delegated bridge in `web/public/kotc/assets/js/main.js`.
+The bridge rewrites `onclick` / `oninput` / `onchange` / `onblur` into `data-inline-*`
+attributes and runs them manually after DOM insertion.
 
 ## Rules for future changes
 
 1. If you add new legacy controls with inline attributes, keep using only `onclick`, `oninput`, `onchange`, or `onblur`.
 2. Do not remove or bypass `installInlineEventBridge()` from `web/public/kotc/assets/js/main.js`.
-3. Prefer plain handler expressions that can run with `this` and `event`, for example:
+3. Do not depend on native browser execution of inline handlers in legacy `/kotc`.
+4. If you add new inline attributes, make sure the bridge supports that event type before relying on it.
+5. Prefer plain handler expressions that can run with `this` and `event`, for example:
    `onclick="applyRoster()"`
    `oninput="rosterAcShow(this)"`
    `onclick="event.stopPropagation();deleteHistory(42)"`
-4. For new non-legacy code, prefer `addEventListener` instead of inline handlers.
-5. After changing roster markup, always verify:
+6. For new non-legacy code, prefer `addEventListener` instead of inline handlers.
+7. After changing roster markup, always verify:
    `/sudyam` opens on `roster`
    roster buttons react to click
    search inputs react to typing

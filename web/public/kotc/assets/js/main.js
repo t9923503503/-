@@ -66,6 +66,35 @@ const APP_SCRIPT_ORDER = [
   'assets/js/runtime.js',
 ];
 
+const INLINE_HANDLER_ATTRS = ['onclick', 'oninput', 'onchange', 'onblur'];
+const INLINE_HANDLER_SELECTOR = INLINE_HANDLER_ATTRS.map(attr => `[${attr}]`).join(',');
+
+function getInlineBridgeAttr(attr) {
+  return `data-inline-${attr}`;
+}
+
+function sanitizeInlineHandlers(root) {
+  if (!root || typeof root !== 'object') return;
+  const elements = [];
+
+  if (root instanceof Element && root.matches(INLINE_HANDLER_SELECTOR)) {
+    elements.push(root);
+  }
+
+  if (typeof root.querySelectorAll === 'function') {
+    elements.push(...root.querySelectorAll(INLINE_HANDLER_SELECTOR));
+  }
+
+  for (const element of elements) {
+    for (const attr of INLINE_HANDLER_ATTRS) {
+      const value = element.getAttribute(attr);
+      if (value == null) continue;
+      element.setAttribute(getInlineBridgeAttr(attr), value);
+      element.removeAttribute(attr);
+    }
+  }
+}
+
 function getRequestedStartTab() {
   try {
     const params = new URLSearchParams(window.location.search);
@@ -107,30 +136,52 @@ function runInlineHandler(source, element, event) {
 }
 
 function installInlineEventBridge() {
+  sanitizeInlineHandlers(document);
+
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'attributes' && mutation.target instanceof Element) {
+        sanitizeInlineHandlers(mutation.target);
+        continue;
+      }
+      for (const node of mutation.addedNodes) {
+        if (node instanceof Element) {
+          sanitizeInlineHandlers(node);
+        }
+      }
+    }
+  });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: INLINE_HANDLER_ATTRS,
+  });
+
   document.addEventListener('click', (event) => {
-    const element = event.target instanceof Element ? event.target.closest('[onclick]') : null;
+    const element = event.target instanceof Element ? event.target.closest('[data-inline-onclick]') : null;
     if (!element) return;
-    if (runInlineHandler(element.getAttribute('onclick'), element, event)) {
+    if (runInlineHandler(element.getAttribute('data-inline-onclick'), element, event)) {
       event.preventDefault();
     }
   });
 
   document.addEventListener('input', (event) => {
-    const element = event.target instanceof Element ? event.target.closest('[oninput]') : null;
+    const element = event.target instanceof Element ? event.target.closest('[data-inline-oninput]') : null;
     if (!element) return;
-    runInlineHandler(element.getAttribute('oninput'), element, event);
+    runInlineHandler(element.getAttribute('data-inline-oninput'), element, event);
   });
 
   document.addEventListener('change', (event) => {
-    const element = event.target instanceof Element ? event.target.closest('[onchange]') : null;
+    const element = event.target instanceof Element ? event.target.closest('[data-inline-onchange]') : null;
     if (!element) return;
-    runInlineHandler(element.getAttribute('onchange'), element, event);
+    runInlineHandler(element.getAttribute('data-inline-onchange'), element, event);
   });
 
   document.addEventListener('focusout', (event) => {
-    const element = event.target instanceof Element ? event.target.closest('[onblur]') : null;
+    const element = event.target instanceof Element ? event.target.closest('[data-inline-onblur]') : null;
     if (!element) return;
-    runInlineHandler(element.getAttribute('onblur'), element, event);
+    runInlineHandler(element.getAttribute('data-inline-onblur'), element, event);
   });
 }
 
