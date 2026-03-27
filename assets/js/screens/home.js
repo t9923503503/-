@@ -5,8 +5,9 @@ function tr(key, params) {
 }
 
 function setHomeTab(tab) {
+  if (tab === 'archive') tab = 'schedule';
   homeActiveTab = tab;
-  if (tab !== 'archive') homeArchiveFormOpen = false;
+  homeArchiveFormOpen = false;
   const s = document.getElementById('screen-home');
   if (s) s.innerHTML = renderHome();
 }
@@ -45,11 +46,11 @@ function submitManualTournament() {
 
   homeArchiveFormOpen = false;
   homeArchiveFormPlayers = [];
-  setHomeTab('archive');
+  setHomeTab('schedule');
 }
 function deleteManualTournament(id) {
   saveManualTournaments(loadManualTournaments().filter(t => t.id !== id));
-  setHomeTab('archive');
+  setHomeTab('schedule');
 }
 function toggleArchiveForm() {
   homeArchiveFormOpen = !homeArchiveFormOpen;
@@ -105,57 +106,8 @@ function _archPlrListHtml() {
   </div>`).join('') + '</div>';
 }
 
-// ════════════════════════════════════════════════════════════
-// SERVER ARCHIVE LOADER
-// ════════════════════════════════════════════════════════════
-async function _loadApiArchive() {
-  if (_serverArchiveFetched) return;
-  // Smoke tests run with a plain static server (no Next.js API handlers),
-  // so calling `/api/archive` would trigger a 404 console error and fail the gate.
-// In real deployments APP_CONFIG is expected to be populated (at least cloud sync creds).
-  const cfg = globalThis.APP_CONFIG || {};
-  const hasBackend =
-    Boolean(String(cfg.apiBase || '').trim()) ||
-    Boolean(String(cfg.supabaseUrl || '').trim()) ||
-    Boolean(String(cfg.supabaseAnonKey || '').trim());
-  if (!hasBackend) {
-    _serverArchiveFetched = true;
-    return;
-  }
-  _serverArchiveFetched = true;
-  try {
-    const res = await fetch('/api/archive', { cache: 'no-store' });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (!Array.isArray(data)) return;
-    _serverArchive = data.map(t => ({
-      id: 'srv_' + t.id,
-      name: t.name,
-      date: t.date,
-      format: t.format || 'King of the Court',
-      division: t.division || '',
-      source: 'server',
-      photoUrl: t.photoUrl || t.photo_url || '',
-      playersCount: Array.isArray(t.results) ? t.results.length : 0,
-      winner: Array.isArray(t.results) && t.results.length > 0 ? t.results[0].playerName : '',
-      playerResults: Array.isArray(t.results)
-        ? t.results.map(r => ({ name: r.playerName, pts: r.points, gender: r.gender }))
-        : [],
-    }));
-    // Re-render archive tab if it's active
-    if (homeActiveTab === 'archive') {
-      const s = document.getElementById('screen-home');
-      if (s) s.innerHTML = renderHome();
-    }
-  } catch (e) {
-    // silently ignore network errors, fallback to localStorage
-  }
-}
-
 function renderHome() {
   const T = loadUpcomingTournaments();
-  const totalReg  = T.reduce((s,t) => s + (t.participants || []).length, 0);
-  const openCount = T.filter(t => t.status === 'open').length;
 
   // helpers
   const pct  = (r,c) => c ? Math.min(r/c*100, 100) : 0;
@@ -295,220 +247,9 @@ function renderHome() {
 
   const isS = homeActiveTab === 'schedule';
   const isC = homeActiveTab === 'calendar';
-  const isA = homeActiveTab === 'archive';
-
-  // ── Archive content builder ─────────────────────────────
-  function archCardHtml(trn) {
-    const isApp = trn.source === 'app';
-    const isSrv = trn.source === 'server';
-    let dateStr = '—';
-    dateStr = fmtDateLong(trn.date);
-    const winner = trn.winner || (trn.players && trn.players[0] ? trn.players[0].name : '');
-    const cnt    = trn.playersCount || (trn.players ? trn.players.length : 0);
-    const rds    = trn.rPlayed ? '🏐 ' + tr('home.roundsCount', { n: trn.rPlayed }) : '';
-    const srcLabel = isSrv ? tr('home.serverBadge') : (isApp ? tr('home.appBadge') : tr('home.manualBadge'));
-    const srcCls   = isSrv ? 'server' : (isApp ? 'app' : 'manual');
-    const clickAttr = isSrv ? '' : `onclick="showTournamentDetails(${trn.id})" style="cursor:pointer"`;
-    return `
-<div class="arch-card" ${clickAttr}>
-  <div class="arch-card-accent"></div>
-  <div class="arch-card-body">
-    <div class="arch-card-top">
-      <div>
-        <div class="arch-name">${esc(trn.name)}</div>
-        <div class="arch-date">📅 ${dateStr}</div>
-      </div>
-      <div class="arch-badges">
-        <span class="arch-src ${srcCls}">${srcLabel}</span>
-        ${!isApp && !isSrv?`<button class="arch-del-btn" onclick="event.stopPropagation();deleteManualTournament(${trn.id})" title="${escAttr(tr('home.deleteTitle'))}">✕</button>`:''}
-      </div>
-    </div>
-    <div class="arch-meta">
-      <span class="arch-chip">${esc(trn.format||'King of the Court')}</span>
-      <span class="arch-chip">${esc(trn.division||'—')}</span>
-      ${cnt?`<span class="arch-chip blue">👥 ${tr('home.playersCount', { n: cnt })}</span>`:''}
-      ${rds?`<span class="arch-chip blue">${rds}</span>`:''}
-      ${winner?`<span class="arch-chip gold">🥇 ${esc(winner)}</span>`:''}
-    </div>
-    ${trn.photoUrl?`<a class="trd-photo-link" href="${escAttr(trn.photoUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📸 ${tr('home.viewPhotos')}</a>`:''}
-    ${trn.playerResults?.length>1 ? `
-    <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:3px">
-      ${trn.playerResults.slice(0,5).map((p,i)=>{
-        return `<span style="font-size:10px;padding:2px 7px;border-radius:5px;
-          background:rgba(255,255,255,.05);border:1px solid #2a2a40;color:var(--muted)">
-          ${MEDALS_3[i]||'·'} ${esc(p.name)} ${p.pts?`<b style="color:var(--gold)">${p.pts}</b>`:''}
-        </span>`;
-      }).join('')}
-      ${trn.playerResults.length>5?`<span style="font-size:10px;color:var(--muted)">+${trn.playerResults.length-5}</span>`:''}
-    </div>` : ''}
-  </div>
-</div>`;
-  }
-
-  const archiveHtml = (() => {
-    const appT = (() => {
-      try {
-        return loadHistory()
-          .map(row => ({...row, source:'app', playersCount:row.players?.length||0,
-            winner: row.players?.[0]?.name||'',
-            format: row.format||'King of the Court', division: row.division||tr('home.divMixed')}));
-      } catch(e){ return []; }
-    })();
-    const srvT = Array.isArray(_serverArchive) ? _serverArchive : [];
-    // Kick off server fetch if not yet started (will re-render when ready)
-    if (!_serverArchiveFetched) _loadApiArchive();
-    let all  = [...srvT, ...appT];
-
-    // Apply search filter
-    const q = archiveSearch.toLowerCase().trim();
-    if (q) {
-      all = all.filter(t => {
-        if ((t.name||'').toLowerCase().includes(q)) return true;
-        if ((t.winner||'').toLowerCase().includes(q)) return true;
-        const plrs = t.players || t.playerResults || [];
-        return plrs.some(p => (p.name||'').toLowerCase().includes(q));
-      });
-    }
-
-    // Apply sort
-    if (archiveSort === 'date_desc')  all.sort((a,b) => (b.date||'') > (a.date||'') ? 1 : -1);
-    else if (archiveSort === 'date_asc') all.sort((a,b) => (a.date||'') > (b.date||'') ? 1 : -1);
-    else if (archiveSort === 'players') all.sort((a,b) => (b.playersCount||0) - (a.playersCount||0));
-    else if (archiveSort === 'pts') all.sort((a,b) => (b.totalScore||0) - (a.totalScore||0));
-
-    // Search bar HTML
-    const searchHtml = `
-    <div class="arch-search-row">
-      <input class="arch-search-inp" type="text" placeholder="${escAttr(tr('home.searchPlaceholder'))}"
-        value="${esc(archiveSearch)}"
-        oninput="archiveSearch=this.value;setHomeTab('archive')">
-      <select class="arch-sort-sel" onchange="archiveSort=this.value;setHomeTab('archive')">
-        <option value="date_desc"${archiveSort==='date_desc'?' selected':''}>${tr('home.sortNewest')}</option>
-        <option value="date_asc"${archiveSort==='date_asc'?' selected':''}>${tr('home.sortOldest')}</option>
-        <option value="players"${archiveSort==='players'?' selected':''}>${tr('home.sortPlayers')}</option>
-        <option value="pts"${archiveSort==='pts'?' selected':''}>${tr('home.sortPoints')}</option>
-      </select>
-    </div>`;
-
-    const listHtml = all.length === 0 ? `
-<div class="arch-empty">
-  <div class="arch-empty-icon">🏆</div>
-  ${_serverArchiveFetched ? tr('home.archiveEmpty') : `<span style="opacity:.6">${tr('home.loadingServer')}</span>`}
-</div>` : (() => {
-      const srvOnes = all.filter(t=>t.source==='server');
-      const appOnes = all.filter(t=>t.source==='app');
-      let html = '';
-      if (srvOnes.length) {
-        html += srvOnes.map(archCardHtml).join('');
-      }
-      if (!_serverArchiveFetched && !srvOnes.length) {
-        html += `<div class="arch-empty" style="padding:16px 0"><span style="opacity:.5">🌐 ${tr('home.loadingServer')}</span></div>`;
-      }
-      if (appOnes.length) {
-        html += `<div class="arch-divider"><div class="arch-divider-line"></div><span class="arch-divider-txt">📱 ${tr('home.fromApp')} (${appOnes.length})</span><div class="arch-divider-line"></div></div>`;
-        html += appOnes.map(archCardHtml).join('');
-      }
-      return html;
-    })();
-
-    return searchHtml + listHtml;
-  })();
 
   return `
 <div class="home-wrap">
-  <!-- Hero -->
-  <div class="home-hero">
-    <div class="home-badge">${tr('home.season')}</div>
-    <div class="home-title">${tr('home.dominate')}<br><span>${tr('home.court')}</span></div>
-    <div class="home-subtitle">${tr('home.subtitle')}</div>
-    <div class="home-stats">
-      <div class="home-stat"><div class="home-stat-val">${T.length}</div><div class="home-stat-lbl">${tr('home.tournamentsLabel')}</div></div>
-      <div class="home-stat"><div class="home-stat-val">${totalReg}+</div><div class="home-stat-lbl">${tr('home.participantsLabel')}</div></div>
-      <div class="home-stat"><div class="home-stat-val">${openCount}</div><div class="home-stat-lbl">${tr('home.openLabel')}</div></div>
-    </div>
-  </div>
-
-  <!-- Player DB banner -->
-  ${(() => {
-    const db = loadPlayerDB();
-    const total = db.length;
-    const men   = db.filter(p=>p.gender==='M').length;
-    const women = db.filter(p=>p.gender==='W').length;
-    // pick up to 2 real names for avatars
-    const topM = db.filter(p=>p.gender==='M').sort((a,b)=>(b.totalPts||0)-(a.totalPts||0))[0];
-    const topW = db.filter(p=>p.gender==='W').sort((a,b)=>(b.totalPts||0)-(a.totalPts||0))[0];
-    const av1  = topM ? (topM.name||'').slice(0,2).toUpperCase() : '🏋️';
-    const av2  = topW ? (topW.name||'').slice(0,2).toUpperCase() : '👩';
-    const av3  = total > 2 ? `+${total-2}` : '👤';
-    return `
-  <button class="plr-banner" onclick="switchTab('players')">
-    <div class="plr-banner-avatars">
-      <div class="plr-av" title="${topM?escAttr(topM.name):tr('home.menAvatar')}">${av1}</div>
-      <div class="plr-av" title="${topW?escAttr(topW.name):tr('home.womenAvatar')}">${av2}</div>
-      <div class="plr-av">${av3}</div>
-    </div>
-    <div class="plr-banner-body">
-      <div class="plr-banner-title">👤 ${tr('home.ratingTitle')} <span>${tr('home.ratingHighlight')}</span></div>
-      <div class="plr-banner-sub">${tr('home.ratingSub')}</div>
-      <div class="plr-banner-pill">
-        🏋️ ${men} ${tr('home.menShort')} &nbsp;·&nbsp; 👩 ${women} ${tr('home.womenShort')} &nbsp;·&nbsp; ${tr('home.totalLabel')} ${total}
-      </div>
-    </div>
-    <div class="plr-banner-arrow">→</div>
-  </button>`;
-  })()}
-
-  <!-- Epic Player Card -->
-  <div class="player-showcase">
-    <div class="epic-player-card">
-      <div class="card-top-row">
-        <div class="hex-border hex-avatar">
-          <div class="hex-inner">
-            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Crect fill='%23ff5e00' width='150' height='150'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' fill='%23fff' font-family='sans-serif' font-size='28' font-weight='700'%3EPLAYER%3C/text%3E%3C/svg%3E" alt="Mamedov" class="avatar-img" loading="lazy">
-          </div>
-        </div>
-        <div class="hex-border hex-logo">
-          <div class="hex-inner">
-            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23111' width='100' height='100'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' fill='%23ff5e00' font-family='sans-serif' font-size='14' font-weight='800'%3ELPVOLLEY.RU%3C/text%3E%3C/svg%3E" alt="LPVOLLEY.RU" class="logo-img" loading="lazy">
-          </div>
-        </div>
-      </div>
-      <div class="player-identity">
-        <h2 class="player-name">MAMEDOV</h2>
-        <div class="player-level-hex">
-          <div class="hex-inner">7</div>
-        </div>
-      </div>
-      <div class="player-rank">${tr('home.rankDemo')}</div>
-      <div class="badges-grid">
-        <div class="badge badge-gold">🏆 KING OF COURT 2026</div>
-        <div class="badge badge-fire">🔥 5 WIN STREAK</div>
-        <div class="badge badge-ice">❄️ SNOW MASTER</div>
-        <div class="badge badge-silver">🥈 2 SIDE OUT TOURNEY</div>
-      </div>
-      <div class="battle-history">
-        <div class="history-header">
-          <span>${tr('home.lastBattles')}</span>
-          <span>${tr('home.dateCol')}</span>
-          <span>${tr('home.resultCol')}</span>
-          <span>${tr('home.placeCol')}</span>
-        </div>
-        <div class="history-row row-win">
-          <span class="tourney-name">DOUBLE TROUBLE</span>
-          <span class="tourney-date">04.01.2026</span>
-          <span class="tourney-tier">🥉 HARD</span>
-          <span class="tourney-place">1</span>
-        </div>
-        <div class="history-row">
-          <span class="tourney-name">KOTC</span>
-          <span class="tourney-date">10.01.2026</span>
-          <span class="tourney-tier">-</span>
-          <span class="tourney-place">1</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Tabs -->
   <div class="home-tabs">
     <button class="home-tab-btn ${isS?'active':''}" onclick="setHomeTab('schedule')" style="font-size:11px">

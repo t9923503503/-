@@ -17,8 +17,8 @@
     "courtN": "Корт {{n}}",
     "brandMain": "LPVOLLEY.RU",
     "brandSub": "King of the Court",
-    "shortSvod": "СВОД",
-    "shortStats": "СТАТ",
+    "shortSvod": "1 тур",
+    "shortStats": "2 тур",
     "pillsNavAria": "Навигация по кортам и дивизионам",
     "courtPillAria": "Корт {{n}}: {{label}}",
     "courtBadge": "К{{n}}"

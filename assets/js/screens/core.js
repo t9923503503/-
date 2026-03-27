@@ -841,36 +841,38 @@ function buildNav() {
   const top = document.createElement('div');
   top.className = 'nav-top';
 
-  const logo = document.createElement('button');
-  logo.id = 'nav-logo';
-  logo.className = 'nav-logo-container';
-  logo.innerHTML = '<div class="brand-main">LPVOLLEY.RU</div><div class="brand-sub">King of the Court</div>';
-  logo.type = 'button';
-  logo.setAttribute('aria-label', 'На главную');
-  logo.setAttribute('title', 'На главную');
-  logo.addEventListener('click', () => switchTab('home'));
-  top.appendChild(logo);
+  const leftGroup = document.createElement('div');
+  leftGroup.className = 'nav-top-actions';
 
-  const spacer = document.createElement('div');
-  spacer.className = 'nav-spacer';
-  top.appendChild(spacer);
-
+  const homeBtn = document.createElement('button');
+  homeBtn.id = 'nav-logo';
+  homeBtn.type = 'button';
+  homeBtn.className = 'nb nb-icon';
+  homeBtn.dataset.tab = 'home';
+  homeBtn.textContent = '🏠';
+  homeBtn.setAttribute('aria-label', 'На главную');
+  homeBtn.title = 'На главную';
+  homeBtn.addEventListener('click', () => switchTab('home'));
+  leftGroup.appendChild(homeBtn);
 
   [
     { label:'👤',   tab:'players' },
-    { label:'СВОД', tab:'svod'    },
-    { label:'СТАТ', tab:'stats'   },
-    { label:'👥',   tab:'rating'  },
-    { label:'⚙️', tab:'roster'  },
-  ].forEach(({label,tab}) => {
+    { label:'1 тур', tab:'svod' },
+    { label:'2 тур', tab:'stats' },
+    { label:'👥',   tab:'rating' },
+    { label:'⚙️', tab:'roster' },
+  ].forEach(({ label, tab }) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'nb'; b.dataset.tab = tab;
+    b.className = 'nb';
+    b.dataset.tab = tab;
     b.textContent = label;
     b.setAttribute('aria-label', tabLabels[tab] || label);
-    b.addEventListener('click', ()=>switchTab(tab));
-    top.appendChild(b);
+    b.addEventListener('click', () => switchTab(tab));
+    leftGroup.appendChild(b);
   });
+
+  top.appendChild(leftGroup);
   // Кнопка ВЫХОД — возврат на основной сайт (на месте РЕГИСТР)
   const exitBtn = document.createElement('button');
   exitBtn.type = 'button';

@@ -171,10 +171,14 @@ body{
 /* ── Верхняя строка: лого + утилиты ──────────────────────── */
 .nav-top{
   display:flex;align-items:center;
-  padding:0 6px;height:32px;
+  padding:0 6px;min-height:32px;
   border-bottom:1px solid #1e1e34;
-  gap:2px;
+  gap:6px;
   flex-shrink:0;
+}
+.nav-top-actions{
+  display:flex;flex-wrap:wrap;align-items:center;
+  gap:3px;flex:1;min-width:0;
 }
 .nav-logo-container{flex-shrink:0;margin-right:4px;padding-left:4px;display:flex;flex-direction:column;justify-content:center;line-height:1;white-space:nowrap;cursor:pointer;background:transparent;border:none;color:inherit;text-align:left;font:inherit}
 .nav-logo-container:focus-visible,.nb:focus-visible,.nav-pill:focus-visible,.pcard-trn-row:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
@@ -182,6 +186,35 @@ body{
 .brand-sub{font-size:.5rem;color:rgba(255,255,255,.7);font-weight:400;letter-spacing:.2px;margin-top:1px}
 @media(max-width:380px){.brand-main{font-size:.75rem}}
 .nav-spacer{flex:1}
+@media (max-width:520px){
+  .nav-top{
+    min-height:44px;
+    padding:6px 4px;
+    gap:8px;
+    align-items:stretch;
+  }
+  .nav-top-actions{
+    gap:5px;
+    row-gap:6px;
+  }
+  .nb{
+    min-height:40px;
+    padding:0 9px;
+    font-size:12px;
+    border-radius:7px;
+    box-sizing:border-box;
+  }
+  .nb.nb-icon{
+    font-size:18px;
+    line-height:1;
+    padding:0 11px;
+  }
+  .nb.nb-exit{
+    min-width:40px;
+    min-height:40px;
+    align-self:center;
+  }
+}
 /* ── Нижние 2 ряда пиллов ─────────────────────────────────── */
 .nav-pills-row{
   display:flex;align-items:center;

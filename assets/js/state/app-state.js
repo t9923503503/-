@@ -80,7 +80,7 @@ function makeBlankDivRoster(){
 let activeTabId = 'home';  // current tab id (number = court index, or string)
 
 // ── HOME DASHBOARD STATE ────────────────────────────────────
-let homeActiveTab = 'schedule';   // 'schedule' | 'calendar' | 'archive'
+let homeActiveTab = 'schedule';   // 'schedule' | 'calendar'
 let homeArchiveFormOpen = false;
 let homeArchiveFormPlayers = [];   // [{name, pts, gender}]
 let homeArchiveFormGender  = 'M';  // default gender for next player

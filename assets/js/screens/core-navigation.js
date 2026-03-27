@@ -76,40 +76,44 @@ function buildNav() {
   const top = document.createElement('div');
   top.className = 'nav-top';
 
-  const logo = document.createElement('button');
-  logo.id = 'nav-logo';
-  logo.className = 'nav-logo-container';
-  logo.innerHTML = '<div class="brand-main">' + tr('nav.brandMain') + '</div><div class="brand-sub">' + tr('nav.brandSub') + '</div>';
-  logo.type = 'button';
-  logo.setAttribute('aria-label', tr('nav.home'));
-  logo.setAttribute('title', tr('nav.home'));
-  logo.addEventListener('click', () => switchTab('home'));
-  top.appendChild(logo);
+  const leftGroup = document.createElement('div');
+  leftGroup.className = 'nav-top-actions';
 
-  const spacer = document.createElement('div');
-  spacer.className = 'nav-spacer';
-  top.appendChild(spacer);
+  const homeBtn = document.createElement('button');
+  homeBtn.id = 'nav-logo';
+  homeBtn.type = 'button';
+  homeBtn.className = 'nb nb-icon';
+  homeBtn.dataset.tab = 'home';
+  homeBtn.textContent = '🏠';
+  homeBtn.setAttribute('aria-label', tr('nav.home'));
+  homeBtn.title = tr('nav.home');
+  homeBtn.addEventListener('click', () => switchTab('home'));
+  leftGroup.appendChild(homeBtn);
 
   [
     { label:'👤',   tab:'players' },
-    { label: tr('nav.shortSvod'), tab:'svod'    },
-    { label: tr('nav.shortStats'), tab:'stats'   },
-    { label:'⚙️', tab:'roster'  },
-  ].forEach(({label,tab}) => {
+    { label: tr('nav.shortSvod'), tab:'svod' },
+    { label: tr('nav.shortStats'), tab:'stats' },
+    { label:'👥', tab:'rating' },
+    { label:'⚙️', tab:'roster' },
+  ].forEach(({ label, tab }) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'nb'; b.dataset.tab = tab;
+    b.className = 'nb';
+    b.dataset.tab = tab;
     b.textContent = label;
     b.setAttribute('aria-label', tabLabels[tab] || label);
-    b.addEventListener('click', ()=>switchTab(tab));
-    top.appendChild(b);
+    b.addEventListener('click', () => switchTab(tab));
+    leftGroup.appendChild(b);
   });
 
-  // F4.1: ARIA tablist for top nav buttons
+  top.appendChild(leftGroup);
+
+  // F4.1: tablist только на кнопках экранов (без «Выход», чтобы стрелки не уводили на закрытие)
   if (typeof AriaTabList !== 'undefined') {
-    AriaTabList.attach(top, {
-      selector: '.nb',
-      onActivate: (btn) => { const tab = btn.dataset.tab; if (tab) switchTab(tab); }
+    AriaTabList.attach(leftGroup, {
+      selector: '.nb[data-tab]',
+      onActivate: (btn) => { const tab = btn.dataset.tab; if (tab) switchTab(tab); },
     });
   }
 

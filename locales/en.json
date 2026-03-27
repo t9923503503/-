@@ -17,8 +17,8 @@
     "courtN": "Court {{n}}",
     "brandMain": "LPVOLLEY.RU",
     "brandSub": "King of the Court",
-    "shortSvod": "SUM",
-    "shortStats": "STAT",
+    "shortSvod": "T1",
+    "shortStats": "T2",
     "pillsNavAria": "Courts and divisions navigation",
     "courtPillAria": "Court {{n}}: {{label}}",
     "courtBadge": "C{{n}}"
