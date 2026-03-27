@@ -2,17 +2,17 @@
 
 import { useKotcLiveStore } from "../use-kotc-live-store";
 import { KotcLiveJudgeFlow } from "./KotcLiveJudgeFlow";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
 function ConnectionBadge({ status }: { status: string }) {
   const style =
     status === "connected"
-      ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+      ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-200"
       : status === "reconnecting"
-        ? "bg-amber-500/15 text-amber-200 border-amber-500/40"
-        : "bg-surface-light border-white/10 text-text-secondary";
+        ? "border-amber-500/35 bg-amber-500/15 text-amber-100"
+        : "border-white/10 bg-white/5 text-text-secondary";
   return (
-    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-xs font-body ${style}`}>
+    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.22em] ${style}`}>
       {status}
     </span>
   );
@@ -35,17 +35,17 @@ export function KotcLiveLayout({ legacyIframeSrc }: { legacyIframeSrc: string })
 
   if (isLegacy) {
     return (
-      <div className="flex flex-col h-screen w-full">
-        <div className="bg-surface-light border-b border-white/10 p-3 flex justify-between items-center z-10">
+      <div className="flex h-screen w-full flex-col bg-background">
+        <div className="z-10 flex items-center justify-between border-b border-white/10 bg-surface-light p-3">
           <div className="text-sm font-body text-text-secondary">
             Legacy Mode Active {state.legacyReason ? `(${state.legacyReason})` : ""}
           </div>
-          <button 
+          <button
             onClick={() => {
               setForceLegacy(false);
               actions.refreshSessions();
-            }} 
-            className="text-xs bg-brand/20 text-brand-light px-3 py-1.5 rounded border border-brand/40"
+            }}
+            className="rounded border border-brand/40 bg-brand/20 px-3 py-1.5 text-xs text-brand-light"
           >
             Switch to New Version
           </button>
@@ -53,7 +53,7 @@ export function KotcLiveLayout({ legacyIframeSrc }: { legacyIframeSrc: string })
         <iframe
           src={legacyIframeSrc}
           className="flex-1 w-full border-0"
-          title="King of the Court — legacy judge app"
+          title="King of the Court - legacy judge app"
           allow="clipboard-write"
         />
       </div>
@@ -61,20 +61,38 @@ export function KotcLiveLayout({ legacyIframeSrc }: { legacyIframeSrc: string })
   }
 
   return (
-    <div className="min-h-screen flex flex-col w-full bg-background text-text-primary">
-      <header className="border-b border-white/10 bg-surface/80 sticky top-0 z-10 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div className="min-h-screen w-full bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_20%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.12),transparent_20%),linear-gradient(180deg,#050914,#08101d)] text-text-primary">
+      <header className="sticky top-0 z-10 border-b border-white/10 bg-[rgba(4,8,18,0.86)] backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="font-heading text-xl text-text-primary tracking-wide">Judge Terminal</h1>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.4em] text-text-secondary">KOTC Live</div>
+              <h1 className="font-heading text-2xl uppercase tracking-[0.08em] text-text-primary">Judge Control Deck</h1>
+            </div>
             <ConnectionBadge status={state.connectionStatus} />
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-secondary">
+            {state.selectedSessionId ? (
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                session {state.selectedSessionId}
+              </span>
+            ) : null}
+            {typeof state.courtIdx === "number" ? (
+              <span className="rounded-full border border-brand/20 bg-brand/10 px-3 py-1 text-brand-light">
+                court {state.courtIdx}
+              </span>
+            ) : null}
+            {state.role ? (
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{state.role}</span>
+            ) : null}
             {state.error && (
-               <div className="text-xs text-red-400 max-w-sm truncate mr-2">{state.error}</div>
+              <div className="max-w-sm truncate rounded-full border border-red-500/20 bg-red-500/10 px-3 py-1 text-red-300">
+                {state.error}
+              </div>
             )}
-            <button 
+            <button
               onClick={() => setForceLegacy(true)}
-              className="text-xs text-text-secondary hover:text-white transition-colors"
+              className="rounded-full border border-white/10 px-3 py-1 text-xs text-text-secondary transition hover:border-white/25 hover:text-white"
             >
               Old Version
             </button>
@@ -82,7 +100,7 @@ export function KotcLiveLayout({ legacyIframeSrc }: { legacyIframeSrc: string })
         </div>
       </header>
 
-      <main className="flex-1 w-full">
+      <main className="flex-1 w-full pb-10">
         <KotcLiveJudgeFlow />
       </main>
     </div>

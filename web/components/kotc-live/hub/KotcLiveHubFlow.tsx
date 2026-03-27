@@ -50,26 +50,24 @@ function RoundPreview({ round }: { round: KotcRound }) {
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-surface-light/20 p-4">
+    <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="font-heading text-lg text-text-primary">
-            {round.stageType.toUpperCase()} · round {round.roundNo}
+          <h3 className="font-heading text-lg uppercase tracking-[0.08em] text-text-primary">
+            {round.stageType} round {round.roundNo}
           </h3>
-          <p className="text-xs text-text-secondary">
-            status: {round.status} · levels: {round.levelCount}
-          </p>
+          <p className="text-xs text-text-secondary">status {round.status} · levels {round.levelCount}</p>
         </div>
-        <span className="rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-text-secondary">
-          {round.assignments.length} assignments
+        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-text-secondary">
+          {round.assignments.length} slots
         </span>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {Array.from(courts.entries())
           .sort((a, b) => a[0] - b[0])
           .map(([courtIdx, assignments]) => (
-            <div key={courtIdx} className="rounded-lg border border-white/10 bg-surface/50 p-3">
-              <div className="font-heading text-base text-text-primary">Court {courtIdx}</div>
+            <div key={courtIdx} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="font-heading text-base uppercase tracking-[0.08em] text-text-primary">Court {courtIdx}</div>
               <div className="mt-2 space-y-1 text-sm text-text-secondary">
                 {assignments
                   .slice()
@@ -92,14 +90,7 @@ function RoundPreview({ round }: { round: KotcRound }) {
 
 export function KotcLiveHubFlow() {
   const { state, actions } = useKotcLiveStore();
-  const {
-    backToSessionList,
-    joinAs,
-    refreshPresence,
-    refreshSessions,
-    runCommand,
-    selectSession,
-  } = actions;
+  const { backToSessionList, joinAs, refreshPresence, refreshSessions, runCommand, selectSession } = actions;
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
   const [broadcastMessage, setBroadcastMessage] = useState("");
@@ -142,6 +133,14 @@ export function KotcLiveHubFlow() {
     [state.selectedSessionId, state.sessions],
   );
   const tournamentId = selectedSession?.tournamentId || null;
+  const judgeSeats = useMemo(
+    () => state.presence.filter((item) => item.role === "judge"),
+    [state.presence],
+  );
+  const activeRosterCount = useMemo(
+    () => tournamentRoster.filter((item) => item.active && item.confirmed && !item.dropped).length,
+    [tournamentRoster],
+  );
 
   const refreshTournamentFlow = async () => {
     if (!tournamentId) return;
@@ -240,7 +239,7 @@ export function KotcLiveHubFlow() {
 
   if (!state.selectedSessionId) {
     return (
-      <div className="mx-auto w-full max-w-4xl px-4">
+      <div className="mx-auto w-full max-w-6xl px-4">
         <SessionList
           sessions={state.sessions}
           loading={state.loading}
@@ -261,35 +260,233 @@ export function KotcLiveHubFlow() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-8">
-      <div className="flex flex-col justify-between gap-4 border-b border-white/10 py-4 sm:flex-row sm:items-center">
-        <div className="flex items-center gap-3">
-          <h1 className="font-heading text-2xl text-text-primary">Hub Control Board</h1>
-          <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300">
-            {state.connectionStatus}
-          </span>
-        </div>
-        <div className="flex items-center gap-4 text-xs font-body text-text-secondary">
-          <span>Session: {state.sessionVersion}</span>
-          <span>Epoch: {state.structureEpoch}</span>
-          <button
-            onClick={() => backToSessionList()}
-            className="rounded border border-white/10 px-3 py-1.5 text-white hover:border-white/30"
-          >
-            Leave Hub
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h2 className="font-heading text-xl text-text-primary">Tournament Flow</h2>
-            <p className="mt-1 text-sm text-text-secondary">
-              Tournament: {tournamentId || "not linked"} {selectedSession?.title ? `· ${selectedSession.title}` : ""}
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6">
+      <section className="overflow-hidden rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.2),transparent_24%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.18),transparent_20%),linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))] shadow-[0_36px_140px_rgba(0,0,0,0.4)]">
+        <div className="flex flex-col gap-5 border-b border-white/10 px-6 py-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-3xl">
+            <div className="text-[11px] uppercase tracking-[0.42em] text-cyan-200/80">Arena Command</div>
+            <h1 className="mt-3 font-heading text-5xl uppercase tracking-[0.08em] text-text-primary">KOTC Mission Control</h1>
+            <p className="mt-3 text-sm leading-6 text-text-secondary">
+              Same old principle of work, upgraded: courts first, judges visible, emergency controls always on deck,
+              tournament management moved lower so the match surface stays primary.
             </p>
-            <p className="mt-1 text-xs text-text-secondary">
-              One line = one participant. Save roster, then build Round 1, then build Round 2 from Round 1 results.
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-text-secondary">
+            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-emerald-200">
+              {state.connectionStatus}
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">session {state.sessionVersion}</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">epoch {state.structureEpoch}</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{state.phase || "setup"}</span>
+            <button
+              onClick={() => backToSessionList()}
+              className="rounded-full border border-white/15 px-4 py-2 text-xs text-white transition hover:border-white/30"
+            >
+              Leave Hub
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-4 px-4 py-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.3em] text-text-secondary">Active Session</div>
+            <div className="mt-3 font-heading text-2xl uppercase tracking-[0.08em] text-text-primary">
+              {selectedSession?.title || state.selectedSessionId}
+            </div>
+            <div className="mt-2 text-sm text-text-secondary">{tournamentId || "no tournament link"}</div>
+          </div>
+          <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.3em] text-text-secondary">Judge Seats</div>
+            <div className="mt-3 font-heading text-4xl text-text-primary">{judgeSeats.length}</div>
+            <div className="mt-2 text-sm text-text-secondary">online judges visible in presence feed</div>
+          </div>
+          <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.3em] text-text-secondary">Courts Live</div>
+            <div className="mt-3 font-heading text-4xl text-text-primary">{state.nc || 4}</div>
+            <div className="mt-2 text-sm text-text-secondary">court lanes in current arena</div>
+          </div>
+          <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.3em] text-text-secondary">Tournament Flow</div>
+            <div className="mt-3 font-heading text-4xl text-text-primary">{rounds.length}</div>
+            <div className="mt-2 text-sm text-text-secondary">generated rounds, roster {activeRosterCount}</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[1.4fr_0.9fr]">
+        <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.28)]">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.34em] text-text-secondary">Court Deck</div>
+              <h2 className="mt-2 font-heading text-3xl uppercase tracking-[0.08em] text-text-primary">Live Arena</h2>
+            </div>
+            <button
+              onClick={() => refreshPresence()}
+              disabled={busy}
+              className="rounded-full border border-white/15 px-4 py-2 text-xs uppercase tracking-[0.22em] text-text-primary transition hover:border-white/30 disabled:opacity-50"
+            >
+              Refresh Presence
+            </button>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {Array.from({ length: state.nc || 4 }, (_, offset) => offset + 1).map((idx) => {
+              const court = state.courts[idx];
+              const seat = state.presence.find((p) => p.courtIdx === idx && p.role === "judge");
+              const raw = (court?.scores || {}) as Record<string, unknown>;
+              const home = Number(raw.home ?? raw.teamA ?? 0);
+              const away = Number(raw.away ?? raw.teamB ?? 0);
+              const remainingMs = getRemainingMs(court, state.clockOffsetMs);
+              void tick;
+
+              return (
+                <div key={idx} className="overflow-hidden rounded-[24px] border border-white/10 bg-black/20">
+                  <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.3em] text-text-secondary">Court</div>
+                      <div className="mt-1 font-heading text-3xl uppercase tracking-[0.08em] text-text-primary">{idx}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-text-secondary">
+                        {court?.timerStatus || "idle"}
+                      </div>
+                      <div className="mt-2 text-xs text-text-secondary">round {court?.roundIdx ?? 0}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 px-5 py-5 md:grid-cols-[1fr_auto_1fr] md:items-center">
+                    <div className="text-center">
+                      <div className="text-[10px] uppercase tracking-[0.28em] text-text-secondary">Home</div>
+                      <div className="mt-2 font-heading text-6xl text-text-primary">{home}</div>
+                    </div>
+                    <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-center">
+                      <div className="text-[10px] uppercase tracking-[0.28em] text-text-secondary">Timer</div>
+                      <div className="mt-2 font-heading text-3xl tracking-[0.12em] text-emerald-200">{formatMs(remainingMs)}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-[10px] uppercase tracking-[0.28em] text-text-secondary">Away</div>
+                      <div className="mt-2 font-heading text-6xl text-text-primary">{away}</div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 border-t border-white/10 px-5 py-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-text-secondary">Judge seat</span>
+                      <span className={seat ? "text-emerald-200" : "text-text-secondary"}>
+                        {seat?.displayName || (seat ? "Unknown judge" : "open")}
+                      </span>
+                    </div>
+                    {seat ? (
+                      <button
+                        disabled={busy}
+                        onClick={() => forceRelease(idx)}
+                        className="rounded-2xl border border-red-500/35 bg-red-500/10 px-4 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-red-200 transition hover:bg-red-500/20 disabled:opacity-50"
+                      >
+                        Force Release Court {idx}
+                      </button>
+                    ) : (
+                      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-secondary">
+                        No judge attached to this lane.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="rounded-[28px] border border-red-500/20 bg-[linear-gradient(180deg,rgba(127,29,29,0.28),rgba(17,24,39,0.22))] p-5">
+            <div className="text-[11px] uppercase tracking-[0.34em] text-red-200/80">Mission Rail</div>
+            <h2 className="mt-2 font-heading text-2xl uppercase tracking-[0.08em] text-red-100">Global Controls</h2>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                disabled={busy}
+                onClick={() => runHubCommand("session.pause", {})}
+                className="rounded-2xl border border-amber-500/35 bg-amber-500/18 px-4 py-4 text-sm font-semibold uppercase tracking-[0.18em] text-amber-100 transition hover:bg-amber-500/28 disabled:opacity-50"
+              >
+                Pause Session
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => runHubCommand("session.resume", {})}
+                className="rounded-2xl border border-emerald-500/35 bg-emerald-500/18 px-4 py-4 text-sm font-semibold uppercase tracking-[0.18em] text-emerald-100 transition hover:bg-emerald-500/28 disabled:opacity-50"
+              >
+                Resume Session
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="text-[10px] uppercase tracking-[0.28em] text-text-secondary">Broadcast</div>
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  value={broadcastMessage}
+                  onChange={(e) => setBroadcastMessage(e.target.value)}
+                  placeholder="Message to all courts"
+                  className="flex-1 rounded-2xl border border-white/20 bg-surface/80 px-4 py-3 text-sm text-text-primary outline-none focus:border-cyan-500/50"
+                />
+                <button
+                  disabled={busy || !broadcastMessage.trim()}
+                  onClick={() =>
+                    runHubCommand("global.broadcast_message", { message: broadcastMessage.trim() }).then(() =>
+                      setBroadcastMessage(""),
+                    )
+                  }
+                  className="rounded-2xl border border-cyan-500/35 bg-cyan-500/18 px-4 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-cyan-100 transition hover:bg-cyan-500/28 disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.34em] text-text-secondary">Judge Matrix</div>
+                <h2 className="mt-2 font-heading text-2xl uppercase tracking-[0.08em] text-text-primary">Presence Grid</h2>
+              </div>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-text-secondary">
+                {judgeSeats.length} attached
+              </span>
+            </div>
+
+            <div className="mt-5 flex flex-col gap-3">
+              {Array.from({ length: state.nc || 4 }, (_, offset) => offset + 1).map((idx) => {
+                const seat = state.presence.find((p) => p.courtIdx === idx && p.role === "judge");
+                return (
+                  <div key={idx} className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.28em] text-text-secondary">Court {idx}</div>
+                      <div className="mt-1 text-sm text-text-primary">{seat?.displayName || "Open seat"}</div>
+                    </div>
+                    <span
+                      className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.2em] ${
+                        seat
+                          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
+                          : "border-white/10 bg-white/5 text-text-secondary"
+                      }`}
+                    >
+                      {seat ? (seat.isOnline ? "online" : "offline") : "empty"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[28px] border border-cyan-500/20 bg-[linear-gradient(180deg,rgba(8,145,178,0.14),rgba(8,145,178,0.04))] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.24)]">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="text-[11px] uppercase tracking-[0.34em] text-cyan-100/80">Tournament Rail</div>
+            <h2 className="mt-2 font-heading text-3xl uppercase tracking-[0.08em] text-text-primary">Bracket And Roster Flow</h2>
+            <p className="mt-3 text-sm leading-6 text-text-secondary">
+              This stays available, but it no longer steals the first screen. Use it to load roster, build rounds and
+              inspect assignments once the live arena is already under control.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -297,7 +494,7 @@ export function KotcLiveHubFlow() {
               type="button"
               disabled={tournamentBusy || !tournamentId}
               onClick={() => void refreshTournamentFlow()}
-              className="rounded-lg border border-white/10 px-3 py-2 text-sm text-text-primary disabled:opacity-40"
+              className="rounded-full border border-white/10 px-4 py-2 text-xs uppercase tracking-[0.22em] text-text-primary disabled:opacity-40"
             >
               Refresh Flow
             </button>
@@ -305,7 +502,7 @@ export function KotcLiveHubFlow() {
               type="button"
               disabled={tournamentBusy || !tournamentId}
               onClick={() => void saveRoster()}
-              className="rounded-lg border border-brand/40 bg-brand/20 px-3 py-2 text-sm font-semibold text-brand-light disabled:opacity-40"
+              className="rounded-full border border-brand/35 bg-brand/18 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-brand-light disabled:opacity-40"
             >
               Save Roster
             </button>
@@ -313,7 +510,7 @@ export function KotcLiveHubFlow() {
               type="button"
               disabled={tournamentBusy || !tournamentId}
               onClick={() => void buildRound1()}
-              className="rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-300 disabled:opacity-40"
+              className="rounded-full border border-emerald-500/35 bg-emerald-500/18 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-100 disabled:opacity-40"
             >
               Generate Round 1
             </button>
@@ -321,14 +518,14 @@ export function KotcLiveHubFlow() {
               type="button"
               disabled={tournamentBusy || !tournamentId}
               onClick={() => void buildRound2()}
-              className="rounded-lg border border-cyan-500/40 bg-cyan-500/20 px-3 py-2 text-sm font-semibold text-cyan-200 disabled:opacity-40"
+              className="rounded-full border border-cyan-500/35 bg-cyan-500/18 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-cyan-100 disabled:opacity-40"
             >
               Generate Round 2
             </button>
           </div>
         </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+        <div className="mt-5 grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
           <div>
             <div className="mb-2 flex items-center justify-between text-xs text-text-secondary">
               <span>Roster entries: {tournamentRoster.length}</span>
@@ -338,21 +535,19 @@ export function KotcLiveHubFlow() {
               value={rosterText}
               onChange={(event) => setRosterText(event.target.value)}
               placeholder="One participant per line"
-              className="min-h-[260px] w-full rounded-xl border border-white/10 bg-surface/60 px-4 py-3 text-sm text-text-primary outline-none focus:border-brand/40"
+              className="min-h-[260px] w-full rounded-[24px] border border-white/10 bg-black/20 px-4 py-4 text-sm text-text-primary outline-none focus:border-brand/40"
             />
           </div>
           <div className="space-y-3">
             {tournamentError ? (
-              <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
                 {tournamentError}
               </div>
             ) : null}
-            <div className="rounded-lg border border-white/10 bg-surface/40 p-4 text-sm text-text-secondary">
+            <div className="rounded-[24px] border border-white/10 bg-black/20 p-4 text-sm text-text-secondary">
               <div className="flex items-center justify-between">
                 <span>Active roster</span>
-                <span className="text-text-primary">
-                  {tournamentRoster.filter((item) => item.active && item.confirmed && !item.dropped).length}
-                </span>
+                <span className="text-text-primary">{activeRosterCount}</span>
               </div>
               <div className="mt-2 flex items-center justify-between">
                 <span>Generated rounds</span>
@@ -364,7 +559,7 @@ export function KotcLiveHubFlow() {
               </div>
             </div>
             {rounds.length === 0 ? (
-              <div className="rounded-lg border border-white/10 bg-surface/30 p-4 text-sm text-text-secondary">
+              <div className="rounded-[24px] border border-white/10 bg-black/20 p-4 text-sm text-text-secondary">
                 No generated rounds yet. Save roster first, then build Round 1.
               </div>
             ) : (
@@ -372,130 +567,7 @@ export function KotcLiveHubFlow() {
             )}
           </div>
         </div>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="flex flex-col gap-4 rounded-xl border border-red-500/30 bg-red-500/5 p-5">
-          <h2 className="mb-2 font-heading text-xl uppercase tracking-widest text-red-200">Emergency Controls</h2>
-
-          <div className="flex flex-wrap gap-3">
-            <button
-              disabled={busy}
-              onClick={() => runHubCommand("session.pause", {})}
-              className="flex-1 rounded-lg border border-amber-500/40 bg-amber-500/20 px-4 py-3 text-sm font-semibold text-amber-200 transition-colors hover:bg-amber-500/30 disabled:opacity-50"
-            >
-              Pause Session
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => runHubCommand("session.resume", {})}
-              className="flex-1 rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-4 py-3 text-sm font-semibold text-emerald-300 transition-colors hover:bg-emerald-500/30 disabled:opacity-50"
-            >
-              Resume Session
-            </button>
-          </div>
-
-          <div className="mt-2 border-t border-white/10 pt-4 text-sm text-text-secondary">
-            Broadcasting alerts will blink on all judges screens.
-          </div>
-          <div className="flex w-full gap-2">
-            <input
-              type="text"
-              value={broadcastMessage}
-              onChange={(e) => setBroadcastMessage(e.target.value)}
-              placeholder="Message to all courts..."
-              className="flex-1 rounded-lg border border-white/20 bg-surface/80 px-3 py-2 text-sm text-text-primary outline-none focus:border-cyan-500/50"
-            />
-            <button
-              disabled={busy || !broadcastMessage.trim()}
-              onClick={() =>
-                runHubCommand("global.broadcast_message", { message: broadcastMessage.trim() }).then(() =>
-                  setBroadcastMessage(""),
-                )
-              }
-              className="rounded-lg border border-cyan-500/40 bg-cyan-500/20 px-4 py-2 text-sm font-semibold text-cyan-200 transition-colors hover:bg-cyan-500/30 disabled:opacity-50"
-            >
-              Send
-            </button>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-surface-light/30 p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-heading text-xl uppercase tracking-widest text-text-primary">Judge Matrix</h2>
-            <button onClick={() => refreshPresence()} disabled={busy} className="text-xs text-brand hover:underline">
-              Refresh
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            {Array.from({ length: state.nc || 4 }, (_, offset) => offset + 1).map((idx) => {
-              const seat = state.presence.find((p) => p.courtIdx === idx && p.role === "judge");
-              return (
-                <div key={idx} className="flex items-center justify-between rounded-lg border border-white/5 bg-surface/50 p-3">
-                  <div className="flex items-center gap-3">
-                    <span className="w-24 font-heading text-lg text-text-primary">Court {idx}</span>
-                    {seat ? (
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-emerald-300">{seat.displayName || "Unknown Judge"}</span>
-                        <span className="text-xs text-text-secondary">{seat.isOnline ? "Online" : "Offline / Unreachable"}</span>
-                      </div>
-                    ) : (
-                      <span className="text-sm italic text-text-secondary">Empty / Available</span>
-                    )}
-                  </div>
-                  {seat && (
-                    <button
-                      disabled={busy}
-                      onClick={() => forceRelease(idx)}
-                      className="rounded border border-red-500/40 px-3 py-1.5 text-xs text-red-300 transition-colors hover:bg-red-500/20 active:bg-red-500/40"
-                    >
-                      Force Release
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 rounded-xl border border-white/10 bg-surface/40 p-5">
-        <h2 className="mb-4 font-heading text-xl uppercase tracking-widest text-text-primary">Courts Live Readout</h2>
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {Array.from({ length: state.nc || 4 }, (_, offset) => offset + 1).map((idx) => {
-            const court = state.courts[idx];
-            if (!court) {
-              return (
-                <div key={idx} className="rounded-lg border border-white/5 bg-surface-light/20 p-4 text-center text-sm text-text-secondary">
-                  Court {idx} Pending
-                </div>
-              );
-            }
-            const raw = (court.scores || {}) as Record<string, unknown>;
-            const home = Number(raw.home ?? raw.teamA ?? 0);
-            const away = Number(raw.away ?? raw.teamB ?? 0);
-            const remainingMs = getRemainingMs(court, state.clockOffsetMs);
-
-            return (
-              <div key={idx} className="rounded-lg border border-white/10 bg-surface-light/40 p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <span className="font-heading font-bold">Court {idx}</span>
-                  <span className="font-mono text-xs text-text-secondary">{court.timerStatus || "idle"}</span>
-                </div>
-                <div className="mb-4 rounded bg-black/20 py-2 text-center font-heading text-3xl tracking-widest text-emerald-300">
-                  {formatMs(remainingMs)}
-                </div>
-                <div className="flex justify-between px-2 font-heading text-2xl font-bold">
-                  <span>{home}</span>
-                  <span className="self-center text-sm text-text-secondary">:</span>
-                  <span>{away}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      </section>
     </div>
   );
 }
