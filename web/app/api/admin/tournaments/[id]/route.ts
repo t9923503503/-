@@ -52,7 +52,18 @@ export async function DELETE(
 
     const before = await getTournamentById(id);
     const ok = await deleteTournament(id);
-    if (!ok) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (!ok) {
+      if (before) {
+        return NextResponse.json(
+          {
+            error:
+              'Delete blocked by DB policy (RLS). Ensure the DATABASE_URL role can DELETE from tournaments (e.g. BYPASSRLS or a DELETE policy).',
+          },
+          { status: 403 }
+        );
+      }
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
 
     await writeAuditLog({
       actorId: auth.actor.id,

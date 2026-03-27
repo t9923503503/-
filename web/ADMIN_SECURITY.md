@@ -8,6 +8,20 @@
 
 The application runtime must not execute DDL (`CREATE TABLE`, `ALTER TABLE`) in production.
 
+## 1.1) RLS and admin mutations (DELETE/UPDATE/INSERT)
+
+The app talks to Postgres directly via `DATABASE_URL`. If Row Level Security (RLS) is enabled on tables, the DB role used
+by `DATABASE_URL` must be able to mutate rows (or admin DELETE/UPDATE will silently affect `0` rows and the API may return
+`404`/`403`).
+
+For a private, server-only DB role you can simply bypass RLS (use the username from `DATABASE_URL`):
+
+```sql
+ALTER ROLE <app_db_user> BYPASSRLS;
+```
+
+Alternative: create explicit RLS policies for the role instead of `BYPASSRLS`.
+
 ## 2) Session and identity model
 
 Admin session uses signed cookie `admin_session` with payload:
