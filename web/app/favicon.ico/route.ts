@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server';
-import { headers } from 'next/headers';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
 export const dynamic = 'force-static';
 
-export async function GET(request: Request) {
-  const h = await headers();
-  const host = h.get('x-forwarded-host') || h.get('host');
-  const proto = h.get('x-forwarded-proto') || 'https';
-  const origin = host ? `${proto}://${host}` : new URL(request.url).origin;
-  return NextResponse.redirect(new URL('/kotc/assets/favicon.png', origin));
+export async function GET() {
+  const filePath = path.join(process.cwd(), 'public', 'kotc', 'assets', 'favicon.png');
+  const bytes = await readFile(filePath);
+  return new NextResponse(bytes, {
+    status: 200,
+    headers: {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
+  });
 }
