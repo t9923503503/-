@@ -38,8 +38,8 @@ ssh root@157.22.173.248 "cd /var/www/ipt/web && npm run build"
 
 ```bash
 ssh root@157.22.173.248 "
-  cp -r /var/www/ipt/web/.next/static /var/www/ipt/web/.next/standalone/web/.next/static &&
-  cp -r /var/www/ipt/web/public /var/www/ipt/web/.next/standalone/web/public &&
+  cp -a /var/www/ipt/web/.next/static/. /var/www/ipt/web/.next/standalone/web/.next/static/ &&
+  cp -a /var/www/ipt/web/public/. /var/www/ipt/web/.next/standalone/web/public/ &&
   systemctl restart kotc-web &&
   sleep 2 &&
   systemctl is-active kotc-web
