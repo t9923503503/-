@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import SudyamLiveClient from "@/components/kotc-live/SudyamLiveClient";
+import { KotcLiveLayout } from "@/components/kotc-live/judge/KotcLiveLayout";
 
 export const metadata: Metadata = {
   title: "Sudyam | Lutyye Plyazhniki",
@@ -35,5 +35,5 @@ export default async function SudyamPage() {
   const proto = headerStore.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const legacyIframeSrc = buildLegacyIframeSrc(host, proto);
 
-  return <SudyamLiveClient legacyIframeSrc={legacyIframeSrc} />;
+  return <KotcLiveLayout legacyIframeSrc={legacyIframeSrc} />;
 }
