@@ -224,15 +224,14 @@ export default function EventCard({ group }: { group: TournamentGroup }) {
             href={albumUrl}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="absolute bottom-4 left-4 px-3 py-1.5 rounded-full text-xs font-body font-semibold border border-white/20 bg-black/30 text-text-primary/90 backdrop-blur-sm hover:border-brand/50 hover:text-brand transition-colors"
+            className="absolute bottom-4 left-4 z-20 px-3 py-1.5 rounded-full text-xs font-body font-semibold border border-white/20 bg-black/30 text-text-primary/90 backdrop-blur-sm hover:border-brand/50 hover:text-brand transition-colors"
           >
             📸 Фото
           </a>
         )}
       </div>
 
-      <div className="p-6">
+      <div className="p-6 relative z-0">
         {/* Title */}
         <h3 className="font-heading text-3xl md:text-4xl text-text-primary leading-tight tracking-wide group-hover:text-brand transition-colors">
           {group.baseName}
@@ -370,13 +369,20 @@ export default function EventCard({ group }: { group: TournamentGroup }) {
           </div>
         )}
       </div>
+
+      {singleLink && (
+        <Link
+          href={singleLink}
+          aria-label={`Открыть турнир: ${group.baseName}`}
+          className="absolute inset-0 z-10"
+        >
+          <span className="sr-only">Открыть турнир</span>
+        </Link>
+      )}
     </article>
   );
 
-  if (singleLink) {
-    return <Link href={singleLink} className="block group">{cardContent}</Link>;
-  }
-
-  // For multi-category, the card itself is not a link (categories inside are)
+  // For multi-category, the card itself is not a link (categories inside are).
+  // For single-category, we use an overlay <Link> inside the card to avoid nested anchors.
   return <div className="group">{cardContent}</div>;
 }

@@ -129,15 +129,14 @@ export default function TournamentCard({ tournament }: TournamentCardProps) {
   const showAlbumLink = Boolean(albumUrl) && !isLikelyDirectImageUrl(albumUrl);
 
   return (
-    <Link href={href} className="block group">
-      <article className={`
-        relative rounded-2xl border overflow-hidden transition-all duration-300
-        ${isOpen
-          ? 'border-brand/40 bg-gradient-to-br from-brand/5 to-transparent hover:border-brand/70 hover:shadow-[0_0_30px_rgba(255,90,0,0.15)]'
-          : isFull
-            ? 'border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-transparent hover:border-amber-500/50'
-            : 'border-white/10 bg-surface-light/30 hover:border-white/20'}
-      `}>
+    <article className={`
+      group relative rounded-2xl border overflow-hidden transition-all duration-300
+      ${isOpen
+        ? 'border-brand/40 bg-gradient-to-br from-brand/5 to-transparent hover:border-brand/70 hover:shadow-[0_0_30px_rgba(255,90,0,0.15)]'
+        : isFull
+          ? 'border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-transparent hover:border-amber-500/50'
+          : 'border-white/10 bg-surface-light/30 hover:border-white/20'}
+    `}>
         {/* Poster (fallback if photoUrl is an album link) */}
         <div className="relative w-full aspect-[2/1] overflow-hidden">
           <img
@@ -156,15 +155,14 @@ export default function TournamentCard({ tournament }: TournamentCardProps) {
               href={albumUrl}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="absolute bottom-4 left-4 px-3 py-1.5 rounded-full text-xs font-body font-semibold border border-white/20 bg-black/30 text-text-primary/90 backdrop-blur-sm hover:border-brand/50 hover:text-brand transition-colors"
+              className="absolute bottom-4 left-4 z-20 px-3 py-1.5 rounded-full text-xs font-body font-semibold border border-white/20 bg-black/30 text-text-primary/90 backdrop-blur-sm hover:border-brand/50 hover:text-brand transition-colors"
             >
               📸 Фото
             </a>
           )}
         </div>
 
-        <div className="p-6">
+        <div className="p-6 relative z-0">
           {/* Status badge (no poster) */}
           {!posterSrc && (
             <div className="flex items-center justify-between mb-4">
@@ -299,7 +297,15 @@ export default function TournamentCard({ tournament }: TournamentCardProps) {
             </div>
           )}
         </div>
+
+        {/* Overlay link to make the whole card clickable without nesting anchors */}
+        <Link
+          href={href}
+          aria-label={`Открыть турнир: ${tournament.name}`}
+          className="absolute inset-0 z-10"
+        >
+          <span className="sr-only">Открыть турнир</span>
+        </Link>
       </article>
-    </Link>
   );
 }

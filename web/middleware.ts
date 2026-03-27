@@ -75,10 +75,6 @@ async function isValidAdminSession(token: string): Promise<boolean> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname === '/favicon.ico') {
-    return NextResponse.rewrite(new URL('/kotc/assets/favicon.png', request.url));
-  }
-
   const isSudyam = pathname.startsWith('/sudyam');
   const isSudyamLogin = pathname.startsWith('/sudyam/login');
   if (isSudyam && !isSudyamLogin) {
@@ -102,5 +98,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/favicon.ico', '/sudyam', '/sudyam/:path*', '/admin', '/admin/:path*'],
+  matcher: ['/sudyam', '/sudyam/:path*', '/admin', '/admin/:path*'],
 };
