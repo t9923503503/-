@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#0A0F1C"/>
+    </linearGradient>
+    <linearGradient id="king" x1="140" y1="140" x2="520" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FBBF24" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#F59E0B" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="chall" x1="680" y1="140" x2="1060" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A855F7" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#7C3AED" stop-opacity="0.06"/>
+    </linearGradient>
+    <filter id="shadow" x="-30" y="-30" width="1260" height="580" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="520" rx="24" fill="url(#bg)"/>
+
+  <!-- court container -->
+  <g filter="url(#shadow)">
+    <rect x="120" y="120" width="960" height="280" rx="26" fill="#111827" fill-opacity="0.55" stroke="#FFFFFF" stroke-opacity="0.14"/>
+
+    <!-- halves -->
+    <rect x="140" y="140" width="430" height="240" rx="22" fill="url(#king)" stroke="#FBBF24" stroke-opacity="0.35"/>
+    <rect x="630" y="140" width="430" height="240" rx="22" fill="url(#chall)" stroke="#C084FC" stroke-opacity="0.28"/>
+    <path d="M600 135V385" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- net -->
+    <g opacity="0.6" stroke="#FFFFFF" stroke-opacity="0.28" stroke-width="2">
+      <path d="M590 170H610"/>
+      <path d="M590 200H610"/>
+      <path d="M590 230H610"/>
+      <path d="M590 260H610"/>
+      <path d="M590 290H610"/>
+      <path d="M590 320H610"/>
+      <path d="M590 350H610"/>
+    </g>
+  </g>
+
+  <!-- labels -->
+  <g font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-weight="800" letter-spacing="0.08em">
+    <text x="190" y="185" font-size="22" fill="#FDE68A">СТОРОНА КОРОЛЯ</text>
+    <text x="690" y="185" font-size="22" fill="#E9D5FF">СТОРОНА ПРЕТЕНДЕНТА</text>
+  </g>
+
+  <!-- crown & sword icon -->
+  <g transform="translate(238 210)">
+    <path d="M54 0L72 28L96 10L106 36H2L12 10L36 28L54 0Z" fill="#FBBF24" fill-opacity="0.9"/>
+    <path d="M10 36H98V54C98 61.732 91.732 68 84 68H24C16.268 68 10 61.732 10 54V36Z" fill="#F59E0B" fill-opacity="0.85"/>
+  </g>
+
+  <!-- arrow: challenger wins -> becomes king -->
+  <g stroke="#34D399" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
+    <path d="M820 410C760 455 680 470 600 470C520 470 440 455 380 410"/>
+    <path d="M396 410L380 410L384 426"/>
+    <path d="M804 410L820 410L816 426"/>
+  </g>
+  <g font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-weight="700" opacity="0.92">
+    <text x="462" y="508" font-size="18" fill="#A7F3D0">Победа у короля → занял трон</text>
+  </g>
+
+  <!-- queue -->
+  <g opacity="0.9">
+    <rect x="120" y="425" width="260" height="70" rx="18" fill="#0F172A" stroke="#FFFFFF" stroke-opacity="0.14"/>
+    <g fill="#E5E7EB" fill-opacity="0.8">
+      <circle cx="160" cy="460" r="10"/>
+      <circle cx="195" cy="460" r="10"/>
+      <circle cx="230" cy="460" r="10"/>
+      <circle cx="265" cy="460" r="10"/>
+    </g>
+    <g font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-weight="800" letter-spacing="0.08em">
+      <text x="150" y="488" font-size="16" fill="#E5E7EB" fill-opacity="0.9">ОЧЕРЕДЬ</text>
+    </g>
+  </g>
+
+  <!-- arrow: lose -> queue -->
+  <g stroke="#FCA5A5" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
+    <path d="M420 390C380 410 340 420 290 425"/>
+    <path d="M302 420L290 425L303 432"/>
+  </g>
+  <g font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-weight="700" opacity="0.92">
+    <text x="370" y="438" font-size="16" fill="#FECACA">Проиграл → в конец очереди</text>
+  </g>
+
+  <!-- note -->
+  <g font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" opacity="0.85">
+    <text x="630" y="438" font-size="16" fill="#E5E7EB">Очки начисляются только на стороне короля</text>
+  </g>
+</svg>

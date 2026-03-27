@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="0.55" stop-color="#121B2D"/>
+      <stop offset="1" stop-color="#1C1208"/>
+    </linearGradient>
+    <linearGradient id="sand" x1="0" y1="280" x2="0" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F59E0B" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#B45309" stop-opacity="0.35"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="280" y1="60" x2="920" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FBBF24" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#F97316" stop-opacity="0.05"/>
+    </linearGradient>
+    <filter id="blur" x="-30" y="-30" width="1260" height="480" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="420" fill="url(#bg)"/>
+  <path d="M-40 320C160 250 260 360 430 330C600 300 740 250 860 285C980 320 1080 360 1240 315V460H-40V320Z" fill="url(#sand)"/>
+
+  <!-- soft glow -->
+  <circle cx="360" cy="130" r="160" fill="url(#glow)" filter="url(#blur)"/>
+  <circle cx="860" cy="170" r="190" fill="url(#glow)" filter="url(#blur)"/>
+
+  <!-- court -->
+  <g opacity="0.65" stroke="#E5E7EB" stroke-opacity="0.45">
+    <rect x="210" y="205" width="780" height="165" rx="16"/>
+    <path d="M600 205V370"/>
+    <path d="M260 245H940"/>
+    <path d="M260 330H940"/>
+  </g>
+
+  <!-- net -->
+  <g opacity="0.65">
+    <rect x="592" y="195" width="16" height="195" rx="8" fill="#E5E7EB" fill-opacity="0.18"/>
+    <path d="M585 225H615" stroke="#E5E7EB" stroke-opacity="0.35" stroke-width="2"/>
+    <path d="M585 250H615" stroke="#E5E7EB" stroke-opacity="0.35" stroke-width="2"/>
+    <path d="M585 275H615" stroke="#E5E7EB" stroke-opacity="0.35" stroke-width="2"/>
+    <path d="M585 300H615" stroke="#E5E7EB" stroke-opacity="0.35" stroke-width="2"/>
+    <path d="M585 325H615" stroke="#E5E7EB" stroke-opacity="0.35" stroke-width="2"/>
+    <path d="M585 350H615" stroke="#E5E7EB" stroke-opacity="0.35" stroke-width="2"/>
+  </g>
+
+  <!-- crown -->
+  <g transform="translate(520 78)" opacity="0.95">
+    <path d="M80 14L104 54L132 26L146 62H14L28 26L56 54L80 14Z" fill="#FBBF24" fill-opacity="0.9"/>
+    <path d="M18 62H142V88C142 97.941 133.941 106 124 106H36C26.059 106 18 97.941 18 88V62Z" fill="#F59E0B" fill-opacity="0.85"/>
+    <path d="M30 76H130" stroke="#0B1220" stroke-opacity="0.35" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="28" cy="26" r="6" fill="#FDE68A"/>
+    <circle cx="80" cy="14" r="6" fill="#FDE68A"/>
+    <circle cx="132" cy="26" r="6" fill="#FDE68A"/>
+  </g>
+
+  <!-- labels -->
+  <g font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-weight="700" letter-spacing="0.08em" opacity="0.85">
+    <text x="270" y="238" font-size="18" fill="#FDE68A">КOРОЛЬ</text>
+    <text x="740" y="238" font-size="18" fill="#E9D5FF">ПРЕТЕНДЕНТ</text>
+  </g>
+</svg>

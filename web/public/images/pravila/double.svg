@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="0.5" stop-color="#1B0E12"/>
+      <stop offset="1" stop-color="#1A0F07"/>
+    </linearGradient>
+    <radialGradient id="hot" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(360 130) rotate(90) scale(220 320)">
+      <stop offset="0" stop-color="#FB7185" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#FB7185" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur" x="-40" y="-40" width="1280" height="500" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="20"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="420" fill="url(#bg)"/>
+  <circle cx="360" cy="130" r="220" fill="url(#hot)" filter="url(#blur)"/>
+
+  <!-- court -->
+  <g opacity="0.55" stroke="#E5E7EB" stroke-opacity="0.35">
+    <rect x="220" y="205" width="760" height="165" rx="16"/>
+    <path d="M600 205V370"/>
+  </g>
+
+  <!-- bracket -->
+  <g opacity="0.9" stroke="#FDBA74" stroke-opacity="0.9" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M900 150H980V270H900"/>
+    <path d="M900 200H950"/>
+    <path d="M900 240H950"/>
+  </g>
+
+  <!-- duo silhouettes (simple) -->
+  <g opacity="0.95" fill="#FCA5A5">
+    <circle cx="360" cy="230" r="16"/>
+    <path d="M330 300C330 274 348 258 360 258C372 258 390 274 390 300V330H330V300Z"/>
+    <circle cx="420" cy="235" r="16"/>
+    <path d="M390 305C390 279 408 263 420 263C432 263 450 279 450 305V335H390V305Z"/>
+  </g>
+
+  <g font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-weight="700" letter-spacing="0.08em" opacity="0.85">
+    <text x="260" y="160" font-size="18" fill="#FED7AA">СТАБИЛЬНАЯ</text>
+    <text x="260" y="182" font-size="18" fill="#FED7AA">ПАРА</text>
+  </g>
+</svg>
