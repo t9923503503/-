@@ -18,7 +18,7 @@ export default function Header() {
           href="/"
           className="font-heading text-3xl md:text-4xl text-text-primary tracking-wide hover:text-brand transition-colors"
         >
-          Лютые пляжники
+          LPVOLLEY.RU
         </Link>
 
         <nav className="hidden md:flex items-center gap-6">
@@ -44,4 +44,3 @@ export default function Header() {
     </header>
   );
 }
-

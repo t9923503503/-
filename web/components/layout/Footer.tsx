@@ -7,7 +7,7 @@ export default function Footer() {
         <div className="flex flex-col md:flex-row gap-6 md:items-center md:justify-between">
           <div>
             <p className="font-heading text-2xl text-text-primary">
-              Лютые пляжники
+              LPVOLLEY.RU
             </p>
             <p className="text-sm mt-1">
               King of the Court · Пляжный волейбол
@@ -42,10 +42,9 @@ export default function Footer() {
         </div>
 
         <div className="mt-8 pt-6 border-t border-white/10 text-center text-xs">
-          © {new Date().getFullYear()} Лютые пляжники. Все права защищены.
+          © {new Date().getFullYear()} LPVOLLEY.RU. Все права защищены.
         </div>
       </div>
     </footer>
   );
 }
-
