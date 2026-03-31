@@ -42,7 +42,7 @@ const emptyForm: Row = {
   time: '',
   location: '',
   format: 'Round Robin',
-  division: '',
+  division: 'Микст',
   level: 'medium',
   capacity: 24,
   status: 'open',
@@ -76,6 +76,18 @@ const statuses = [
 ];
 
 /* ─── Segment Button Component ─── */
+function normalizeJudgeFormat(format: string): 'ipt' | 'thai' | 'kotc' {
+  const normalized = String(format || '').trim().toLowerCase();
+  if (normalized.includes('ipt')) return 'ipt';
+  if (normalized.includes('thai')) return 'thai';
+  return 'kotc';
+}
+
+function buildSudyamHref(row: Pick<Row, 'id' | 'format'>): string {
+  const format = normalizeJudgeFormat(row.format);
+  return `/sudyam?tournamentId=${encodeURIComponent(row.id)}&format=${encodeURIComponent(format)}`;
+}
+
 function Seg<T extends string | number>({
   options,
   value,
@@ -171,11 +183,21 @@ export default function AdminTournamentsPage() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    const trimmedName = form.name.trim();
+    if (!trimmedName) {
+      setMessage('Укажите название турнира');
+      return;
+    }
+    if (!form.date) {
+      setMessage('Укажите дату турнира');
+      return;
+    }
     setLoading(true);
     setMessage('');
     const method = isEdit ? 'PUT' : 'POST';
     const payload = {
       ...form,
+      name: trimmedName,
       capacity: form.capacity || autoCapacity,
       settings,
     };
@@ -261,6 +283,14 @@ export default function AdminTournamentsPage() {
                     >
                       Edit
                     </button>
+                    <a
+                      href={buildSudyamHref(row)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2 py-1 rounded border border-brand/40 bg-brand/10 text-brand-light text-xs font-semibold"
+                    >
+                      Sudyam
+                    </a>
                     <button
                       type="button"
                       onClick={() => void remove(row.id)}
@@ -301,6 +331,7 @@ export default function AdminTournamentsPage() {
               value={form.date}
               onChange={(e) => setForm((s) => ({ ...s, date: e.target.value }))}
               className="px-3 py-2 rounded-lg bg-surface border border-white/20"
+              required
             />
             <input
               type="time"

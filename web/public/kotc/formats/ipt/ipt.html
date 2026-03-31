@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#0d0d1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://sv-ugra.ru;">
+  <title>IPT Судейство</title>
+  <link rel="icon" href="../../assets/favicon.png" type="image/png">
+  <link rel="stylesheet" href="../../assets/app.css">
+  <link rel="stylesheet" href="ipt.css">
+</head>
+<body class="ipt-app">
+  <div id="ipt-toast-host" class="ipt-toast-host" aria-live="polite"></div>
+  <nav class="ipt-nav">
+    <button class="ipt-nav-back" type="button" onclick="window.location.href='../../index.html'">← Хаб</button>
+    <div class="ipt-nav-title">
+      <span class="ipt-nav-badge">🏐</span>
+      <span>IPT Судейство</span>
+    </div>
+    <div id="ipt-sync-pill" class="ipt-sync-pill">Локально</div>
+  </nav>
+
+  <main class="ipt-main">
+    <section id="ipt-error-panel" class="ipt-panel"></section>
+    <section id="ipt-roster-panel" class="ipt-panel"></section>
+    <section id="ipt-overview-panel" class="ipt-panel"></section>
+    <section id="ipt-game-panel" class="ipt-panel"></section>
+    <section id="ipt-finished-panel" class="ipt-panel"></section>
+  </main>
+
+  <script src="./ipt-adapters.js"></script>
+  <script src="../../assets/js/ui/ipt-format.js"></script>
+  <script src="./ipt-boot.js"></script>
+</body>
+</html>

@@ -6,6 +6,24 @@ import { adminErrorResponse } from '@/lib/admin-errors';
 
 export const dynamic = 'force-dynamic';
 
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = requireApiRole(req, 'viewer');
+  if (!auth.ok) return auth.response;
+  try {
+    const { id } = await params;
+    if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+
+    const tournament = await getTournamentById(id);
+    if (!tournament) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json(tournament);
+  } catch (err) {
+    return adminErrorResponse(err, 'tournaments.getById');
+  }
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

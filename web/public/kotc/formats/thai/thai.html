@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0d1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://sv-ugra.ru; img-src 'self' data:;">
+  <title>Thai Mixed — Лютые Пляжники</title>
+  <link rel="icon" href="../../assets/favicon.png" type="image/png">
+
+  <!-- A1.1: shared design tokens + base styles -->
+  <link rel="stylesheet" href="../../shared/base.css">
+
+  <!-- Format-specific styles (created by FORMAT agent — F1.12) -->
+  <link rel="stylesheet" href="thai.css">
+
+  <style>
+    /* ── Inline critical styles (until thai.css is created by FORMAT) ─ */
+    .thai-placeholder {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 40vh; text-align: center; padding: 24px; gap: 12px;
+    }
+    .thai-placeholder-icon { font-size: 3rem; }
+    .thai-placeholder-title { font: 700 1.1rem Barlow,sans-serif; color: var(--gold); }
+    .thai-placeholder-sub { font-size: .9rem; color: var(--muted); line-height: 1.5; }
+
+    /* ── Tour navigation pill row ── */
+    .tour-nav { padding: 8px 0 4px; }
+
+    /* ── Group switcher tabs ── */
+    .thai-groups { margin-bottom: 12px; }
+
+    /* ── Roster panel placeholder ── */
+    #thai-roster-panel,
+    #thai-courts-panel,
+    #thai-standings-panel,
+    #thai-r2-panel,
+    #thai-finished-panel { display: none; }
+    #thai-roster-panel.active,
+    #thai-courts-panel.active,
+    #thai-standings-panel.active,
+    #thai-r2-panel.active,
+    #thai-finished-panel.active { display: block; }
+
+    /* ── F1.2: Court pair card ── */
+    .thai-court-grid { display: flex; flex-direction: column; gap: 10px; padding: 0 2px; }
+    .thai-pair-card {
+      background: var(--card); border-radius: 14px; overflow: hidden;
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .thai-pair-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px; background: rgba(0,0,0,.18);
+      font-size: .78em; color: var(--muted); font-weight: 600; letter-spacing: .03em;
+    }
+    .thai-pair-body {
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+      gap: 4px; padding: 10px 10px 8px;
+    }
+    .thai-pl-name {
+      font-size: .88em; font-weight: 600; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .thai-pl-name.left { text-align: left; }
+    .thai-pl-name.right { text-align: right; }
+    .thai-score-col {
+      display: flex; align-items: center; gap: 4px; justify-content: center;
+    }
+    .thai-sc-btn {
+      width: 36px; height: 36px; border-radius: 10px; border: none;
+      background: rgba(255,255,255,.07); color: var(--text);
+      font-size: 1.2em; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      touch-action: manipulation; user-select: none; -webkit-user-select: none;
+      transition: background .12s;
+    }
+    .thai-sc-btn:active { background: rgba(255,255,255,.18); }
+    .thai-sc-btn.disabled { opacity: .3; pointer-events: none; }
+    .thai-sc-val {
+      font-size: 1.6em; font-weight: 800; min-width: 32px; text-align: center;
+      color: var(--text); cursor: pointer;
+    }
+    .thai-sc-sep { color: var(--muted); font-weight: 300; font-size: 1.3em; margin: 0 2px; }
+
+    /* F1.2: Diff / Pts badges row */
+    .thai-badges-row {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px; padding: 4px 10px 10px;
+    }
+    .thai-badge {
+      font-size: .72em; font-weight: 700; padding: 2px 8px;
+      border-radius: 6px; letter-spacing: .03em;
+    }
+    .thai-badge-diff {
+      background: rgba(255,255,255,.06); color: var(--muted);
+    }
+    .thai-badge-diff.pos { background: rgba(34,197,94,.14); color: var(--plus); }
+    .thai-badge-diff.neg { background: rgba(239,68,68,.14); color: var(--minus); }
+    .thai-badge-pts { background: rgba(255,215,0,.12); color: var(--gold); }
+
+    /* F1.3: Zero-sum bar */
+    .thai-zs-bar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px; border-radius: 10px; margin-bottom: 10px;
+      font-size: .82em; font-weight: 600; transition: background .2s, border-color .2s;
+      border: 1px solid rgba(255,255,255,.06);
+    }
+    .thai-zs-bar.zs-ok   { background: rgba(34,197,94,.10);  border-color: var(--zs-ok);  color: var(--zs-ok); }
+    .thai-zs-bar.zs-warn { background: rgba(255,165,0,.10);  border-color: var(--zs-warn); color: var(--zs-warn); }
+    .thai-zs-bar.zs-bad  { background: rgba(233,69,96,.10);  border-color: var(--zs-bad); color: var(--zs-bad); }
+    .thai-zs-icon { font-size: 1.1em; }
+    .thai-zs-label { flex: 1; }
+    .thai-zs-val { font-weight: 800; font-size: 1em; }
+
+    /* ── F1.6: Score/Diff toggle ── */
+    .thai-courts-toprow {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 10px;
+    }
+    .thai-scoreview-toggle {
+      height: 36px;
+      padding: 0 12px;
+      white-space: nowrap;
+      align-self: center;
+    }
+    .thai-diff-big {
+      font-size: 2.4em;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: 0.01em;
+    }
+    .thai-diff-big.pos { color: var(--plus); }
+    .thai-diff-big.neg { color: var(--minus); }
+    .thai-diff-big.neu { color: var(--muted); }
+
+    /* ── F1.7: R2 seeding zones ── */
+    .thai-r2-intro {
+      text-align: center; padding: 12px 0 6px;
+      font-size: .9em; color: var(--muted); font-weight: 600;
+    }
+    .thai-zone-card {
+      background: var(--card); border-radius: 14px; overflow: hidden;
+      margin-bottom: 10px; border: 1px solid rgba(255,255,255,.06);
+    }
+    .thai-zone-hdr {
+      padding: 8px 14px; font-size: .82em; font-weight: 700;
+      letter-spacing: .04em; text-transform: uppercase;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .thai-zone-hdr.hard    { background: rgba(233,69,96,.15);  color: var(--red); }
+    .thai-zone-hdr.advance { background: rgba(255,165,0,.12);  color: var(--gold2); }
+    .thai-zone-hdr.medium  { background: rgba(77,168,218,.12); color: var(--blue); }
+    .thai-zone-hdr.lite    { background: rgba(106,191,105,.12);color: var(--green); }
+    .thai-zone-players {
+      padding: 8px 12px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .thai-zone-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 5px 8px; border-radius: 8px; font-size: .85em;
+      background: rgba(255,255,255,.03);
+    }
+    .thai-zone-rank { color: var(--muted); font-weight: 700; min-width: 22px; }
+    .thai-zone-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .thai-zone-stats { font-size: .78em; color: var(--muted); display: flex; gap: 8px; }
+
+    /* ── F1.9: FINISHED screen ── */
+    .thai-finished-header {
+      text-align: center; padding: 16px 0 8px;
+    }
+    .thai-finished-icon { font-size: 3rem; }
+    .thai-finished-title { font: 700 1.2rem Barlow,sans-serif; color: var(--gold); margin-top: 4px; }
+    .thai-finished-sub { font-size: .85em; color: var(--muted); margin-top: 4px; }
+    .thai-podium {
+      display: flex; justify-content: center; gap: 10px;
+      padding: 12px 0 16px; flex-wrap: wrap;
+    }
+    .thai-podium-card {
+      background: var(--card); border-radius: 14px; padding: 12px 16px;
+      text-align: center; min-width: 90px; border: 1px solid rgba(255,255,255,.06);
+    }
+    .thai-podium-card.gold   { border-color: var(--gold); }
+    .thai-podium-card.silver { border-color: #C0C0C0; }
+    .thai-podium-card.bronze { border-color: #CD7F32; }
+    .thai-podium-place { font-size: 1.3em; font-weight: 800; }
+    .thai-podium-name  { font-size: .85em; font-weight: 600; margin-top: 4px; color: var(--text); }
+    .thai-podium-pts   { font-size: .75em; color: var(--muted); margin-top: 2px; }
+    .thai-final-table { margin-top: 8px; }
+    .thai-final-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 10px; border-radius: 8px; font-size: .85em;
+      background: rgba(255,255,255,.03); margin-bottom: 4px;
+    }
+    .thai-final-row.top3 { background: rgba(255,215,0,.06); }
+    .thai-final-rank { font-weight: 800; min-width: 22px; color: var(--muted); }
+    .thai-final-name { flex: 1; font-weight: 600; }
+    .thai-final-stats { display: flex; gap: 10px; font-size: .8em; color: var(--muted); }
+    .thai-final-stat { display: flex; flex-direction: column; align-items: center; }
+    .thai-final-stat-val { font-weight: 700; color: var(--text); }
+    .thai-final-stat-lbl { font-size: .7em; text-transform: uppercase; letter-spacing: .03em; }
+    .thai-section-title {
+      font: 700 .95em Barlow,sans-serif; color: var(--gold);
+      padding: 14px 0 6px; border-bottom: 1px solid rgba(255,255,255,.06);
+      margin-bottom: 8px;
+    }
+
+    /* ── Session info bar ── */
+    .session-info-bar {
+      background: var(--card); border-radius: 10px; padding: 8px 12px;
+      margin-bottom: 10px; font-size: .82em; color: var(--muted);
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    }
+    .session-info-badge {
+      font-weight: 700; font-size: .78em; padding: 2px 8px;
+      border-radius: 6px; text-transform: uppercase; letter-spacing: .04em;
+    }
+    .session-info-badge.MF  { background: rgba(199,125,255,.15); color: var(--purple); }
+    .session-info-badge.MM  { background: rgba(77,168,218,.15);  color: var(--blue); }
+    .session-info-badge.WW  { background: rgba(255,143,171,.15); color: #FF8FAB; }
+  </style>
+</head>
+<body>
+  <!-- ═══════════════════════════════════════════════════════
+       A1.2: TOP NAVIGATION — back button + format title + pill tabs
+       ══════════════════════════════════════════════════════= -->
+  <nav class="fmt-nav" id="thai-nav">
+    <button class="fmt-nav-back" id="fmt-nav-back">← Хаб</button>
+    <span class="fmt-nav-title" id="thai-nav-title">🌴 Тай Микст</span>
+    <div class="fmt-nav-sep"></div>
+    <!-- A1.2: Pill tabs — generated by JS after schedule is loaded -->
+    <div class="pill-tabs" id="thai-tour-tabs" role="tablist" aria-label="Туры"></div>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════════════════
+       MAIN CONTENT
+       ══════════════════════════════════════════════════════= -->
+  <main class="fmt-content" id="thai-main">
+
+    <!-- Session info: mode, N, seed -->
+    <div class="session-info-bar" id="thai-info-bar">
+      <span id="thai-info-text">Загрузка…</span>
+      <span class="session-info-badge" id="thai-mode-badge"></span>
+    </div>
+
+    <!-- A1.2: Group tabs (for formats with multiple groups) -->
+    <div class="thai-groups" id="thai-group-tabs-wrap" style="display:none">
+      <div class="group-tabs" id="thai-group-tabs" role="tablist" aria-label="Группы"></div>
+    </div>
+
+    <!-- ── SCREENS (only one active at a time) ── -->
+
+    <!-- ROSTER PANEL: player selection before start (FORMAT — F0.3, F1.1) -->
+    <div id="thai-roster-panel" class="active">
+      <div class="thai-placeholder">
+        <div class="thai-placeholder-icon">🌴</div>
+        <div class="thai-placeholder-title">Thai Mixed — Тай-формат</div>
+        <div class="thai-placeholder-sub">
+          Панель ростера будет готова после выполнения задачи FORMAT F0.3 / F1.1.<br>
+          Расписание уже сгенерировано — см. консоль браузера.
+        </div>
+        <button class="btn-primary" id="thai-start-session" style="max-width:280px;margin-top:8px">
+          ▶ Запустить сессию
+        </button>
+      </div>
+    </div>
+
+    <!-- COURTS PANEL: scoring screen R1 (F1.2 + F1.3) -->
+    <div id="thai-courts-panel">
+      <div class="thai-courts-toprow">
+        <div id="thai-zs-bar" class="thai-zs-bar" style="display:none"></div>
+        <!-- F1.5: Rest badges (кто отдыхает в этом туре) -->
+        <div id="thai-rest-badge-row" class="thai-rest-row"></div>
+        <button
+          class="btn-secondary thai-scoreview-toggle"
+          id="thai-scoreview-toggle"
+          type="button">Счёт</button>
+      </div>
+      <div id="thai-courts-grid" class="thai-court-grid"></div>
+    </div>
+
+    <!-- STANDINGS PANEL: cross-table after each tour (FORMAT — F1.4) -->
+    <div id="thai-standings-panel">
+      <div id="thai-standings-content"></div>
+    </div>
+
+    <!-- R2 SEED PANEL: seeding screen (F1.7) -->
+    <div id="thai-r2-panel">
+      <div id="thai-r2-content"></div>
+    </div>
+
+    <!-- FINISHED PANEL: results + nominations (F1.9) -->
+    <div id="thai-finished-panel">
+      <div id="thai-finished-content"></div>
+    </div>
+
+  </main>
+
+  <!-- A1.2: Bottom action bar (динамически заполняется JS) -->
+  <div class="fmt-action-bar" id="thai-action-bar" style="display:none"></div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       SCRIPTS — A1.1: load shared modules + thai-format.js
+       ══════════════════════════════════════════════════════= -->
+  <script type="module" src="thai-boot.js"></script>
+</body>
+</html>

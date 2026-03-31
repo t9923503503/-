@@ -304,6 +304,8 @@ function _renderFmtCard() {
         <button class="fmt-tab on" onclick="switchRosterFmt('ipt')">👑 ${tr('format.ipt')}</button>
         <button class="fmt-tab" onclick="switchRosterFmt('thai')">🌴 ${tr('format.thai')}</button>
         <button class="fmt-tab" onclick="switchRosterFmt('kotc')">👑 ${tr('format.kotc')}</button>
+        <button class="btn-dist ipt-launch-btn" onclick="launchQuickIPTMobile()">📱 Мобильный интерфейс</button>
+        <button class="btn-dist ipt-launch-btn" onclick="launchQuickIPTMobile()">📱 Мобильный интерфейс</button>
       </div>
 
       <div class="sc-row" style="margin-top:10px">
@@ -393,6 +395,50 @@ function _renderFmtCard() {
   </div>`;
 }
 
+async function _resolveQuickIPTParticipantsOrConfirm() {
+  const needed = _iptCourts * 8;
+  const selectedIds = [..._iptSelectedIds];
+  if (selectedIds.length < 8) {
+    showToast('вќЊ ' + tr('format.minPlayers', { n: selectedIds.length }), 'error');
+    return null;
+  }
+  if (selectedIds.length !== needed) {
+    const ok = await showConfirm(tr('format.selectedMismatch', { sel: selectedIds.length, needed }));
+    if (!ok) return null;
+  }
+  const db = loadPlayerDB();
+  const participants = selectedIds.map(id => db.find(p => p.id === id)).filter(Boolean);
+  if (participants.length < 8) {
+    showToast('вќЊ ' + tr('format.playersNotFound'), 'error');
+    return null;
+  }
+  return participants;
+}
+
+function _buildQuickIPTTrn(participants) {
+  return {
+    id: 'ipt_quick',
+    name: tr('format.iptQuickName'),
+    format: 'IPT Mixed',
+    status: 'open',
+    level: 'medium',
+    gender: _iptGender,
+    date: new Date().toISOString().split('T')[0],
+    venue: '',
+    capacity: _iptCourts * 8,
+    participants: participants.map(p => p.id),
+    ipt: {
+      pointLimit: _iptLimit,
+      finishType: _iptFinish,
+      courts: _iptCourts,
+      gender: _iptGender,
+      currentGroup: 0,
+      groups: null,
+      serverSyncStatus: 'none'
+    }
+  };
+}
+
 async function launchQuickIPT() {
   const needed = _iptCourts * 8;
   const selectedIds = [..._iptSelectedIds];
@@ -447,6 +493,39 @@ async function launchQuickIPT() {
 }
 
 // ── Thai Format Launcher helpers (A0.3) ────────────────────────────────────
+
+async function launchQuickIPT() {
+  const participants = await _resolveQuickIPTParticipantsOrConfirm();
+  if (!participants) return;
+  let arr = getTournaments().filter(t => t.id !== 'ipt_quick');
+  arr.push(_buildQuickIPTTrn(participants));
+  saveTournaments(arr);
+
+  showToast('рџ‘‘ ' + tr('format.iptLaunchToast', { courts: _iptCourts, players: participants.length }));
+  setTimeout(() => openIPT('ipt_quick'), 300);
+}
+
+async function launchQuickIPTMobile() {
+  const participants = await _resolveQuickIPTParticipantsOrConfirm();
+  if (!participants) return;
+  let arr = getTournaments().filter(t => t.id !== 'ipt_quick');
+  arr.push(_buildQuickIPTTrn(participants));
+  saveTournaments(arr);
+  window.location.href = './formats/ipt/ipt.html?trnId=ipt_quick';
+}
+
+const _origRenderFmtCardForIptMobile = _renderFmtCard;
+_renderFmtCard = function renderFmtCardWithIptMobile() {
+  const html = _origRenderFmtCardForIptMobile();
+  if (_rosterFmt !== 'ipt' || typeof html !== 'string') {
+    return html;
+  }
+  const stripped = html.replace(/\s*<button class="btn-dist ipt-launch-btn" onclick="launchQuickIPTMobile\(\)">[\s\S]*?<\/button>/g, '');
+  return stripped.replace(
+    /(<button class="btn-apply ipt-launch-btn" onclick="launchQuickIPT\(\)">[\s\S]*?<\/button>)/,
+    '$1\n        <button class="btn-dist ipt-launch-btn" onclick="launchQuickIPTMobile()">📱 Мобильный интерфейс</button>'
+  );
+};
 
 function setThaiMode(mode) {
   _thaiMode = mode;
