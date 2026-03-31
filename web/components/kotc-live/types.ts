@@ -28,6 +28,8 @@ export interface KotcCourtState {
   courtIdx: number;
   courtVersion: number;
   roundIdx?: number;
+  rosterM?: string[];
+  rosterW?: string[];
   scores?: Record<string, unknown>;
   timerStatus?: string;
   timerDurationMs?: number;
