@@ -436,6 +436,14 @@ export default function LandingDesktop({ stats, topPlayers, tournaments }: Landi
                 Выбрать турнир
               </Link>
               <a
+                href="https://lpvolley.ru/admin"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-action-outline inline-flex items-center justify-center"
+              >
+                Админ-панель
+              </a>
+              <a
                 href="https://vk.com/lpvolley"
                 target="_blank"
                 rel="noopener noreferrer"
