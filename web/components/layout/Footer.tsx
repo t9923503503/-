@@ -18,9 +18,9 @@ export default function Footer() {
             href="https://lpvolley.ru/admin"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex w-full items-center justify-center rounded-xl border border-brand/50 bg-brand/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.22em] text-brand transition-all hover:bg-brand hover:text-surface hover:shadow-[0_0_22px_rgba(255,90,0,0.28)] md:w-auto"
+            className="inline-flex w-auto items-center justify-center self-start rounded-lg border border-brand/45 bg-brand/10 px-3 py-2 text-[10px] font-semibold lowercase tracking-[0.16em] text-brand transition-all hover:bg-brand hover:text-surface hover:shadow-[0_0_18px_rgba(255,90,0,0.24)] md:self-center"
           >
-            Админ-панель
+            ad
           </a>
 
           <div className="flex flex-col items-start md:items-end gap-4">
