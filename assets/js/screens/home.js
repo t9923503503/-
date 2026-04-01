@@ -280,6 +280,21 @@ function renderHome() {
     </div>
     ${calHtml}
   </div>
+
+  <div class="home-admin-cta">
+    <div class="home-admin-copy">
+      <div class="home-admin-kicker">${tr('home.adminKicker')}</div>
+      <div class="home-admin-title">${tr('home.adminTitle')}</div>
+    </div>
+    <a
+      class="trn-btn open home-admin-link"
+      href="https://lpvolley.ru/admin"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      🛠 ${tr('home.adminButton')}
+    </a>
+  </div>
 </div>`;
 }
 

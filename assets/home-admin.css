@@ -1,0 +1,46 @@
+.home-admin-cta{
+  margin-top:22px;
+  padding:16px;
+  border-radius:16px;
+  background:linear-gradient(135deg,rgba(255,215,0,.12),rgba(255,255,255,.03));
+  border:1px solid rgba(255,215,0,.22);
+  box-shadow:0 12px 30px rgba(0,0,0,.22);
+}
+
+.home-admin-copy{
+  margin-bottom:12px;
+}
+
+.home-admin-kicker{
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:1.2px;
+  text-transform:uppercase;
+  color:var(--gold);
+  margin-bottom:4px;
+}
+
+.home-admin-title{
+  font-family:'Barlow Condensed',sans-serif;
+  font-size:20px;
+  font-weight:800;
+  line-height:1.05;
+  color:#fff;
+  text-transform:uppercase;
+}
+
+.home-admin-link{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-decoration:none;
+}
+
+body.light .home-admin-cta{
+  background:linear-gradient(135deg,rgba(200,150,12,.14),rgba(255,255,255,.92));
+  border-color:rgba(176,122,0,.22);
+}
+
+body.light .home-admin-title{
+  color:#1a1a1a;
+}
