@@ -4,7 +4,7 @@ export default function Footer() {
   return (
     <footer className="bg-surface-light text-text-primary/80 mt-auto border-t border-white/10">
       <div className="max-w-6xl mx-auto px-4 py-10">
-        <div className="flex flex-col md:flex-row gap-6 md:items-center md:justify-between">
+        <div className="flex flex-col gap-6 md:grid md:grid-cols-[1fr_auto_1fr] md:items-center">
           <div>
             <p className="font-heading text-2xl text-text-primary">
               LPVOLLEY.RU
@@ -13,6 +13,15 @@ export default function Footer() {
               King of the Court · Пляжный волейбол
             </p>
           </div>
+
+          <a
+            href="https://lpvolley.ru/admin"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex w-full items-center justify-center rounded-xl border border-brand/50 bg-brand/10 px-5 py-3 text-xs font-semibold uppercase tracking-[0.22em] text-brand transition-all hover:bg-brand hover:text-surface hover:shadow-[0_0_22px_rgba(255,90,0,0.28)] md:w-auto"
+          >
+            Админ-панель
+          </a>
 
           <div className="flex flex-col items-start md:items-end gap-4">
             <nav className="flex gap-5">
