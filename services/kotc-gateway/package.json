@@ -1,0 +1,16 @@
+{
+  "name": "kotc-live-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone WebSocket gateway for KOTC Live sessions",
+  "main": "src/index.mjs",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "check": "node --check src/index.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.0",
+    "ws": "^8.18.0"
+  }
+}

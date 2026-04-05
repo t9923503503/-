@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d1a">
+<title>IPT — King of the Court</title>
+<link rel="icon" href="assets/favicon.png" type="image/png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/app.css">
+<style>
+body { padding-top: 0; }
+
+/* ── Nav ─────────────────────────────────────────────────────── */
+#ipt-nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+  background: #0d0d1a; border-bottom: 1px solid #2a2a44;
+  display: flex; flex-direction: column; padding-bottom: 2px;
+}
+.ipt-nav-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px 4px;
+}
+.ipt-nav-title {
+  font-family: 'Bebas Neue', sans-serif; font-size: 20px;
+  color: #ffd700; letter-spacing: 1px; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ipt-nav-meta {
+  font-size: 11px; color: #8888aa; white-space: nowrap; flex-shrink: 0;
+}
+.ipt-nav-close {
+  flex-shrink: 0; background: rgba(248,113,113,.12);
+  border: 1px solid rgba(248,113,113,.35); color: #f87171;
+  border-radius: 7px; padding: 4px 11px; font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.ipt-nav-close:active { background: rgba(248,113,113,.25); }
+
+.ipt-nav-tabs {
+  display: flex; gap: 4px; padding: 0 10px 6px;
+  overflow-x: auto; scrollbar-width: none;
+}
+.ipt-nav-tabs::-webkit-scrollbar { display: none; }
+
+/* ── Tab buttons ──────────────────────────────────────────────── */
+.ipt-tab-btn {
+  min-width: 54px; height: 46px; border-radius: 9px;
+  border: 2px solid #3a3a54; background: transparent;
+  color: #8888aa; cursor: pointer; display: flex;
+  flex-direction: column; align-items: center; justify-content: center;
+  font-family: 'Barlow Condensed', sans-serif;
+  gap: 1px; padding: 0 8px; white-space: nowrap;
+  transition: border-color .15s, color .15s;
+  -webkit-tap-highlight-color: transparent; /* mobile tap fix */
+  touch-action: manipulation;
+  user-select: none;
+}
+.ipt-tab-btn .t-main { font-size: 15px; font-weight: 700; line-height: 1; pointer-events: none; }
+.ipt-tab-btn .t-sub  { font-size: 9px; letter-spacing: .5px; text-transform: uppercase; pointer-events: none; }
+.ipt-tab-btn.active  { border-color: #ffd700; color: #ffd700; background: rgba(255,215,0,.06); }
+.ipt-tab-btn.tab-done { border-color: #22c55e; color: #22c55e; }
+.ipt-tab-btn.tab-sep {
+  min-width: 2px; width: 2px; padding: 0; border: none;
+  background: #2a2a44; border-radius: 2px; pointer-events: none;
+}
+.ipt-tab-btn:disabled { opacity: .35 !important; cursor: not-allowed; }
+
+/* ── Content ──────────────────────────────────────────────────── */
+#ipt-content { margin-top: 98px; min-height: calc(100vh - 98px); }
+.ipt-screen { display: none; }
+.ipt-screen.active { display: block; }
+
+/* ── Stats overview ───────────────────────────────────────────── */
+.ipt-overview-wrap { padding: 12px 12px 80px; max-width: 700px; margin: 0 auto; }
+.ipt-overview-title {
+  font-family: 'Bebas Neue', sans-serif; font-size: 22px;
+  color: #ffd700; margin-bottom: 12px;
+}
+.ipt-ov-group { margin-bottom: 24px; }
+.ipt-ov-group-name {
+  font-family: 'Barlow Condensed', sans-serif; font-size: 16px; font-weight: 700;
+  color: #e8e8f0; margin-bottom: 6px; padding: 4px 0; border-bottom: 1px solid #2a2a44;
+}
+.ipt-ov-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ipt-ov-tbl th {
+  font-size: 10px; font-weight: 600; color: #8888aa; text-transform: uppercase;
+  letter-spacing: .4px; padding: 4px 6px; text-align: center; border-bottom: 1px solid #2a2a44;
+}
+.ipt-ov-tbl th:nth-child(2) { text-align: left; }
+.ipt-ov-tbl td { padding: 5px 6px; text-align: center; border-bottom: 1px solid rgba(42,42,68,.5); }
+.ipt-ov-tbl td:nth-child(2) { text-align: left; font-weight: 600; }
+.ipt-ov-tbl tr.top3 td { color: #ffd700; }
+.ipt-ov-rank { font-family: 'Bebas Neue', sans-serif; font-size: 17px; color: #8888aa; }
+.ipt-ov-diff.pos { color: #22c55e; }
+.ipt-ov-diff.neg { color: #f87171; }
+
+/* ── Roster tab ───────────────────────────────────────────────── */
+.ipt-roster-wrap { padding: 12px 12px 80px; max-width: 700px; margin: 0 auto; }
+.ipt-roster-title {
+  font-family: 'Bebas Neue', sans-serif; font-size: 22px; color: #ffd700; margin-bottom: 10px;
+}
+.ipt-settings-card {
+  background: #161628; border: 1px solid #2a2a44; border-radius: 12px;
+  padding: 14px 16px; margin-bottom: 16px;
+}
+.ipt-settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid rgba(42,42,68,.5); gap: 10px;
+}
+.ipt-settings-row:last-child { border-bottom: none; }
+.ipt-settings-label { font-size: 13px; color: #8888aa; flex: 1; }
+.ipt-settings-val { font-size: 15px; font-weight: 700; color: #e8e8f0; }
+.ipt-settings-segs { display: flex; gap: 4px; }
+.ipt-seg {
+  padding: 5px 12px; border-radius: 7px; border: 1px solid #3a3a54;
+  background: transparent; color: #8888aa; font-size: 13px; font-weight: 600;
+  cursor: pointer; touch-action: manipulation; user-select: none;
+}
+.ipt-seg.on { background: rgba(124,106,247,.2); border-color: #7c6af7; color: #a78bfa; }
+
+.ipt-roster-group { margin-bottom: 16px; }
+.ipt-roster-group-hdr {
+  font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700;
+  color: #e8e8f0; padding: 6px 0; border-bottom: 1px solid #2a2a44; margin-bottom: 6px;
+  display: flex; align-items: center; gap: 6px;
+}
+.ipt-roster-player {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 4px; border-bottom: 1px solid rgba(42,42,68,.3);
+  font-size: 13px;
+}
+.ipt-roster-player:last-child { border-bottom: none; }
+.ipt-roster-num { color: #8888aa; font-size: 12px; width: 18px; text-align: center; flex-shrink: 0; }
+.ipt-roster-name { flex: 1; font-weight: 600; color: #e8e8f0; }
+.ipt-roster-gdr { font-size: 11px; padding: 1px 6px; border-radius: 4px; flex-shrink: 0; }
+.ipt-roster-gdr.m { background: rgba(77,168,218,.15); color: #4DA8DA; }
+.ipt-roster-gdr.w { background: rgba(248,113,113,.12); color: #f87171; }
+.ipt-roster-stat { font-size: 12px; color: #8888aa; flex-shrink: 0; min-width: 50px; text-align: right; }
+
+/* ── Hold-to-confirm buttons ─────────────────────────────────── */
+.ipt-hold-btn {
+  position: relative; overflow: hidden;
+  touch-action: manipulation; user-select: none;
+}
+.ipt-hold-btn::after {
+  content: ''; position: absolute; top: 0; left: 0;
+  height: 100%; width: 0; background: rgba(255,255,255,.15);
+  transition: none;
+}
+.ipt-hold-btn.holding::after {
+  width: 100%; transition: width 1.2s linear;
+}
+
+/* ── Loading ──────────────────────────────────────────────────── */
+.ipt-loading {
+  text-align: center; padding: 60px 20px; color: #8888aa;
+  font-size: 15px; line-height: 2;
+}
+</style>
+</head>
+<body>
+
+<nav id="ipt-nav">
+  <div class="ipt-nav-header">
+    <span class="ipt-nav-title" id="ipt-nav-title">IPT Турнир</span>
+    <span class="ipt-nav-meta" id="ipt-nav-meta"></span>
+    <button class="ipt-nav-close" onclick="window.close()">✕ Закрыть</button>
+  </div>
+  <div class="ipt-nav-tabs" id="ipt-nav-tabs"></div>
+</nav>
+
+<div id="ipt-content">
+  <div id="ipt-screen-loading" class="ipt-screen active">
+    <div class="ipt-loading">
+      <div style="font-size:3rem">🏐</div>
+      <div>Загрузка IPT турнира…</div>
+    </div>
+  </div>
+</div>
+
+<!-- Shims — load BEFORE ipt scripts -->
+<script>
+'use strict';
+
+// ── HTML escaping ─────────────────────────────────────────────
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]);
+}
+function escAttr(s) { return esc(String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")); }
+window.esc = esc; window.escAttr = escAttr;
+
+// ── Storage ───────────────────────────────────────────────────
+function getTournaments() {
+  try { return JSON.parse(localStorage.getItem('kotc3_tournaments')||'[]'); } catch(e) { return []; }
+}
+function saveTournaments(data) { localStorage.setItem('kotc3_tournaments', JSON.stringify(data)); }
+function loadPlayerDB() {
+  try { return JSON.parse(localStorage.getItem('kotc3_playerdb')||'[]'); } catch(e) { return []; }
+}
+
+// ── Toast ─────────────────────────────────────────────────────
+function showToast(msg, type) {
+  const el = document.createElement('div');
+  const bg = type==='error'?'#7f1d1d':type==='success'?'#14532d':'#1e1b4b';
+  el.style.cssText = `position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;
+    background:${bg};color:#fff;padding:10px 18px;border-radius:10px;
+    font:600 14px/1.4 'Barlow',sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.4);
+    max-width:90vw;text-align:center;pointer-events:none;`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 2800);
+}
+
+// ── State (_iptActiveTrnId declared by ipt.js, do NOT redeclare) ──
+var activeTabId = null;
+
+// ── IPT finals nav keys ───────────────────────────────────────
+function getIPTFinalsNavKeys(n) {
+  if (n<=1) return ['hard'];
+  if (n===2) return ['hard','lite'];
+  if (n===3) return ['hard','medium','lite'];
+  return ['hard','advance','medium','lite'];
+}
+
+// ── Global tab click dispatcher (robust for mobile) ───────────
+window._iptTab = function(raw) {
+  const id = (raw !== '' && !isNaN(Number(raw))) ? Number(raw) : raw;
+  switchTab(id);
+};
+
+// ── Navigation ────────────────────────────────────────────────
+function switchTab(id) {
+  activeTabId = id;
+  document.querySelectorAll('.ipt-screen').forEach(s => s.classList.remove('active'));
+  const screenId = typeof id === 'number' ? `screen-${id}` : `ipt-screen-${id}`;
+  let screen = document.getElementById(screenId);
+  if (!screen) {
+    screen = document.createElement('div');
+    screen.id = screenId;
+    screen.className = 'ipt-screen';
+    document.getElementById('ipt-content').appendChild(screen);
+  }
+
+  const trnId = _iptActiveTrnId;
+  const arr = getTournaments();
+  const trn = arr.find(t => t.id === trnId);
+
+  if (typeof id === 'number') {
+    if (trn?.ipt?.groups) screen.innerHTML = renderIPTGroup(id);
+  } else if (id === 'stats') {
+    screen.innerHTML = _renderOverview(trnId);
+  } else if (id === 'roster') {
+    screen.innerHTML = _renderRoster(trnId);
+  } else if (['hard','advance','medium','lite'].includes(id)) {
+    if (trn?.ipt?.groups) {
+      const fi = {hard:0,advance:1,medium:2,lite:3}[id];
+      const allDone = trn.ipt.groups.every(g=>g.status==='finished');
+      if (allDone && fi < trn.ipt.groups.length) {
+        screen.innerHTML = renderIPTFinals(trn, fi);
+      } else {
+        const nm = {hard:'ХАРД',advance:'АДВАНС',medium:'МЕДИУМ',lite:'ЛАЙТ'}[id];
+        screen.innerHTML = `<div class="ipt-wrap"><div class="ipt-empty">
+          <div style="font-size:2rem">🏆</div>
+          <div style="font-weight:700;margin:.5rem 0">${nm}</div>
+          <div style="color:var(--muted);font-size:.85rem">Завершите все группы чтобы открыть финалы</div>
+        </div></div>`;
+      }
+    }
+  } else if (id === 'home') { window.close(); return; }
+
+  screen.classList.add('active');
+  syncNavActive();
+  window.scrollTo({ top:0, behavior:'auto' });
+}
+
+function syncNavActive() {
+  document.querySelectorAll('.ipt-tab-btn[data-tab]').forEach(b => {
+    const tid = b.dataset.tab;
+    const match = (tid !== '' && !isNaN(Number(tid)))
+      ? Number(tid) === activeTabId
+      : tid === activeTabId;
+    b.classList.toggle('active', match);
+  });
+}
+
+function syncDivLock() {
+  const trn = getTournaments().find(t=>t.id===_iptActiveTrnId);
+  if (!trn?.ipt?.groups) return;
+  const allDone = trn.ipt.groups.every(g=>g.status==='finished');
+  document.querySelectorAll('.ipt-tab-btn.tab-finals').forEach(b => {
+    b.disabled = !allDone;
+  });
+  _updateNavTitle(trn);
+}
+
+// ── Hold-to-confirm: wraps finishIPTRound & finishIPT ─────────
+// Called from ipt.js generated HTML — we intercept via global override
+function _iptHoldAction(el, action) {
+  let timer = null;
+  function start(e) {
+    e.preventDefault();
+    el.classList.add('holding');
+    timer = setTimeout(() => {
+      el.classList.remove('holding');
+      action();
+    }, 1200);
+  }
+  function cancel() {
+    clearTimeout(timer); timer = null;
+    el.classList.remove('holding');
+  }
+  el.addEventListener('pointerdown', start);
+  el.addEventListener('pointerup',   cancel);
+  el.addEventListener('pointerleave',cancel);
+  el.addEventListener('pointercancel',cancel);
+  el.setAttribute('title', 'Удержите для подтверждения');
+}
+
+// Override finish buttons after rendering to add hold protection
+function _applyHoldProtection() {
+  document.querySelectorAll('.ipt-btn-finish, .ipt-btn-finish-group, .ipt-btn-next').forEach(btn => {
+    if (btn.dataset.holdApplied) return;
+    btn.dataset.holdApplied = '1';
+    btn.classList.add('ipt-hold-btn');
+    const origOnclick = btn.getAttribute('onclick');
+    btn.removeAttribute('onclick');
+    _iptHoldAction(btn, () => { try { eval(origOnclick); } catch(e){} });
+  });
+}
+
+// ── Stats screen ──────────────────────────────────────────────
+function _renderOverview(trnId) {
+  const arr = getTournaments();
+  const trn = arr.find(t=>t.id===trnId);
+  if (!trn?.ipt?.groups) return `<div class="ipt-loading">Нет данных</div>`;
+  if (typeof _migrateIPTLegacy==='function') _migrateIPTLegacy(trn);
+  const db = loadPlayerDB();
+  const ipt = trn.ipt;
+  const MEDALS = ['🥇','🥈','🥉'];
+
+  const groupsHtml = ipt.groups.map(group => {
+    const standings = calcIPTGroupStandings(group, ipt.pointLimit, ipt.finishType);
+    const rows = standings.map((s, rank) => {
+      const name = db.find(p=>p.id===s.playerId)?.name || '?';
+      const medal = MEDALS[rank] || `<span class="ipt-ov-rank">${rank+1}</span>`;
+      const diffStr = s.diff>=0?`+${s.diff}`:`${s.diff}`;
+      const dCls = s.diff>0?'pos':s.diff<0?'neg':'';
+      const wrPct = s.matches?Math.round((s.wins/s.matches)*100):0;
+      return `<tr class="${rank<3?'top3':''}">
+        <td>${medal}</td><td>${esc(name)}</td>
+        <td>${s.wins}</td><td>${s.matches}</td><td>${wrPct}%</td>
+        <td class="ipt-ov-diff ${dCls}">${diffStr}</td>
+        <td><strong>${s.pts}</strong></td>
+      </tr>`;
+    }).join('');
+    const done = group.status==='finished' ? ' ✅' : '';
+    return `<div class="ipt-ov-group">
+      <div class="ipt-ov-group-name">${esc(group.name)}${done}</div>
+      <table class="ipt-ov-tbl">
+        <thead><tr><th>#</th><th>Игрок</th><th>В</th><th>М</th><th>WR</th><th>±</th><th>Оч</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+
+  return `<div class="ipt-overview-wrap">
+    <div class="ipt-overview-title">📊 Статистика IPT</div>
+    ${groupsHtml}
+  </div>`;
+}
+
+// ── Roster + Settings screen ──────────────────────────────────
+function _renderRoster(trnId) {
+  const arr = getTournaments();
+  const trn = arr.find(t=>t.id===trnId);
+  if (!trn?.ipt) return `<div class="ipt-loading">Нет данных</div>`;
+  const db = loadPlayerDB();
+  const ipt = trn.ipt;
+  const lim = ipt.pointLimit || 21;
+  const fin = ipt.finishType || 'hard';
+  const n = (ipt.groups||[]).length;
+  const status = trn.status === 'finished' ? '🏆 Завершён' : trn.status === 'active' ? '▶ Идёт' : '🟡 Открыт';
+  const canEdit = trn.status !== 'finished';
+
+  // Settings card
+  const settingsHtml = `
+  <div class="ipt-settings-card">
+    <div class="ipt-settings-row">
+      <span class="ipt-settings-label">Турнир</span>
+      <span class="ipt-settings-val">${esc(trn.name)}</span>
+    </div>
+    <div class="ipt-settings-row">
+      <span class="ipt-settings-label">Статус</span>
+      <span class="ipt-settings-val">${status}</span>
+    </div>
+    <div class="ipt-settings-row">
+      <span class="ipt-settings-label">Групп</span>
+      <span class="ipt-settings-val">${n}</span>
+    </div>
+    <div class="ipt-settings-row">
+      <span class="ipt-settings-label">Лимит очков</span>
+      <div class="ipt-settings-segs">
+        ${[11,15,21,25].map(v=>`<button class="ipt-seg${lim===v?' on':''}"
+          onclick="_iptSetLimit(${v})" ${canEdit?'':'disabled'}>${v}</button>`).join('')}
+      </div>
+    </div>
+    <div class="ipt-settings-row">
+      <span class="ipt-settings-label">Тип финиша</span>
+      <div class="ipt-settings-segs">
+        <button class="ipt-seg${fin==='hard'?' on':''}"
+          onclick="_iptSetFinish('hard')" ${canEdit?'':'disabled'}>Хард</button>
+        <button class="ipt-seg${fin==='balance'?' on':''}"
+          onclick="_iptSetFinish('balance')" ${canEdit?'':'disabled'}>±2</button>
+      </div>
+    </div>
+    <div class="ipt-settings-row">
+      <span class="ipt-settings-label">Гендер</span>
+      <div class="ipt-settings-segs">
+        <button class="ipt-seg${(ipt.gender||'mixed')==='mixed'?' on':''}"
+          onclick="_iptSetGender('mixed')" ${canEdit?'':'disabled'}>Микст</button>
+        <button class="ipt-seg${(ipt.gender||'mixed')==='male'?' on':''}"
+          onclick="_iptSetGender('male')" ${canEdit?'':'disabled'}>М</button>
+        <button class="ipt-seg${(ipt.gender||'mixed')==='female'?' on':''}"
+          onclick="_iptSetGender('female')" ${canEdit?'':'disabled'}>Ж</button>
+      </div>
+    </div>
+  </div>`;
+
+  // Players per group with standings
+  const groupsHtml = (ipt.groups||[]).map((group, gi) => {
+    const standings = calcIPTGroupStandings(group, lim, fin);
+    const statsMap = {};
+    standings.forEach((s,i)=>{ statsMap[s.playerId] = {...s, rank:i+1}; });
+    const COLORS = ['#FFD700','#4DA8DA','#6ABF69','#C77DFF'];
+    const color = COLORS[gi] || '#ffd700';
+    const playersHtml = (group.players||[]).map((pid, idx) => {
+      const p = db.find(d=>d.id===pid);
+      const name = p?.name || pid;
+      const rawG = String(p?.gender||'').toLowerCase();
+      const gdr = (rawG==='w'||rawG==='f'||rawG==='female') ? 'w' : 'm';
+      const st = statsMap[pid];
+      const wrPct = st && st.matches ? Math.round((st.wins/st.matches)*100) : 0;
+      const statStr = st ? `${st.wins}В · ${wrPct}%` : '—';
+      return `<div class="ipt-roster-player">
+        <span class="ipt-roster-num">${idx+1}</span>
+        <span class="ipt-roster-name">${esc(name)}</span>
+        <span class="ipt-roster-gdr ${gdr}">${gdr==='w'?'Ж':'М'}</span>
+        <span class="ipt-roster-stat">${statStr}</span>
+      </div>`;
+    }).join('');
+    const done = group.status==='finished' ? ' ✅' : '';
+    return `<div class="ipt-roster-group">
+      <div class="ipt-roster-group-hdr">
+        <span style="color:${color}">●</span>
+        ${esc(group.name)}${done}
+        <span style="font-size:12px;color:#8888aa;font-weight:400;margin-left:auto">${group.players?.length||0} игроков</span>
+      </div>
+      ${playersHtml}
+    </div>`;
+  }).join('');
+
+  return `<div class="ipt-roster-wrap">
+    <div class="ipt-roster-title">⚙️ Ростер & Настройки</div>
+    ${settingsHtml}
+    ${groupsHtml}
+  </div>`;
+}
+
+// ── Settings mutators ─────────────────────────────────────────
+window._iptSetLimit = function(v) {
+  const arr = getTournaments();
+  const trn = arr.find(t=>t.id===_iptActiveTrnId);
+  if (!trn?.ipt) return;
+  trn.ipt.pointLimit = v;
+  saveTournaments(arr);
+  showToast(`⚡ Лимит: ${v} очков`);
+  switchTab('roster');
+};
+window._iptSetFinish = function(v) {
+  const arr = getTournaments();
+  const trn = arr.find(t=>t.id===_iptActiveTrnId);
+  if (!trn?.ipt) return;
+  trn.ipt.finishType = v;
+  saveTournaments(arr);
+  showToast(`✅ Тип финиша: ${v==='balance'?'±2':'Хард'}`);
+  switchTab('roster');
+};
+window._iptSetGender = function(v) {
+  const arr = getTournaments();
+  const trn = arr.find(t=>t.id===_iptActiveTrnId);
+  if (!trn?.ipt) return;
+  trn.ipt.gender = v; trn.gender = v;
+  saveTournaments(arr);
+  showToast(`👥 Гендер: ${v==='mixed'?'Микст':v==='male'?'Мужской':'Женский'}`);
+  switchTab('roster');
+};
+
+// ── Nav builder ───────────────────────────────────────────────
+function _updateNavTitle(trn) {
+  if (!trn) return;
+  document.getElementById('ipt-nav-title').textContent = trn.name || 'IPT Турнир';
+  const ipt = trn.ipt || {};
+  document.getElementById('ipt-nav-meta').textContent =
+    `⚡${ipt.pointLimit||21} · ${ipt.finishType==='balance'?'±2':'хард'}`;
+}
+
+function _buildNav(trn) {
+  _updateNavTitle(trn);
+  const ipt = trn.ipt;
+  const groups = ipt.groups || [];
+  const n = groups.length;
+  const tabsEl = document.getElementById('ipt-nav-tabs');
+  tabsEl.innerHTML = '';
+
+  const GRP_NAMES = {1:['ХАРД'],2:['ХАРД','ЛАЙТ'],3:['ХАРД','МЕДИУМ','ЛАЙТ'],4:['ХАРД','АДВАНС','МЕДИУМ','ЛАЙТ']};
+  const groupNames = GRP_NAMES[n] || groups.map((_,i)=>`ГР.${i+1}`);
+  const COLORS = ['#FFD700','#4DA8DA','#6ABF69','#C77DFF'];
+
+  // ── Use innerHTML + onclick attr for reliable mobile clicks ──
+  let html = '';
+
+  // Group tabs
+  groups.forEach((g, i) => {
+    const done = g.status === 'finished' ? ' tab-done' : '';
+    const color = COLORS[i] || '#ffd700';
+    html += `<button class="ipt-tab-btn${done}" data-tab="${i}" onclick="_iptTab('${i}')">
+      <span class="t-main" style="color:${color}">К${i+1}</span>
+      <span class="t-sub">${esc(groupNames[i] || g.name)}</span>
+    </button>`;
+  });
+
+  // Separator
+  html += `<div class="ipt-tab-btn tab-sep"></div>`;
+
+  // Finals tabs
+  const allDone = groups.every(g=>g.status==='finished');
+  const finalsKeys = getIPTFinalsNavKeys(n);
+  const FDef = {
+    hard:    { icon:'🔥', label:'ХАРД',   color:'#e94560' },
+    advance: { icon:'⚡', label:'АДВАНС', color:'#f5a623' },
+    medium:  { icon:'⚙️', label:'МЕДИУМ', color:'#4DA8DA' },
+    lite:    { icon:'🍀', label:'ЛАЙТ',   color:'#6ABF69' },
+  };
+  finalsKeys.forEach(k => {
+    const safeKey = String(k != null ? k : '');
+    const d = FDef[k] || {icon:'🏆', label:safeKey.toUpperCase(), color:'#ffd700'};
+    const dis = allDone ? '' : 'disabled';
+    html += `<button class="ipt-tab-btn tab-finals" data-tab="${k}" ${dis} onclick="_iptTab('${k}')">
+      <span class="t-main">${d.icon}</span>
+      <span class="t-sub" style="color:${d.color}">${d.label}</span>
+    </button>`;
+  });
+
+  // Stats tab
+  html += `<button class="ipt-tab-btn" data-tab="stats" onclick="_iptTab('stats')">
+    <span class="t-main">📊</span><span class="t-sub">СТАТ</span>
+  </button>`;
+
+  // Roster tab
+  html += `<button class="ipt-tab-btn" data-tab="roster" onclick="_iptTab('roster')">
+    <span class="t-main">⚙️</span><span class="t-sub">РОСТЕР</span>
+  </button>`;
+
+  tabsEl.innerHTML = html;
+}
+
+// ── Bootstrap ─────────────────────────────────────────────────
+function _iptSessionBootstrap() {
+  const params = new URLSearchParams(location.search);
+  const trnId = params.get('trnId') || localStorage.getItem('kotc3_ipt_active') || 'ipt_quick';
+
+  const arr = getTournaments();
+  const trn = arr.find(t=>t.id===trnId);
+
+  if (trn) {
+    try { _migrateIPTLegacy(trn); } catch (e) {}
+
+    const parts = trn.participants || [];
+    const expectedGroups = Math.max(1, Math.floor(parts.length / 8));
+    const needsGenerate = parts.length >= 8 && (!trn.ipt?.groups || trn.ipt.groups.length !== expectedGroups);
+
+    if (needsGenerate) {
+      if (!trn.ipt) trn.ipt = {};
+      const lim = parseInt(String(trn.ipt.pointLimit ?? ''), 10);
+      trn.ipt.pointLimit   = Number.isFinite(lim) && lim >= 1 ? lim : 21;
+      trn.ipt.finishType   = trn.ipt.finishType || 'hard';
+      trn.ipt.currentGroup = 0;
+      trn.ipt.groups       = generateIPTGroups(parts, trn.ipt.gender || trn.gender || 'mixed');
+      if (trn.status !== 'finished') trn.status = 'active';
+      saveTournaments(arr);
+    }
+  }
+
+  if (!trn?.ipt?.groups) {
+    document.getElementById('ipt-screen-loading').innerHTML = `
+      <div class="ipt-loading">
+        <div style="font-size:3rem">⚠️</div>
+        <div>IPT турнир не найден.<br>Вернитесь в приложение и запустите IPT.</div>
+        <button class="ipt-nav-close" style="margin-top:16px;display:inline-block" onclick="window.close()">Закрыть</button>
+      </div>`;
+    return;
+  }
+
+  _iptActiveTrnId = trnId;
+  _buildNav(trn);
+  switchTab(0);
+}
+
+// ── MutationObserver: apply hold protection when finish buttons appear ──
+const _holdObserver = new MutationObserver(() => _applyHoldProtection());
+
+// ── Storage sync ──────────────────────────────────────────────
+window.addEventListener('storage', (e) => {
+  if (e.key !== 'kotc3_tournaments') return;
+  const trn = getTournaments().find(t=>t.id===_iptActiveTrnId);
+  if (!trn) return;
+  _buildNav(trn);
+  if (typeof activeTabId === 'number') {
+    const s = document.getElementById(`screen-${activeTabId}`);
+    if (s) { s.innerHTML = renderIPTGroup(activeTabId); _applyHoldProtection(); }
+  } else if (activeTabId === 'stats') {
+    const s = document.getElementById('ipt-screen-stats');
+    if (s) s.innerHTML = _renderOverview(_iptActiveTrnId);
+  } else if (activeTabId === 'roster') {
+    const s = document.getElementById('ipt-screen-roster');
+    if (s) s.innerHTML = _renderRoster(_iptActiveTrnId);
+  }
+  syncNavActive();
+  syncDivLock();
+});
+</script>
+
+<!-- IPT logic -->
+<script src="assets/js/ui/ipt-format.js"></script>
+<script src="assets/js/screens/ipt.js"></script>
+
+<script>
+_holdObserver.observe(document.getElementById('ipt-content'), { childList:true, subtree:true });
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _iptSessionBootstrap);
+} else {
+  _iptSessionBootstrap();
+}
+</script>
+</body>
+</html>

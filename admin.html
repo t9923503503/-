@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d1a">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://sv-ugra.ru; img-src 'self' data:;">
+<meta name="description" content="Админ-панель — Лютые пляжники">
+<title>Админ-панель — Лютые пляжники</title>
+<link rel="icon" href="assets/favicon.png" type="image/png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     LOGIN PAGE
+══════════════════════════════════════════════════════════ -->
+<div id="login-page">
+  <div class="brand-main">ЛЮТЫЕ ПЛЯЖНИКИ !!</div>
+  <div class="brand-sub">Admin Panel</div>
+
+  <div class="login-card">
+    <div class="login-title">🔐 Вход администратора</div>
+
+    <div id="login-error" class="msg error"></div>
+
+    <div class="field">
+      <label for="login-email">Email</label>
+      <input id="login-email" type="email" placeholder="admin@example.com"
+             autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="login-pwd">Пароль</label>
+      <input id="login-pwd" type="password" placeholder="••••••••"
+             autocomplete="current-password">
+    </div>
+    <button class="btn-submit" id="btn-login">Войти</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     ADMIN PAGE
+══════════════════════════════════════════════════════════ -->
+<div id="admin-page">
+
+  <!-- Header -->
+  <div class="admin-header">
+    <div>
+      <span class="admin-brand">ADMIN</span>
+      <span class="admin-brand"><span>Лютые пляжники</span></span>
+    </div>
+    <button class="btn-logout" id="btn-logout">Выйти</button>
+  </div>
+
+  <div class="admin-content">
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="requests">
+        Заявки <span class="tab-badge" id="requests-badge" style="display:none">0</span>
+      </button>
+      <button class="tab-btn" data-tab="players">Игроки</button>
+      <button class="tab-btn" data-tab="tournaments">Турниры</button>
+      <button class="tab-btn" data-tab="judges">Судьи</button>
+      <button class="tab-btn" data-tab="history">История</button>
+      <button class="tab-btn" data-tab="rating">Рейтинг</button>
+    </div>
+
+    <!-- ── ЗАЯВКИ ───────────────────────────────────────────── -->
+    <div class="section active" id="sec-requests">
+      <div class="section-title">Заявки на регистрацию</div>
+      <div class="filter-row">
+        <select class="filter-select" id="req-filter">
+          <option value="pending">Ожидают</option>
+          <option value="approved">Одобренные</option>
+          <option value="rejected">Отклонённые</option>
+        </select>
+        <button class="btn btn-muted" id="btn-refresh-req">↻ Обновить</button>
+      </div>
+      <div id="requests-list"><div class="empty-state">Загрузка...</div></div>
+    </div>
+
+    <!-- ── ИГРОКИ ───────────────────────────────────────────── -->
+    <div class="section" id="sec-players">
+      <div class="section-title">База игроков</div>
+      <div class="filter-row">
+        <input class="filter-input" id="players-search" type="search" placeholder="Поиск по имени или email...">
+        <select class="filter-select" id="players-gender">
+          <option value="">Все</option>
+          <option value="M">♂ Мужской</option>
+          <option value="W">♀ Женский</option>
+        </select>
+        <select class="filter-select" id="players-status">
+          <option value="active">Активные</option>
+          <option value="pending">Ожидают</option>
+          <option value="banned">Заблокированные</option>
+        </select>
+      </div>
+      <div id="players-list"><div class="empty-state">Загрузка...</div></div>
+    </div>
+
+    <!-- ── ТУРНИРЫ ──────────────────────────────────────────── -->
+    <div class="section" id="sec-tournaments">
+      <div class="section-title">Управление турнирами</div>
+
+      <!-- Create tournament form -->
+      <div class="card card-padded">
+        <div class="card-heading">➕ Новый турнир</div>
+        <div class="form-grid">
+          <div class="field">
+            <label>Название</label>
+            <input class="filter-input" id="trn-name" type="text" placeholder="Летний КоТС #1">
+          </div>
+          <div class="field">
+            <label>Дата</label>
+            <input class="filter-input" id="trn-date" type="date">
+          </div>
+          <div class="field">
+            <label>Формат</label>
+            <select class="filter-select w-full" id="trn-format">
+              <option value="kotc">King of the Court</option>
+              <option value="ipt_mixed">IPT Mixed</option>
+              <option value="classic">Классика</option>
+              <option value="swiss">Швейцарская</option>
+              <option value="double_elim">Double Elimination</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Макс. игроков</label>
+            <input class="filter-input" id="trn-max" type="number" placeholder="32" min="4" max="128">
+          </div>
+        </div>
+        <button class="btn btn-accent mt-12" id="btn-create-trn">
+          Создать турнир
+        </button>
+        <div id="trn-msg" class="msg mt-10 mb-0"></div>
+      </div>
+
+      <!-- Quick launch -->
+      <div class="card card-padded">
+        <div class="card-heading-sm">⚡ Быстрый запуск формата</div>
+        <div class="flex-row">
+          <button class="btn btn-accent" data-launch="thai">🌴 Thai</button>
+          <button class="btn btn-accent" data-launch="ipt">👑 IPT</button>
+          <button class="btn btn-accent" data-launch="kotc">👑 KOTC</button>
+          <button class="btn btn-muted" id="btn-launch-standard">🏐 Стандарт</button>
+        </div>
+      </div>
+
+      <!-- Active / Finished split -->
+      <div class="flex-row-mb">
+        <button class="btn btn-accent trn-view-btn active" data-view="active">🟢 Активные</button>
+        <button class="btn btn-muted trn-view-btn" data-view="finished">✅ Завершённые</button>
+      </div>
+      <div id="tournaments-list"><div class="empty-state">Загрузка...</div></div>
+    </div>
+
+    <!-- ── СУДЬИ ───────────────────────────────────────────── -->
+    <div class="section" id="sec-judges">
+      <div class="section-title">Назначение судей на турнир</div>
+
+      <!-- Tournament selector -->
+      <div class="card card-padded">
+        <div class="card-heading-sm">Выберите турнир</div>
+        <select class="filter-select w-full" id="judge-trn-select">
+          <option value="">— Выберите активный турнир —</option>
+        </select>
+      </div>
+
+      <!-- Judge assignment form -->
+      <div class="card card-padded" id="judge-assign-card" style="display:none">
+        <div class="card-heading">Назначение судей (4 корта)</div>
+        <div class="form-grid">
+          <div class="field">
+            <label>Судья Корт 1</label>
+            <input class="filter-input" id="judge-name-0" type="text" placeholder="Имя судьи (необязательно)">
+          </div>
+          <div class="field">
+            <label>Судья Корт 2</label>
+            <input class="filter-input" id="judge-name-1" type="text" placeholder="Имя судьи (необязательно)">
+          </div>
+          <div class="field">
+            <label>Судья Корт 3</label>
+            <input class="filter-input" id="judge-name-2" type="text" placeholder="Имя судьи (необязательно)">
+          </div>
+          <div class="field">
+            <label>Судья Корт 4</label>
+            <input class="filter-input" id="judge-name-3" type="text" placeholder="Имя судьи (необязательно)">
+          </div>
+        </div>
+        <button class="btn btn-accent mt-12" id="btn-assign-judges">
+          Назначить судей и выдать ссылки
+        </button>
+        <div id="judge-msg" class="msg mt-10 mb-0"></div>
+      </div>
+
+      <!-- Generated links -->
+      <div class="card card-padded" id="judge-links-card" style="display:none">
+        <div class="card-heading">Ссылки для судей</div>
+        <div id="judge-links-list"></div>
+        <button class="btn btn-muted mt-12" id="btn-copy-all-links">Копировать все ссылки</button>
+      </div>
+
+      <!-- S7.7: Live court overview -->
+      <div class="card card-padded" id="live-courts-card" style="display:none">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <div class="card-heading" style="margin:0">Live — корты</div>
+          <span id="live-courts-status" style="font-size:0.75rem;color:var(--muted)">• ожидание</span>
+          <button class="btn btn-muted" id="btn-live-refresh" style="font-size:0.75rem;padding:4px 10px;margin-left:auto">↻</button>
+        </div>
+        <div id="live-courts-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
+      </div>
+    </div>
+
+    <!-- ── ИСТОРИЯ ──────────────────────────────────────────── -->
+    <div class="section" id="sec-history">
+      <div class="section-title">История рейтинга</div>
+      <div class="filter-row">
+        <input class="filter-input" id="history-search" type="search" placeholder="Поиск по игроку...">
+        <button class="btn btn-muted" id="btn-refresh-history">↻ Обновить</button>
+      </div>
+      <div id="history-list"><div class="empty-state">Загрузка...</div></div>
+    </div>
+
+    <!-- ── РЕЙТИНГ ────────────────────────────────────────────── -->
+    <div class="section" id="sec-rating">
+      <div class="section-title">Рейтинг игроков</div>
+      <div class="filter-row">
+        <select class="filter-select" id="rating-gender-filter">
+          <option value="all">Все</option>
+          <option value="M">Мужчины</option>
+          <option value="W">Женщины</option>
+        </select>
+        <input class="filter-input" id="rating-search" type="search" placeholder="Поиск по имени...">
+        <button class="btn btn-muted" id="btn-refresh-rating">↻ Обновить</button>
+      </div>
+      <div id="rating-list"><div class="empty-state">Загрузка...</div></div>
+    </div>
+
+  </div><!-- /admin-content -->
+</div><!-- /admin-page -->
+
+<script type="module" src="shared/qr-gen.js?v=2"></script>
+<script src="admin-init.js"></script>
+</body>
+</html>

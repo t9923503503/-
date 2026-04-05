@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pencil": {
+      "command": "npx",
+      "args": ["-y", "@pencil-so/mcp"]
+    }
+  }
+}

@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d1a">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://sv-ugra.ru; img-src 'self' data:;">
+<meta name="description" content="Регистрация игрока — Лютые пляжники">
+<title>Регистрация игрока — Лютые пляжники</title>
+<link rel="icon" href="assets/favicon.png" type="image/png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700;900&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── Base (match app dark theme) ─────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:      #0d0d1a;
+  --surface: #161628;
+  --border:  #2a2a4a;
+  --accent:  #7c6af7;
+  --accent2: #a78bfa;
+  --gold:    #ffd700;
+  --text:    #e8e8f0;
+  --muted:   #8888aa;
+  --danger:  #f87171;
+  --success: #4ade80;
+  --radius:  12px;
+  --shadow:  0 4px 24px rgba(0,0,0,.5);
+}
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+  font-size: 15px;
+}
+
+/* ── Layout ──────────────────────────────────────────────── */
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px 48px;
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+.brand {
+  text-align: center;
+  margin-bottom: 32px;
+}
+.brand-main {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 2rem;
+  color: var(--gold);
+  letter-spacing: 2px;
+}
+.brand-sub {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.95rem;
+  color: var(--muted);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+.page-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.6rem;
+  letter-spacing: 1px;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.page-sub {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 28px;
+}
+
+/* ── Card ────────────────────────────────────────────────── */
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  box-shadow: var(--shadow);
+}
+
+/* ── Form ────────────────────────────────────────────────── */
+.field {
+  margin-bottom: 18px;
+}
+.field label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.field input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+  font-size: 1rem;
+  padding: 11px 14px;
+  outline: none;
+  transition: border-color .2s;
+}
+.field input:focus {
+  border-color: var(--accent);
+}
+.field input.error {
+  border-color: var(--danger);
+}
+
+/* Gender toggle */
+.gender-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.gender-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all .2s;
+  text-align: center;
+}
+.gender-btn:hover { border-color: var(--accent); color: var(--text); }
+.gender-btn.active {
+  border-color: var(--accent);
+  background: rgba(124,106,247,.15);
+  color: var(--accent2);
+}
+
+/* Submit button */
+.btn-submit {
+  width: 100%;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.15rem;
+  letter-spacing: 1.5px;
+  padding: 14px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: background .2s, transform .1s;
+}
+.btn-submit:hover   { background: var(--accent2); }
+.btn-submit:active  { transform: scale(.98); }
+.btn-submit:disabled { background: var(--border); cursor: not-allowed; }
+
+/* Messages */
+.msg {
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  margin-bottom: 16px;
+  display: none;
+}
+.msg.error   { background: rgba(248,113,113,.12); border: 1px solid rgba(248,113,113,.4); color: var(--danger); display: block; }
+.msg.success { background: rgba(74,222,128,.1);  border: 1px solid rgba(74,222,128,.35); color: var(--success); display: block; }
+
+/* Footer link */
+.footer-link {
+  margin-top: 20px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-align: center;
+}
+.footer-link a {
+  color: var(--accent2);
+  text-decoration: none;
+}
+.footer-link a:hover { text-decoration: underline; }
+
+/* Spinner */
+.spinner {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Password strength indicator */
+.pwd-strength {
+  height: 3px;
+  border-radius: 2px;
+  margin-top: 6px;
+  background: var(--border);
+  overflow: hidden;
+}
+.pwd-strength-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width .3s, background .3s;
+  width: 0%;
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Brand -->
+  <div class="brand">
+    <a href="index.html" style="text-decoration:none">
+      <div class="brand-main">ЛЮТЫЕ ПЛЯЖНИКИ !!</div>
+      <div class="brand-sub">King of the Court</div>
+    </a>
+  </div>
+
+  <!-- Title -->
+  <div class="page-title">Регистрация игрока</div>
+  <div class="page-sub">Заявка будет рассмотрена администратором</div>
+
+  <!-- Card -->
+  <div class="card">
+
+    <!-- Status messages -->
+    <div id="msg-error"   class="msg error"  ></div>
+    <div id="msg-success" class="msg success"></div>
+
+    <!-- Form -->
+    <form id="reg-form" novalidate autocomplete="on">
+
+      <div class="field">
+        <label for="inp-name">Имя и фамилия</label>
+        <input id="inp-name" type="text" placeholder="Иван Иванов"
+               autocomplete="name" maxlength="60" required>
+      </div>
+
+      <div class="field">
+        <label for="inp-email">Email</label>
+        <input id="inp-email" type="email" placeholder="ivan@example.com"
+               autocomplete="email" maxlength="100" required>
+      </div>
+
+      <div class="field">
+        <label>Пол</label>
+        <div class="gender-group">
+          <button type="button" class="gender-btn" data-g="M">♂ Мужской</button>
+          <button type="button" class="gender-btn" data-g="W">♀ Женский</button>
+        </div>
+        <input type="hidden" id="inp-gender" value="">
+      </div>
+
+      <div class="field">
+        <label for="inp-pwd">Пароль</label>
+        <input id="inp-pwd" type="password" placeholder="Минимум 6 символов"
+               autocomplete="new-password" minlength="6" maxlength="72" required>
+        <div class="pwd-strength">
+          <div class="pwd-strength-bar" id="pwd-bar"></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="inp-pwd2">Повторите пароль</label>
+        <input id="inp-pwd2" type="password" placeholder="Повторите пароль"
+               autocomplete="new-password" required>
+      </div>
+
+      <button type="submit" class="btn-submit" id="btn-submit">
+        Отправить заявку
+      </button>
+
+    </form>
+  </div>
+
+  <div class="footer-link">
+    Уже зарегистрированы? <a href="login.html">Войти</a>
+  </div>
+
+</div><!-- /page -->
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Config ────────────────────────────────────────────────
+  const API = 'https://sv-ugra.ru/api/rest/v1';
+
+  // ── DOM refs ──────────────────────────────────────────────
+  const form       = document.getElementById('reg-form');
+  const inpName    = document.getElementById('inp-name');
+  const inpEmail   = document.getElementById('inp-email');
+  const inpGender  = document.getElementById('inp-gender');
+  const inpPwd     = document.getElementById('inp-pwd');
+  const inpPwd2    = document.getElementById('inp-pwd2');
+  const btnSubmit  = document.getElementById('btn-submit');
+  const msgError   = document.getElementById('msg-error');
+  const msgSuccess = document.getElementById('msg-success');
+  const pwdBar     = document.getElementById('pwd-bar');
+
+  let selectedGender = '';
+
+  // ── Gender toggle ─────────────────────────────────────────
+  document.querySelectorAll('.gender-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedGender = btn.dataset.g;
+      inpGender.value = selectedGender;
+    });
+  });
+
+  // ── Password strength ──────────────────────────────────────
+  inpPwd.addEventListener('input', () => {
+    const v = inpPwd.value;
+    let score = 0;
+    if (v.length >= 6)  score++;
+    if (v.length >= 10) score++;
+    if (/[A-Z]/.test(v)) score++;
+    if (/[0-9]/.test(v)) score++;
+    if (/[^a-zA-Z0-9]/.test(v)) score++;
+    const pct   = (score / 5) * 100;
+    const color = score <= 1 ? '#f87171' : score <= 3 ? '#fb923c' : '#4ade80';
+    pwdBar.style.width      = pct + '%';
+    pwdBar.style.background = color;
+  });
+
+  // ── Helpers ───────────────────────────────────────────────
+  function showError(msg) {
+    msgError.textContent = msg;
+    msgError.className   = 'msg error';
+    msgSuccess.className = 'msg';
+  }
+  function showSuccess(msg) {
+    msgSuccess.textContent = msg;
+    msgSuccess.className   = 'msg success';
+    msgError.className     = 'msg';
+  }
+  function clearMessages() {
+    msgError.className = msgSuccess.className = 'msg';
+  }
+  function setLoading(on) {
+    btnSubmit.disabled   = on;
+    btnSubmit.innerHTML  = on
+      ? '<span class="spinner"></span>Отправка...'
+      : 'Отправить заявку';
+  }
+
+  // ── Validation ────────────────────────────────────────────
+  function validate() {
+    const name  = inpName.value.trim();
+    const email = inpEmail.value.trim();
+    const pwd   = inpPwd.value;
+    const pwd2  = inpPwd2.value;
+
+    if (name.length < 2)     { showError('Введите имя и фамилию (минимум 2 символа)'); return false; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      showError('Введите корректный email'); return false;
+    }
+    if (!selectedGender)     { showError('Выберите пол'); return false; }
+    if (pwd.length < 6)      { showError('Пароль должен быть не менее 6 символов'); return false; }
+    if (pwd !== pwd2)        { showError('Пароли не совпадают'); return false; }
+    return true;
+  }
+
+  // ── Submit ────────────────────────────────────────────────
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearMessages();
+    if (!validate()) return;
+
+    setLoading(true);
+
+    try {
+      const res = await fetch(`${API}/rpc/register_player`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        // Password sent plaintext — HTTPS encrypts in transit
+        // Hashed with bcrypt on the server side (PostgreSQL crypt())
+        body: JSON.stringify({
+          p_name:     inpName.value.trim(),
+          p_email:    inpEmail.value.trim().toLowerCase(),
+          p_password: inpPwd.value,
+          p_gender:   selectedGender
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        showSuccess('✓ Заявка отправлена! Ожидайте одобрения администратора. Вам придёт уведомление.');
+        form.reset();
+        pwdBar.style.width = '0%';
+        document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('active'));
+        selectedGender = '';
+        btnSubmit.textContent = 'Заявка отправлена ✓';
+      } else {
+        // PostgREST error format: { message, code, hint }
+        const msg = data.message || data.hint || 'Ошибка при отправке заявки';
+        if (msg.includes('already registered') || msg.includes('already pending') || res.status === 409) {
+          showError('Этот email уже зарегистрирован или заявка уже отправлена.');
+        } else if (msg.includes('Invalid email')) {
+          showError('Некорректный формат email.');
+        } else if (msg.includes('Password')) {
+          showError('Пароль слишком короткий (минимум 6 символов).');
+        } else {
+          showError(msg);
+        }
+        setLoading(false);
+      }
+    } catch (err) {
+      showError('Ошибка соединения. Проверьте интернет и повторите попытку.');
+      setLoading(false);
+    }
+  });
+})();
+</script>
+</body>
+</html>

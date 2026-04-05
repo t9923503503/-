@@ -1,0 +1,345 @@
+/* IPT (Double Trouble) format styles — mobile-first */
+
+/* ── Panel visibility ── */
+#ipt-roster-panel,
+#ipt-overview-panel,
+#ipt-game-panel,
+#ipt-finished-panel { display: none; }
+#ipt-roster-panel.active,
+#ipt-overview-panel.active,
+#ipt-game-panel.active,
+#ipt-finished-panel.active { display: block; }
+
+/* ── Toast notification ── */
+#ipt-toast {
+  position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+  background: rgba(30,30,50,.95); color: var(--text);
+  padding: 10px 18px; border-radius: 12px;
+  font: 600 13px Barlow, sans-serif; z-index: 9000;
+  pointer-events: none; opacity: 0;
+  transition: opacity .25s; white-space: nowrap;
+  border: 1px solid rgba(255,255,255,.1);
+  max-width: calc(100vw - 32px); text-align: center;
+}
+#ipt-toast.show { opacity: 1; }
+#ipt-toast.success { border-color: rgba(34,197,94,.3); }
+#ipt-toast.error   { border-color: rgba(233,69,96,.3); }
+
+/* ── Action bar (fixed bottom) ── */
+#ipt-action-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 10px);
+  background: var(--dark2);
+  border-top: 1px solid rgba(255,255,255,.07);
+  z-index: 50;
+}
+
+/* ── ROSTER PANEL ── */
+.ipt-settings-card {
+  background: var(--card); border-radius: 14px;
+  padding: 14px; margin-bottom: 10px;
+  border: 1px solid rgba(255,255,255,.06);
+}
+.ipt-settings-title {
+  font: 700 11px Barlow, sans-serif; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted); margin-bottom: 12px;
+  display: flex; align-items: center; gap: 6px;
+}
+.ipt-seg-row {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.ipt-seg-btn {
+  flex: 1; min-width: 0; padding: 9px 8px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px; color: var(--muted);
+  font: 600 13px Barlow, sans-serif;
+  cursor: pointer; touch-action: manipulation;
+  white-space: nowrap; text-align: center;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.ipt-seg-btn.active {
+  background: var(--gold); border-color: var(--gold); color: #000;
+}
+.ipt-seg-lbl {
+  font: 600 12px Barlow, sans-serif; color: var(--muted);
+  margin-bottom: 6px; display: block;
+}
+.ipt-courts-info {
+  font: 600 12px Barlow, sans-serif; color: var(--muted);
+  background: rgba(255,255,255,.04); border-radius: 8px;
+  padding: 6px 10px; margin-bottom: 10px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.ipt-courts-info strong { color: var(--text); }
+
+/* Player list */
+.ipt-player-list { display: flex; flex-direction: column; gap: 4px; }
+.ipt-player-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 10px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.05);
+}
+.ipt-player-row.selected {
+  background: rgba(255,215,0,.06);
+  border-color: rgba(255,215,0,.15);
+}
+.ipt-player-idx { color: var(--muted); font-size: .78em; font-weight: 700; min-width: 20px; }
+.ipt-player-name { flex: 1; font: 600 14px Barlow, sans-serif; color: var(--text); }
+.ipt-player-gender {
+  font-size: .75em; font-weight: 800; padding: 2px 6px; border-radius: 6px;
+}
+.ipt-player-gender.m { background: rgba(77,168,218,.15); color: var(--blue); }
+.ipt-player-gender.w { background: rgba(255,143,171,.15); color: #FF8FAB; }
+
+.ipt-sel-counter {
+  font: 600 12px Barlow, sans-serif; color: var(--muted);
+  margin-top: 8px; text-align: right;
+}
+.ipt-sel-counter span { color: var(--gold); font-weight: 800; }
+
+/* Mixed warning */
+.ipt-mixed-warn {
+  background: rgba(255,165,0,.10); border: 1px solid rgba(255,165,0,.25);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+  font: 600 12px Barlow, sans-serif; color: var(--gold2); line-height: 1.5;
+}
+.ipt-mixed-warn ul { padding-left: 14px; margin-top: 4px; }
+
+/* ── OVERVIEW PANEL ── */
+.ipt-overview-grid { display: flex; flex-direction: column; gap: 10px; }
+.ipt-court-card {
+  background: var(--card); border-radius: 14px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.06);
+}
+.ipt-court-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; font: 700 14px Barlow, sans-serif;
+}
+.ipt-court-hdr.c0 { background: rgba(255,215,0,.12);  color: var(--gold); }
+.ipt-court-hdr.c1 { background: rgba(77,168,218,.12);  color: var(--blue); }
+.ipt-court-hdr.c2 { background: rgba(106,191,105,.12); color: var(--green); }
+.ipt-court-hdr.c3 { background: rgba(199,125,255,.12); color: var(--purple); }
+.ipt-court-hdr-badge {
+  font: 600 11px Barlow, sans-serif; color: var(--muted);
+  background: rgba(255,255,255,.06); border-radius: 6px; padding: 2px 8px;
+}
+.ipt-court-body {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+  padding: 10px 14px 12px;
+}
+.ipt-court-col-title {
+  font: 700 10px Barlow, sans-serif; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted);
+  display: flex; align-items: center; gap: 5px; margin-bottom: 6px;
+}
+.ipt-court-player {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 0; font: 600 13px Barlow, sans-serif; color: var(--text);
+}
+.ipt-court-player-num { color: var(--muted); font-size: .78em; font-weight: 700; min-width: 16px; }
+
+/* ── GAME PANEL ── */
+
+/* Group tabs (К1 ХАРД / К2 ЛАЙТ …) */
+.ipt-group-tabs {
+  display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
+  padding-bottom: 2px; -webkit-overflow-scrolling: touch;
+}
+.ipt-group-tabs::-webkit-scrollbar { display: none; }
+.ipt-group-tab {
+  flex-shrink: 0; padding: 6px 14px; border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: transparent; color: var(--muted);
+  font: 600 12px Barlow, sans-serif; cursor: pointer;
+  white-space: nowrap; touch-action: manipulation;
+  transition: background .12s, color .12s;
+}
+.ipt-group-tab.active {
+  background: var(--gold); border-color: var(--gold); color: #000;
+}
+
+/* Group header */
+.ipt-group-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0 6px;
+}
+.ipt-group-name {
+  font: 700 18px Barlow, sans-serif; color: var(--gold);
+}
+.ipt-group-badge {
+  font: 600 12px Barlow, sans-serif; color: var(--muted);
+  background: rgba(255,255,255,.06); border-radius: 8px;
+  padding: 4px 10px;
+}
+
+/* Round pill tabs */
+.ipt-round-tabs {
+  display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
+  margin: 8px 0; -webkit-overflow-scrolling: touch;
+}
+.ipt-round-tabs::-webkit-scrollbar { display: none; }
+.ipt-round-tab {
+  flex-shrink: 0; padding: 5px 14px; border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: transparent; color: var(--muted);
+  font: 600 12px Barlow, sans-serif; cursor: pointer;
+  white-space: nowrap; touch-action: manipulation;
+  transition: background .12s, color .12s;
+}
+.ipt-round-tab.active {
+  background: rgba(255,215,0,.15); border-color: var(--gold); color: var(--gold);
+}
+.ipt-round-tab.done { opacity: .5; }
+
+/* Match cards */
+.ipt-match-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.ipt-match-card {
+  background: var(--card); border-radius: 14px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.06);
+}
+.ipt-match-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px;
+  font: 700 11px Barlow, sans-serif; letter-spacing: .04em;
+  background: rgba(0,0,0,.18); color: var(--muted);
+}
+.ipt-match-hdr .ipt-court-label { text-transform: uppercase; }
+.ipt-match-done-badge {
+  background: rgba(34,197,94,.15); color: var(--plus);
+  border-radius: 6px; padding: 2px 8px; font-size: .85em;
+}
+.ipt-match-row {
+  display: flex; align-items: center; padding: 8px 10px 0;
+}
+.ipt-match-team {
+  flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.ipt-match-team.right { text-align: right; }
+.ipt-team-name {
+  font: 600 13px Barlow, sans-serif; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ipt-score-block {
+  display: flex; align-items: center; gap: 6px; padding: 0 6px;
+}
+.ipt-sc-btn {
+  width: 52px; height: 52px; border-radius: 12px; border: none;
+  background: rgba(255,255,255,.07); color: var(--text);
+  font-size: 1.4em; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  transition: background .1s;
+}
+.ipt-sc-btn:active { background: rgba(255,255,255,.18); }
+.ipt-sc-btn:disabled { opacity: .25; pointer-events: none; }
+.ipt-sc-val {
+  font-size: 3rem; font-weight: 800; min-width: 52px; text-align: center;
+  color: var(--text); cursor: pointer; line-height: 1;
+  transition: color .15s;
+}
+.ipt-sc-val.winning { color: var(--plus); }
+.ipt-sc-val.losing  { color: var(--minus); }
+
+.ipt-match-vs {
+  text-align: center; padding: 4px 0;
+  font: 600 11px Barlow, sans-serif; color: var(--muted); letter-spacing: .04em;
+}
+.ipt-match-sep { height: 1px; background: rgba(255,255,255,.04); margin: 0 10px; }
+.ipt-match-row2 { padding-bottom: 8px; }
+
+/* Inline score editor */
+.ipt-score-input {
+  font-size: 2rem; font-weight: 800; width: 70px; text-align: center;
+  background: rgba(255,215,0,.1); border: 1px solid var(--gold);
+  border-radius: 8px; color: var(--gold); padding: 4px 2px;
+}
+
+/* Standings table */
+.ipt-standings-wrap {
+  background: var(--card); border-radius: 14px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.06); margin-bottom: 12px;
+}
+.ipt-standings-title {
+  padding: 10px 14px 8px;
+  font: 700 11px Barlow, sans-serif; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted);
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+.ipt-standings-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ipt-standings-table {
+  width: 100%; border-collapse: collapse;
+  font: 600 12px Barlow, sans-serif;
+  min-width: 340px;
+}
+.ipt-standings-table th {
+  padding: 6px 8px; text-align: center;
+  color: var(--muted); font-size: .72em; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+.ipt-standings-table th.name-col { text-align: left; }
+.ipt-standings-table td {
+  padding: 7px 8px; text-align: center;
+  border-bottom: 1px solid rgba(255,255,255,.03); color: var(--text);
+}
+.ipt-standings-table td.name-col { text-align: left; }
+.ipt-standings-table tr:last-child td { border-bottom: none; }
+.ipt-standings-table tr.top-row td { background: rgba(255,215,0,.04); }
+.ipt-rank-cell { color: var(--muted); font-weight: 700; }
+.ipt-diff-pos { color: var(--plus); font-weight: 700; }
+.ipt-diff-neg { color: var(--minus); font-weight: 700; }
+.ipt-wr-val { font-weight: 700; }
+.ipt-pts-val { color: var(--gold); font-weight: 800; }
+
+/* ── FINISHED PANEL ── */
+.ipt-finished-header {
+  text-align: center; padding: 20px 0 10px;
+}
+.ipt-finished-icon { font-size: 3rem; }
+.ipt-finished-title { font: 700 1.3rem Barlow, sans-serif; color: var(--gold); margin-top: 6px; }
+.ipt-finished-sub   { font: 400 .85em Barlow, sans-serif; color: var(--muted); margin-top: 4px; }
+
+.ipt-group-result { margin-bottom: 20px; }
+.ipt-group-result-title {
+  font: 700 .9em Barlow, sans-serif; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted);
+  padding: 10px 0 6px; border-bottom: 1px solid rgba(255,255,255,.06);
+  margin-bottom: 10px;
+}
+
+.ipt-podium {
+  display: flex; justify-content: center; gap: 8px;
+  margin-bottom: 14px; flex-wrap: wrap;
+}
+.ipt-podium-card {
+  background: var(--card); border-radius: 12px;
+  padding: 10px 14px; text-align: center;
+  min-width: 80px; max-width: 100px;
+  border: 1px solid rgba(255,255,255,.06);
+}
+.ipt-podium-card.gold   { border-color: var(--gold); }
+.ipt-podium-card.silver { border-color: #C0C0C0; }
+.ipt-podium-card.bronze { border-color: #CD7F32; }
+.ipt-podium-place { font-size: 1.3em; }
+.ipt-podium-name  { font: 700 .8em Barlow, sans-serif; color: var(--text); margin-top: 4px; word-break: break-word; }
+.ipt-podium-stat  { font: 600 .7em Barlow, sans-serif; color: var(--muted); margin-top: 2px; }
+
+/* Server sync status */
+.ipt-sync-block {
+  background: var(--card); border-radius: 14px;
+  padding: 16px; margin-top: 10px;
+  border: 1px solid rgba(255,255,255,.06); text-align: center;
+}
+.ipt-sync-status {
+  font: 600 13px Barlow, sans-serif; margin-bottom: 10px;
+}
+.ipt-sync-status.local_only { color: var(--muted); }
+.ipt-sync-status.submitting { color: var(--blue); }
+.ipt-sync-status.ok         { color: var(--plus); }
+.ipt-sync-status.error      { color: var(--minus); }
+.ipt-sync-warn {
+  font: 600 11px Barlow, sans-serif; color: var(--muted);
+  margin-top: 10px; line-height: 1.5;
+}
