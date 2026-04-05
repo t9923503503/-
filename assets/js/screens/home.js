@@ -135,14 +135,28 @@ function renderHome() {
 
     // A1.5: Thai button opens thai.html with stored meta
     const thaiMeta = trn.thaiMeta || {};
+    const thaiHrefOpts = {
+      mode: thaiMeta.mode || 'MF',
+      n: thaiMeta.n || 8,
+      seed: thaiMeta.seed || 1,
+      trnId: trn.id,
+      courts: thaiMeta.courts,
+      tours: thaiMeta.tours,
+    };
     const thaiHref = (globalThis.sharedFormatLinks && typeof globalThis.sharedFormatLinks.buildThaiFormatUrl === 'function')
-      ? globalThis.sharedFormatLinks.buildThaiFormatUrl({
-          mode: thaiMeta.mode || 'MF',
-          n: thaiMeta.n || 8,
-          seed: thaiMeta.seed || 1,
-          trnId: trn.id,
-        })
-      : `formats/thai/thai.html?mode=${thaiMeta.mode||'MF'}&n=${thaiMeta.n||8}&seed=${thaiMeta.seed||1}&trnId=${encodeURIComponent(trn.id)}`;
+      ? globalThis.sharedFormatLinks.buildThaiFormatUrl(thaiHrefOpts)
+      : (() => {
+          const q = new URLSearchParams({
+            mode: String(thaiHrefOpts.mode),
+            n: String(thaiHrefOpts.n),
+            seed: String(thaiHrefOpts.seed),
+            trnId: String(trn.id),
+          });
+          const c = Number(thaiMeta.courts), t = Number(thaiMeta.tours);
+          if (Number.isInteger(c) && c >= 1) q.set('courts', String(c));
+          if (Number.isInteger(t) && t >= 1) q.set('tours', String(t));
+          return `formats/thai/thai.html?${q.toString()}`;
+        })();
     // A2.3: KOTC URL building
     const kotcMeta = trn.kotcMeta || {};
     const kotcHref = (globalThis.sharedFormatLinks && typeof globalThis.sharedFormatLinks.buildKotcFormatUrl === 'function')
@@ -279,21 +293,6 @@ function renderHome() {
       <span class="home-sec-count">${tr('home.calRange')}</span>
     </div>
     ${calHtml}
-  </div>
-
-  <div class="home-admin-cta">
-    <div class="home-admin-copy">
-      <div class="home-admin-kicker">${tr('home.adminKicker')}</div>
-      <div class="home-admin-title">${tr('home.adminTitle')}</div>
-    </div>
-    <a
-      class="trn-btn open home-admin-link"
-      href="https://lpvolley.ru/admin"
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      🛠 ${tr('home.adminButton')}
-    </a>
   </div>
 </div>`;
 }

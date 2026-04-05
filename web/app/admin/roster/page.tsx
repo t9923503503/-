@@ -2,15 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-type Tournament = {
-  id: string;
-  name: string;
-  date: string;
-  status: string;
-  capacity: number;
-  format: string;
-};
-
+type Tournament = { id: string; name: string; date: string; status: string; capacity: number };
 type Participant = {
   id: string;
   playerId: string;
@@ -20,20 +12,7 @@ type Participant = {
   position: number;
   registeredAt: string;
 };
-
 type Player = { id: string; name: string; gender: string };
-
-function normalizeJudgeFormat(format: string): 'ipt' | 'thai' | 'kotc' {
-  const normalized = String(format || '').trim().toLowerCase();
-  if (normalized.includes('ipt')) return 'ipt';
-  if (normalized.includes('thai')) return 'thai';
-  return 'kotc';
-}
-
-function buildSudyamHref(tournament: Pick<Tournament, 'id' | 'format'>): string {
-  const format = normalizeJudgeFormat(tournament.format);
-  return `/sudyam?tournamentId=${encodeURIComponent(tournament.id)}&format=${encodeURIComponent(format)}`;
-}
 
 export default function AdminRosterPage() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -56,13 +35,8 @@ export default function AdminRosterPage() {
   }, []);
 
   async function loadParticipants(tid: string) {
-    if (!tid) {
-      setParticipants([]);
-      return;
-    }
-    const res = await fetch(`/api/admin/roster?tournamentId=${encodeURIComponent(tid)}`, {
-      cache: 'no-store',
-    });
+    if (!tid) { setParticipants([]); return; }
+    const res = await fetch(`/api/admin/roster?tournamentId=${encodeURIComponent(tid)}`, { cache: 'no-store' });
     setParticipants(await res.json().catch(() => []));
   }
 
@@ -107,27 +81,15 @@ export default function AdminRosterPage() {
         >
           <option value="">Выберите турнир</option>
           {tournaments.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} ({t.date}) - {t.status}
-            </option>
+            <option key={t.id} value={t.id}>{t.name} ({t.date}) — {t.status}</option>
           ))}
         </select>
       </div>
 
       {selectedT ? (
-        <div className="flex flex-wrap items-center gap-3 text-sm text-text-secondary">
-          <span>
-            Capacity: {main.length} / {selectedT.capacity}
-            {waitlist.length > 0 ? ` (+${waitlist.length} в ожидании)` : ''}
-          </span>
-          <a
-            href={buildSudyamHref(selectedT)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2 rounded-xl border border-brand/40 bg-brand/10 text-brand-light text-sm font-semibold"
-          >
-            Open in Sudyam
-          </a>
+        <div className="text-sm text-text-secondary">
+          Capacity: {main.length} / {selectedT.capacity}
+          {waitlist.length > 0 ? ` (+${waitlist.length} в ожидании)` : ''}
         </div>
       ) : null}
 
@@ -163,11 +125,7 @@ export default function AdminRosterPage() {
                   </tr>
                 ))}
                 {main.length === 0 ? (
-                  <tr>
-                    <td className="py-3 text-text-secondary" colSpan={4}>
-                      Пусто
-                    </td>
-                  </tr>
+                  <tr><td className="py-3 text-text-secondary" colSpan={4}>Пусто</td></tr>
                 ) : null}
               </tbody>
             </table>

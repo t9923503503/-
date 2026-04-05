@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import type { LeaderboardEntry } from '@/lib/types';
+import PlayerPhoto from '@/components/ui/PlayerPhoto';
 import type { HomeStats } from '@/lib/queries';
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -22,13 +22,7 @@ function PlayerAvatar({ entry, size }: { entry: LeaderboardEntry; size: 'lg' | '
   if (entry.photoUrl) {
     return (
       <div className={`${cls} relative overflow-hidden border-2 border-white/20 shadow-lg`}>
-        <Image
-          src={entry.photoUrl}
-          alt={entry.name}
-          width={s}
-          height={s}
-          className="object-cover w-full h-full"
-        />
+        <PlayerPhoto photoUrl={entry.photoUrl} alt={entry.name} width={s} height={s} />
       </div>
     );
   }

@@ -29,13 +29,12 @@ describe('thaiCalcCoef', () => {
   });
 
   test('coef for negative diffSum is below 1', () => {
-    // diffSum = -2 => (60-2)/(60+2) = 58/62
     expect(thaiCalcCoef([1, -3])).toBeCloseTo(58 / 62, 10);
   });
 
   test('coef protects division by zero near denom=0', () => {
     expect(thaiCalcCoef([60])).toBe(999.99);
-    expect(thaiCalcCoef([-60])).toBeCloseTo((60 - 60) / (60 + 60), 10); // 0/120=0
+    expect(thaiCalcCoef([-60])).toBeCloseTo(0 / 120, 10);
   });
 });
 
@@ -54,23 +53,23 @@ describe('thaiZeroSumMatch / thaiZeroSumTour', () => {
 });
 
 describe('thaiTiebreak comparator', () => {
-  test('sorts by wins desc, then diff desc, then pts desc', () => {
-    const a = { idx: 0, wins: 2, diff: 10, pts: 1, K: 1, balls: 1 };
-    const b = { idx: 1, wins: 3, diff: 0, pts: 999, K: 1, balls: 1 };
-    const sorted = [a, b].sort(thaiTiebreak);
-    expect(sorted[0].idx).toBe(1);
+  test('sorts by win percentage, then tournament points, then diff and ratio', () => {
+    const a = { idx: 0, wins: 2, rPlayed: 4, points: 7, diff: 10, pointRatio: 10 };
+    const b = { idx: 1, wins: 3, rPlayed: 4, points: 6, diff: -10, pointRatio: 0.5 };
+    const c = { idx: 2, wins: 2, rPlayed: 4, points: 6, diff: 20, pointRatio: 20 };
+    const sorted = [a, b, c].sort(thaiTiebreak);
+    expect(sorted.map((row) => row.idx)).toEqual([1, 0, 2]);
   });
 });
 
 describe('thaiCalcStandings', () => {
-  test('computes wins/diff/pts/K/balls and sorts properly', () => {
+  test('computes tournament points, ratios and primary ranking order', () => {
     const group = {
       players: [
-        // diffs: [2, -1, 0, 8] => pts: 1+0+0+3=4, wins:2, diff:9, balls:18
         { idx: 0, own: [3, 0, 5, 10], opp: [1, 1, 5, 2] },
-        // diffs: [1, 1, 0, 6] => pts: 1+1+0+2=4, wins:3, diff:8, balls:18
         { idx: 1, own: [2, 2, 5, 9], opp: [1, 1, 5, 3] },
       ],
+      playerKeys: ['A', 'B'],
     };
 
     const res = thaiCalcStandings(group);
@@ -79,26 +78,89 @@ describe('thaiCalcStandings', () => {
     expect(res[0].idx).toBe(1);
     expect(res[0].place).toBe(1);
     expect(res[0].wins).toBe(3);
-    expect(res[0].diff).toBe(8);
-    expect(res[0].pts).toBe(4);
+    expect(res[0].points).toBe(7);
+    expect(res[0].pts).toBe(7);
+    expect(res[0].winPercentage).toBeCloseTo(0.75, 10);
 
     expect(res[1].idx).toBe(0);
     expect(res[1].place).toBe(2);
     expect(res[1].wins).toBe(2);
+    expect(res[1].points).toBe(6);
+    expect(res[1].pointRatio).toBeCloseTo(2, 10);
   });
 
-  test('assigns tied places when all tie-break inputs match', () => {
-    const base = { idx: 0, own: [1, 1, 1, 7], opp: [0, 0, 1, 0] }; // diffs [1,1,0,7]
-    const group = {
-      players: [
-        base,
-        { idx: 1, own: [...base.own], opp: [...base.opp] },
+  test('uses direct head-to-head when two players tie on primary metrics', () => {
+    const res = thaiCalcStandings({
+      playerKeys: ['A', 'B'],
+      ownScores: [
+        [6, 4],
+        [4, 8],
       ],
-    };
-    const res = thaiCalcStandings(group);
-    expect(res[0].place).toBe(1);
-    expect(res[1].place).toBe(1);
-    expect(res[1].tied).toBe(true);
+      oppScores: [
+        [4, 6],
+        [6, 6],
+      ],
+      opponents: [
+        ['B', 'X'],
+        ['A', 'Y'],
+      ],
+    });
+
+    expect(res.map((row) => row.playerKey)).toEqual(['A', 'B']);
+    expect(res.meta.logs.some((entry) => entry.type === 'head_to_head')).toBe(true);
+  });
+
+  test('uses mini-league for 3-way ties and keeps logs', () => {
+    const res = thaiCalcStandings({
+      playerKeys: ['A', 'B', 'C'],
+      ownScores: [
+        [6, 4, 4, 2],
+        [3, 7, 4, 2],
+        [5, 4, 5, 2],
+      ],
+      oppScores: [
+        [3, 5, 3, 5],
+        [6, 4, 2, 4],
+        [4, 7, 2, 3],
+      ],
+      opponents: [
+        ['B', 'C', 'D1', 'D2'],
+        ['A', 'C', 'D3', 'D4'],
+        ['A', 'B', 'D5', 'D6'],
+      ],
+    });
+
+    expect(res.map((row) => row.playerKey)).toEqual(['A', 'B', 'C']);
+    expect(res[0].miniPointDiff).toBe(2);
+    expect(res.meta.logs.some((entry) => entry.type === 'mini_league')).toBe(true);
+  });
+
+  test('uses persisted draw orders for exact ties', () => {
+    const res = thaiCalcStandings({
+      playerKeys: ['A', 'B'],
+      ownScores: [
+        [5, 4],
+        [5, 4],
+      ],
+      oppScores: [
+        [3, 6],
+        [3, 6],
+      ],
+      opponents: [
+        ['X', 'Y'],
+        ['U', 'V'],
+      ],
+      drawGroups: {
+        'head-to-head-draw:A||B': {
+          A: 2,
+          B: 1,
+        },
+      },
+    });
+
+    expect(res.map((row) => row.playerKey)).toEqual(['B', 'A']);
+    expect(res[0].tiebreakerOrder).toBe(1);
+    expect(res[1].tiebreakerOrder).toBe(2);
+    expect(res.meta.logs.some((entry) => entry.type === 'draw')).toBe(true);
   });
 });
-

@@ -55,14 +55,17 @@ describe('Build smoke (Q3.1)', () => {
   it('main.js references split files, not old monoliths', () => {
     const main = readFileSync(resolve(ROOT, 'assets/js/main.js'), 'utf8');
     const scriptOrder = main.match(/const APP_SCRIPT_ORDER\s*=\s*\[([\s\S]*?)\];/)?.[1] || '';
+    const deferredOrder =
+      main.match(/const DEFERRED_APP_SCRIPT_ORDER\s*=\s*\[([\s\S]*?)\];/)?.[1] || '';
     expect(scriptOrder).not.toContain("'assets/js/screens/core.js'");
     expect(scriptOrder).not.toContain("'assets/js/screens/roster.js'");
     expect(scriptOrder).toContain('core-render.js');
     expect(scriptOrder).toContain('core-lifecycle.js');
     expect(scriptOrder).toContain('core-navigation.js');
-    expect(scriptOrder).toContain('roster-format-launcher.js');
-    expect(scriptOrder).toContain('roster-edit.js');
-    expect(scriptOrder).toContain('roster-list.js');
+    // Roster chain загружается после первичного бандла (DEFERRED_APP_SCRIPT_ORDER)
+    expect(deferredOrder).toContain('roster-format-launcher.js');
+    expect(deferredOrder).toContain('roster-edit.js');
+    expect(deferredOrder).toContain('roster-list.js');
   });
 
   // ── Vite dist output ──────────────────────────────────────

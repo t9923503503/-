@@ -188,9 +188,14 @@ function renderHome() {
           mode: thaiMeta.mode || 'MF',
           n: thaiMeta.n || 8,
           seed: thaiMeta.seed || 1,
+          courts: thaiMeta.courts,
+          tours: thaiMeta.tours,
           trnId: trn.id,
         })
-      : `formats/thai/thai.html?mode=${thaiMeta.mode||'MF'}&n=${thaiMeta.n||8}&seed=${thaiMeta.seed||1}&trnId=${encodeURIComponent(trn.id)}`;
+      : `formats/thai/thai.html?mode=${thaiMeta.mode||'MF'}&n=${thaiMeta.n||8}&seed=${thaiMeta.seed||1}`
+        + `${thaiMeta.courts != null ? `&courts=${encodeURIComponent(String(thaiMeta.courts))}` : ''}`
+        + `${thaiMeta.tours != null ? `&tours=${encodeURIComponent(String(thaiMeta.tours))}` : ''}`
+        + `&trnId=${encodeURIComponent(trn.id)}`;
     // A2.3: KOTC URL building
     const kotcMeta = trn.kotcMeta || {};
     const kotcHref = (globalThis.sharedFormatLinks && typeof globalThis.sharedFormatLinks.buildKotcFormatUrl === 'function')

@@ -67,12 +67,22 @@ async function _withRetry(fn, retries = 3, baseDelayMs = 400) {
 
 function _getBase() {
   try {
-    return (
-      (typeof globalThis.APP_CONFIG !== 'undefined' && globalThis.APP_CONFIG?.apiBase)
-      || (typeof globalThis.sbConfig !== 'undefined' && globalThis.sbConfig?.apiBase)
-      || ''
-    );
-  } catch (_) { return ''; }
+    const trim = (v) => String(v == null ? '' : v).replace(/\/$/, '');
+    const fromApp = typeof globalThis.APP_CONFIG !== 'undefined' && globalThis.APP_CONFIG?.apiBase;
+    if (fromApp != null && String(fromApp).trim()) return trim(fromApp);
+    const fromSbCfg = typeof globalThis.sbConfig !== 'undefined' && globalThis.sbConfig?.apiBase;
+    if (fromSbCfg != null && String(fromSbCfg).trim()) return trim(fromSbCfg);
+    const supabaseUrl =
+      typeof globalThis.APP_CONFIG !== 'undefined' && globalThis.APP_CONFIG?.supabaseUrl;
+    if (supabaseUrl != null && String(supabaseUrl).trim()) {
+      try {
+        return new URL(String(supabaseUrl).trim()).origin;
+      } catch (_) {
+        return trim(supabaseUrl);
+      }
+    }
+  } catch (_) { /* noop */ }
+  return '';
 }
 
 function _getAuthHeader() {

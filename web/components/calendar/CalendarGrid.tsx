@@ -1,13 +1,21 @@
 import EventCard, { groupTournaments } from './EventCard';
 import type { Tournament } from '@/lib/types';
 
-export default function CalendarGrid({ tournaments }: { tournaments: Tournament[] }) {
+export default function CalendarGrid({
+  tournaments,
+  emptyTitle = 'Пока нет турниров.',
+  emptyHint = 'Следи за обновлениями — скоро появятся новые события.',
+}: {
+  tournaments: Tournament[];
+  emptyTitle?: string;
+  emptyHint?: string;
+}) {
   if (!tournaments.length) {
     return (
       <div className="py-16 text-center">
-        <p className="font-body text-text-primary/80 text-lg">Пока нет турниров.</p>
+        <p className="font-body text-text-primary/80 text-lg">{emptyTitle}</p>
         <p className="mt-2 font-body text-text-primary/50 text-sm">
-          Следи за обновлениями — скоро появятся новые события.
+          {emptyHint}
         </p>
       </div>
     );

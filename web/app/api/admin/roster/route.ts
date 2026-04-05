@@ -9,12 +9,14 @@ import {
 import { writeAuditLog } from '@/lib/admin-audit';
 import { normalizeRosterInput, validateRosterInput } from '@/lib/admin-validators';
 import { adminErrorResponse } from '@/lib/admin-errors';
+import { isSudyamApproved } from '@/lib/kotc-live';
+import { notifyPlayerPromotedFromWaitlist } from '@/lib/tournament-notifications';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   const auth = requireApiRole(req, 'viewer');
-  if (!auth.ok) return auth.response;
+  if (!auth.ok && !isSudyamApproved(req)) return auth.response;
 
   try {
     const tournamentId = req.nextUrl.searchParams.get('tournamentId') || '';
@@ -63,6 +65,12 @@ export async function POST(req: NextRequest) {
         reason: input.reason || 'Admin removed player',
         afterState: { playerId: input.playerId, promotedPlayerId: result.promotedPlayerId },
       });
+      if (result.promotedPlayerId) {
+        await notifyPlayerPromotedFromWaitlist(
+          input.tournamentId,
+          result.promotedPlayerId
+        );
+      }
       return NextResponse.json(result);
     }
 
@@ -78,6 +86,7 @@ export async function POST(req: NextRequest) {
         reason: input.reason || 'Admin promoted from waitlist',
         afterState: { playerId: input.playerId },
       });
+      await notifyPlayerPromotedFromWaitlist(input.tournamentId, input.playerId);
       return NextResponse.json({ ok: true });
     }
 

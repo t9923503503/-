@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import type { Player, TournamentResult, RatingHistoryEntry } from '@/lib/types';
+import PlayerPhoto from '@/components/ui/PlayerPhoto';
 import type { PlayerExtendedStats } from '@/lib/queries';
 
 /* ── Helpers ─────────────────────────────────────── */
@@ -150,7 +150,12 @@ export default function EpicProfile({ player, stats, matches, ratingHistory, bac
               <div className="flex items-center gap-3">
                 {player.photoUrl ? (
                   <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 border-white/20 shadow-lg shrink-0">
-                    <Image src={player.photoUrl} alt={player.name} width={80} height={80} className="object-cover w-full h-full" />
+                    <PlayerPhoto
+                      photoUrl={player.photoUrl}
+                      alt={player.name}
+                      width={80}
+                      height={80}
+                    />
                   </div>
                 ) : (
                   <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-brand to-[#FFD700] flex items-center justify-center text-3xl font-heading text-white shadow-lg shrink-0">

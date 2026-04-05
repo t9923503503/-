@@ -1,26 +1,35 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { adminErrorResponse } from '../../web/lib/admin-errors.ts';
 
-describe('admin error response mapping', () => {
-  beforeEach(() => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-  });
+async function readJson(response) {
+  return response.json();
+}
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+describe('adminErrorResponse', () => {
+  it('maps tournament check constraint failures to 400 responses', async () => {
+    const capacity = adminErrorResponse(
+      new Error('new row for relation "tournaments" violates check constraint "tournaments_capacity_check"'),
+      'tournaments.post'
+    );
+    expect(capacity.status).toBe(400);
+    await expect(readJson(capacity)).resolves.toEqual({ error: 'Capacity must be at least 4' });
 
-  it('maps missing DATABASE_URL to 503', async () => {
-    const res = adminErrorResponse(new Error('Missing DATABASE_URL env var'), 'ctx');
-    expect(res.status).toBe(503);
-    const json = await res.json();
-    expect(json.error).toBe('Database is not configured');
-  });
+    const division = adminErrorResponse(
+      new Error('new row for relation "tournaments" violates check constraint "tournaments_division_check"'),
+      'tournaments.post'
+    );
+    expect(division.status).toBe(400);
+    await expect(readJson(division)).resolves.toEqual({
+      error: 'Division must be Мужской, Женский, or Микст',
+    });
 
-  it('maps unknown errors to 500', async () => {
-    const res = adminErrorResponse(new Error('boom'), 'ctx');
-    expect(res.status).toBe(500);
-    const json = await res.json();
-    expect(json.error).toBe('Internal error');
+    const level = adminErrorResponse(
+      new Error('new row for relation "tournaments" violates check constraint "tournaments_level_check"'),
+      'tournaments.post'
+    );
+    expect(level.status).toBe(400);
+    await expect(readJson(level)).resolves.toEqual({
+      error: 'Level must be hard, medium, or easy',
+    });
   });
 });

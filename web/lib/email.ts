@@ -17,6 +17,33 @@ function getTransporter(): nodemailer.Transporter {
   return transporter;
 }
 
+export async function sendAppEmail({
+  to,
+  subject,
+  html,
+}: {
+  to: string | null | undefined;
+  subject: string;
+  html: string;
+}): Promise<boolean> {
+  const target = String(to || '').trim();
+  if (!target) return false;
+
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@lpvolley.ru';
+
+  try {
+    await getTransporter().sendMail({
+      from: `"Лютые Пляжники" <${from}>`,
+      to: target,
+      subject,
+      html,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function sendResetEmail(to: string, token: string): Promise<void> {
   const resetUrl = `https://lpvolley.ru/play/index.html?route=reset&token=${token}`;
   const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@lpvolley.ru';

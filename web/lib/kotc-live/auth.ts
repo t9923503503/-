@@ -1,23 +1,17 @@
 import { NextRequest } from 'next/server';
 import { COOKIE_NAME } from '@/lib/auth';
+import { getExpectedJudgePin } from '@/lib/judge-pin';
 import { verifySeatToken } from './token';
 import { SeatTokenPayload } from './types';
-
-const FALLBACK_SUDYAM_PIN = '7319';
-
-function getExpectedSudyamPin(): string {
-  const configured = String(process.env.SUDYAM_PIN || '').trim();
-  if (configured) return configured;
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('SUDYAM_PIN env var is required in production');
-  }
-  return FALLBACK_SUDYAM_PIN;
-}
 
 export function isSudyamApproved(req: NextRequest): boolean {
   const token = req.cookies.get(COOKIE_NAME)?.value;
   if (!token) return false;
-  return token === getExpectedSudyamPin();
+  try {
+    return token === getExpectedJudgePin();
+  } catch {
+    return false;
+  }
 }
 
 export function readSeatTokenFromRequest(req: NextRequest): string | null {

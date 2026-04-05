@@ -25,6 +25,7 @@ const _SYNC_DEBOUNCE_PLR = 3000;   // 3s после savePlayerDB
 const _SYNC_RETRY_DELAY  = 30000;  // 30s пауза после ошибки сети
 
 let _syncEnabled    = false;
+let _syncWriteEnabled = false;
 let _syncApiBase    = '';
 let _syncHeaders    = {};
 let _syncTrnTimer   = null;
@@ -35,21 +36,25 @@ let _syncLastError  = 0;
 
 function kotcSyncInit() {
   const cfg = window.APP_CONFIG;
-  if (!cfg || !cfg.supabaseUrl || !cfg.supabaseAnonKey) return; // нет конфига — только localStorage
+  if (!cfg || !cfg.supabaseUrl) return; // нет API — только localStorage
 
-  // supabaseUrl = 'https://sv-ugra.ru/api'  →  PostgREST = .../rest/v1
+  // supabaseUrl = 'https://lpvolley.ru/api'  →  PostgREST = .../rest/v1
   let base = cfg.supabaseUrl.replace(/\/$/, '');
   if (!base.endsWith('/rest/v1')) base += '/rest/v1';
   _syncApiBase = base;
 
   _syncHeaders = {
     'Content-Type':  'application/json',
-    'apikey':        cfg.supabaseAnonKey,
-    'Authorization': 'Bearer ' + cfg.supabaseAnonKey,
   };
+  const anonKey = String(cfg.supabaseAnonKey || '').trim();
+  _syncWriteEnabled = true;
+  if (anonKey) {
+    _syncHeaders.apikey = anonKey;
+    _syncHeaders.Authorization = 'Bearer ' + anonKey;
+  }
   _syncEnabled = true;
 
-  console.log('[kotc-sync] ✓ enabled →', _syncApiBase);
+  console.log('[kotc-sync] ✓ enabled →', _syncApiBase, _syncWriteEnabled ? '(rw)' : '(read-only)');
 
   // Патчим глобальные функции сохранения
   _patchSaveTournaments();
@@ -95,6 +100,23 @@ function kotcSyncSchedulePlayers() {
   _syncPlrTimer = setTimeout(_doSyncPlayers, _SYNC_DEBOUNCE_PLR);
 }
 
+function _shouldReplaceTournamentFromDB(localTournament, remoteTournament) {
+  if (!localTournament) return true;
+  if (remoteTournament?.source !== 'admin') return false;
+
+  const localGroups = Array.isArray(localTournament?.ipt?.groups) ? localTournament.ipt.groups.length : 0;
+  const remoteGroups = Array.isArray(remoteTournament?.ipt?.groups) ? remoteTournament.ipt.groups.length : 0;
+  const localWinners = Array.isArray(localTournament?.winners) ? localTournament.winners.length : 0;
+  const remoteWinners = Array.isArray(remoteTournament?.winners) ? remoteTournament.winners.length : 0;
+  const localHistory = Array.isArray(localTournament?.history) ? localTournament.history.length : 0;
+  const remoteHistory = Array.isArray(remoteTournament?.history) ? remoteTournament.history.length : 0;
+
+  if (localTournament?.status === 'active' && remoteTournament?.status !== 'active') return false;
+  if (localGroups > remoteGroups || localWinners > remoteWinners || localHistory > remoteHistory) return false;
+
+  return true;
+}
+
 // ── Загрузка из БД при старте ────────────────────────────────────
 
 async function kotcSyncLoadFromDB() {
@@ -121,17 +143,28 @@ async function kotcSyncLoadFromDB() {
     // Мерж турниров: добавляем только те, которых нет локально
     if (trnRows.length) {
       const local    = getTournaments();
-      const localSet = new Set(local.map(t => t.id));
+      const localMap = new Map(local.map((t, index) => [t.id, index]));
       let added = 0;
+      let replaced = 0;
       trnRows.forEach(row => {
         const t = row.game_state;
         if (!t || !t.id) return;
-        if (!localSet.has(t.id)) { local.push(t); added++; }
+        const localIdx = localMap.get(t.id);
+        if (localIdx == null) {
+          local.push(t);
+          localMap.set(t.id, local.length - 1);
+          added++;
+          return;
+        }
+        if (_shouldReplaceTournamentFromDB(local[localIdx], t)) {
+          local[localIdx] = t;
+          replaced++;
+        }
       });
-      if (added) {
+      if (added || replaced) {
         _origSaveTournamentsFn(local);
         anyChanged = true;
-        console.log('[kotc-sync] +' + added + ' tournaments from DB');
+        console.log('[kotc-sync] +' + added + ' / ~' + replaced + ' tournaments from DB');
       }
     }
 
@@ -139,24 +172,35 @@ async function kotcSyncLoadFromDB() {
     if (playerRow && Array.isArray(playerRow.game_state?.players)) {
       const dbPlayers = playerRow.game_state.players;
       const local     = loadPlayerDB();
-      const localSet  = new Set(local.map(p => String(p.id)));
+      const localMap  = new Map(local.map((p, index) => [String(p.id), index]));
       let added = 0;
+      let replaced = 0;
       dbPlayers.forEach(p => {
         if (!p || !p.id) return;
-        if (!localSet.has(String(p.id))) {
-          const c = fromLocalPlayer(p);
-          if (c && c.name) { local.push(c); added++; }
+        const c = fromLocalPlayer(p);
+        if (!c || !c.name) return;
+        const localIdx = localMap.get(String(p.id));
+        if (localIdx == null) {
+          local.push(c);
+          localMap.set(String(p.id), local.length - 1);
+          added++;
+          return;
         }
+        local[localIdx] = c;
+        replaced++;
       });
-      if (added) {
+      if (added || replaced) {
         _origSavePlayerDBFn(local);
         anyChanged = true;
-        console.log('[kotc-sync] +' + added + ' players from DB');
+        console.log('[kotc-sync] +' + added + ' / ~' + replaced + ' players from DB');
       }
     }
 
     if (anyChanged && typeof buildAll === 'function') {
       try { buildAll(); } catch(_) {}
+    }
+    if (typeof globalThis.tryAutoLaunchLegacyTournament === 'function') {
+      try { globalThis.tryAutoLaunchLegacyTournament(); } catch (_) {}
     }
   } catch(e) {
     console.warn('[kotc-sync] load error:', e);
@@ -164,6 +208,14 @@ async function kotcSyncLoadFromDB() {
 }
 
 // ── Upsert турниров ──────────────────────────────────────────────
+
+function _normalizeTournamentStatusForDb(status) {
+  const value = String(status || '').trim().toLowerCase();
+  if (value === 'finished') return 'finished';
+  if (value === 'full' || value === 'filled') return 'full';
+  if (value === 'cancelled' || value === 'canceled') return 'cancelled';
+  return 'open';
+}
 
 async function _doSyncTournaments() {
   if (!_syncEnabled) return;
@@ -174,7 +226,7 @@ async function _doSyncTournaments() {
     external_id: t.id,
     name:        (t.name   || '').slice(0, 200),
     date:        t.date    || null,
-    status:      t.status  || 'open',
+    status:      _normalizeTournamentStatusForDb(t.status),
     format:      (t.format || '').slice(0, 100),
     game_state:  t,
     synced_at:   new Date().toISOString(),

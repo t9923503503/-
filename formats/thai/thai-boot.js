@@ -1,6 +1,6 @@
 // ── A1.1: Import shared modules ───────────────────────
 import { esc, showToast, formatRuDate } from '../../shared/utils.js';
-import { loadPlayerDB, searchPlayers, getPlayerById } from '../../shared/players.js';
+import { loadPlayerDB, savePlayerDB, searchPlayers, getPlayerById } from '../../shared/players.js';
 import { createTimer, formatTime } from '../../shared/timer.js';
 import { CrossTable, StandingsTable, injectTableCSS } from '../../shared/table.js';
 import { injectUiKitCSS } from '../../shared/ui-kit.js';
@@ -35,11 +35,23 @@ injectUiKitCSS();
 // ════════════════════════════════════════════════════════
 // A1.1: Parse URL params → session config
 // ════════════════════════════════════════════════════════
+// Courts / tours задаются только через query (?courts=&tours=) или лаунчер
+// (shared/format-links.js, home / roster). Внутри thai.html отдельных слайдеров
+// для смены сетки нет — другие значения = новый URL (другой trnId при конфликте сессии).
 const _params = new URLSearchParams(location.search);
-const _mode   = (['MF','MM','WW'].includes(_params.get('mode')) ? _params.get('mode') : 'MF');
-const _n      = ([8, 10].includes(Number(_params.get('n'))) ? Number(_params.get('n')) : 8);
+let _mode   = (['MF','MN','MM','WW'].includes(_params.get('mode')) ? _params.get('mode') : 'MF');
+const _rawN   = Number(_params.get('n'));
+let _n      = (_rawN >= 4 && _rawN % 2 === 0) ? _rawN : 8;
 const _seed   = parseInt(_params.get('seed') || '1', 10) || 1;
-const _trnId  = _params.get('trnId') || ('thai_' + _mode + '_' + _n + '_' + _seed);
+const _rawCourts = Number(_params.get('courts'));
+let _courts = (Number.isInteger(_rawCourts) && _rawCourts >= 1) ? _rawCourts : null;
+const _rawTours = Number(_params.get('tours'));
+let _tours  = (Number.isInteger(_rawTours) && _rawTours >= 1) ? _rawTours : null;
+const _trnIdSuffix = [
+  _courts != null ? ('c' + _courts) : '',
+  _tours != null ? ('t' + _tours) : '',
+].filter(Boolean).join('_');
+const _trnId  = _params.get('trnId') || ('thai_' + _mode + '_' + _n + '_' + _seed + (_trnIdSuffix ? '_' + _trnIdSuffix : ''));
 
 // ── Session storage key ───────────────────────────────
 const _STORE_KEY = 'kotc3_thai_session_' + _trnId;
@@ -52,6 +64,226 @@ let _activeTour = 0;
 let _activeGroup = 0;
 let _activePanel = 'roster'; // 'roster'|'courts'|'standings'|'r2'|'finished'
 let _scoreView = 'score'; // 'score'|'diff'
+let _bootstrapParticipants = null; // roster prefill from /api/sudyam/bootstrap
+
+function _isDualPoolMode(mode = _mode) {
+  return mode === 'MF' || mode === 'MN';
+}
+
+function _getModeLabel(mode = _mode) {
+  return {
+    MF: 'Микст М/Ж',
+    MN: 'Мужчины / Новички',
+    MM: 'Мужской',
+    WW: 'Женский',
+  }[mode] || mode;
+}
+
+function _getPoolConfigs() {
+  if (_isDualPoolMode()) {
+    return [
+      { key: 'left', label: '♂ Мужчины', shortLabel: 'Мужчины', ids: _session?.playersM || [], playerGender: 'M', restShort: 'М' },
+      { key: 'right', label: _mode === 'MN' ? '🆕 Новички' : '♀ Женщины', shortLabel: _mode === 'MN' ? 'Новички' : 'Женщины', ids: _session?.playersW || [], playerGender: _mode === 'MN' ? 'M' : 'W', restShort: _mode === 'MN' ? 'Н' : 'Ж' },
+    ];
+  }
+  if (_mode === 'WW') {
+    return [{ key: 'solo', label: '♀ Игроки', shortLabel: 'Игроки', ids: _session?.playersW || [], playerGender: 'W', restShort: 'Ж' }];
+  }
+  return [{ key: 'solo', label: '♂ Игроки', shortLabel: 'Игроки', ids: _session?.playersM || [], playerGender: 'M', restShort: 'М' }];
+}
+
+function _getRequiredRosterCounts(mode = _mode) {
+  if (_isDualPoolMode(mode)) return { needM: _n, needW: _n };
+  if (mode === 'MM') return { needM: _n, needW: 0 };
+  if (mode === 'WW') return { needM: 0, needW: _n };
+  return { needM: _n, needW: _n };
+}
+
+function _getActivePoolConfigs() {
+  return _getPoolConfigs().filter(pool => Array.isArray(pool.ids) && pool.ids.length > 0);
+}
+
+function _buildRosterSelectionFromParticipants(participants) {
+  const rows = Array.isArray(participants) ? participants.filter(row => !row?.isWaitlist) : [];
+  const required = _getRequiredRosterCounts();
+
+  if (_mode === 'MN') {
+    const menIds = [];
+    const womenIds = [];
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index];
+      if (!row?.playerId || String(row.gender || '').toUpperCase() !== 'M') continue;
+      if ((index % 8) < 4) menIds.push(String(row.playerId));
+      else womenIds.push(String(row.playerId));
+    }
+    if (menIds.length === required.needM && womenIds.length === required.needW) {
+      return { menIds, womenIds };
+    }
+    return null;
+  }
+
+  if (_mode === 'MF') {
+    const menIds = rows
+      .filter(row => String(row?.gender || '').toUpperCase() === 'M' && row?.playerId)
+      .map(row => String(row.playerId));
+    const womenIds = rows
+      .filter(row => String(row?.gender || '').toUpperCase() === 'W' && row?.playerId)
+      .map(row => String(row.playerId));
+    if (menIds.length === required.needM && womenIds.length === required.needW) {
+      return { menIds, womenIds };
+    }
+    return null;
+  }
+
+  if (_mode === 'MM') {
+    const menIds = rows
+      .filter(row => String(row?.gender || '').toUpperCase() === 'M' && row?.playerId)
+      .map(row => String(row.playerId));
+    if (menIds.length === required.needM) return { menIds, womenIds: [] };
+    return null;
+  }
+
+  if (_mode === 'WW') {
+    const womenIds = rows
+      .filter(row => String(row?.gender || '').toUpperCase() === 'W' && row?.playerId)
+      .map(row => String(row.playerId));
+    if (womenIds.length === required.needW) return { menIds: [], womenIds };
+    return null;
+  }
+
+  return null;
+}
+
+function _mergeParticipantsIntoLocalPlayerDb(participants) {
+  const rows = Array.isArray(participants) ? participants : [];
+  if (!rows.length) return;
+
+  const db = Array.isArray(loadPlayerDB()) ? loadPlayerDB().slice() : [];
+  const byId = new Map(db.map(player => [String(player?.id || ''), player]));
+  let changed = false;
+
+  for (const row of rows) {
+    const playerId = String(row?.playerId || '').trim();
+    if (!playerId) continue;
+    const playerName = String(row?.playerName || playerId).trim();
+    const gender = String(row?.gender || '').trim().toUpperCase() === 'W' ? 'W' : 'M';
+    const existing = byId.get(playerId);
+    if (existing) {
+      if (playerName && existing.name !== playerName) {
+        existing.name = playerName;
+        changed = true;
+      }
+      if ((existing.gender || 'M') !== gender) {
+        existing.gender = gender;
+        changed = true;
+      }
+      continue;
+    }
+    const created = {
+      id: playerId,
+      name: playerName,
+      gender,
+      status: 'active',
+      addedAt: new Date().toISOString().split('T')[0],
+      tournaments: 0,
+      totalPts: 0,
+      wins: 0,
+      ratingM: 0,
+      ratingW: 0,
+      ratingMix: 0,
+      tournamentsM: 0,
+      tournamentsW: 0,
+      tournamentsMix: 0,
+      lastSeen: '',
+    };
+    db.push(created);
+    byId.set(playerId, created);
+    changed = true;
+  }
+
+  if (changed) savePlayerDB(db);
+}
+
+function _resolveInitialRosterFromLocalTournament() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('kotc3_tournaments') || '[]');
+    const tournaments = Array.isArray(raw) ? raw : [];
+    const record = tournaments.find(item => String(item?.id || '') === _trnId);
+    if (!record || typeof record !== 'object') return null;
+
+    const meta = record.thaiMeta && typeof record.thaiMeta === 'object' ? record.thaiMeta : {};
+    const required = _getRequiredRosterCounts();
+    const prefillMenIds = Array.isArray(meta.prefillMenIds) ? meta.prefillMenIds.map(id => String(id)) : [];
+    const prefillWomenIds = Array.isArray(meta.prefillWomenIds) ? meta.prefillWomenIds.map(id => String(id)) : [];
+    if (prefillMenIds.length === required.needM && prefillWomenIds.length === required.needW) {
+      return { menIds: prefillMenIds, womenIds: prefillWomenIds, source: 'local' };
+    }
+
+    const participantIds = Array.isArray(record.participants) ? record.participants.map(id => String(id)) : [];
+    if (!participantIds.length) return null;
+
+    const db = Array.isArray(loadPlayerDB()) ? loadPlayerDB() : [];
+    const participantRows = participantIds.map((playerId, index) => {
+      const player = db.find(entry => String(entry?.id || '') === playerId);
+      return {
+        playerId,
+        playerName: player?.name || playerId,
+        gender: player?.gender || (_mode === 'WW' ? 'W' : 'M'),
+        position: index + 1,
+      };
+    });
+
+    if (_mode === 'MN') {
+      const menIds = participantIds.slice(0, required.needM);
+      const womenIds = participantIds.slice(required.needM, required.needM + required.needW);
+      if (menIds.length === required.needM && womenIds.length === required.needW) {
+        return { menIds, womenIds, source: 'local' };
+      }
+      return null;
+    }
+
+    const selection = _buildRosterSelectionFromParticipants(participantRows);
+    return selection ? { ...selection, source: 'local' } : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function _resolveInitialRosterSelection() {
+  const required = _getRequiredRosterCounts();
+  const currentMen = Array.isArray(_session?.playersM) ? _session.playersM : [];
+  const currentWomen = Array.isArray(_session?.playersW) ? _session.playersW : [];
+  if (currentMen.length === required.needM && currentWomen.length === required.needW) {
+    return { menIds: currentMen.slice(), womenIds: currentWomen.slice(), source: 'session' };
+  }
+
+  const localSelection = _resolveInitialRosterFromLocalTournament();
+  if (localSelection) return localSelection;
+
+  if (_bootstrapParticipants && _bootstrapParticipants.length > 0) {
+    _mergeParticipantsIntoLocalPlayerDb(_bootstrapParticipants);
+    const selection = _buildRosterSelectionFromParticipants(_bootstrapParticipants);
+    if (selection) return { ...selection, source: 'admin' };
+  }
+
+  if (!_trnId || /^thai_/i.test(_trnId)) return null;
+
+  try {
+    const res = await fetch(`/api/admin/roster?tournamentId=${encodeURIComponent(_trnId)}`, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => []);
+    const rows = Array.isArray(data) ? data : [];
+    _mergeParticipantsIntoLocalPlayerDb(rows);
+    const selection = _buildRosterSelectionFromParticipants(rows);
+    if (!selection) return null;
+    return { ...selection, source: 'admin' };
+  } catch (_) {
+    return null;
+  }
+}
 
 function _splitInlineArgs(source) {
   const args = [];
@@ -135,24 +367,24 @@ function _invokeInlineSource(source, element, event) {
 
 function _installInlineEventBridge() {
   document.addEventListener('click', (event) => {
-    const el = event.target instanceof Element ? event.target.closest('[onclick]') : null;
+    const el = event.target instanceof Element ? event.target.closest('[data-click],[onclick]') : null;
     if (!el) return;
-    const source = el.getAttribute('onclick');
+    const source = el.getAttribute('data-click') || el.getAttribute('onclick');
     if (_invokeInlineSource(source, el, event)) {
       event.preventDefault();
     }
   });
 
   document.addEventListener('input', (event) => {
-    const el = event.target instanceof Element ? event.target.closest('[oninput]') : null;
+    const el = event.target instanceof Element ? event.target.closest('[data-input],[oninput]') : null;
     if (!el) return;
-    _invokeInlineSource(el.getAttribute('oninput'), el, event);
+    _invokeInlineSource(el.getAttribute('data-input') || el.getAttribute('oninput'), el, event);
   });
 
   document.addEventListener('change', (event) => {
-    const el = event.target instanceof Element ? event.target.closest('[onchange]') : null;
+    const el = event.target instanceof Element ? event.target.closest('[data-change],[onchange]') : null;
     if (!el) return;
-    _invokeInlineSource(el.getAttribute('onchange'), el, event);
+    _invokeInlineSource(el.getAttribute('data-change') || el.getAttribute('onchange'), el, event);
   });
 }
 
@@ -164,10 +396,66 @@ function _loadSession() {
   return null;
 }
 
+function _buildSessionSyncPayload() {
+  if (!_session) return null;
+  const meta = _currentTournamentMeta();
+  return {
+    id: _trnId,
+    format: 'Thai Mixed',
+    mode: meta.mode,
+    n: meta.n,
+    courts: meta.courts,
+    tours: meta.tours,
+    seed: _seed,
+    status: _session.finalized ? 'finished' : (_session.phase || 'active'),
+    updatedAt: new Date().toISOString(),
+    meta,
+    session: _session,
+  };
+}
+
 function _saveSession() {
   try {
     if (_session) localStorage.setItem(_STORE_KEY, JSON.stringify(_session));
   } catch (_) {}
+  try {
+    const payload = _buildSessionSyncPayload();
+    if (payload && typeof syncTournamentAsync === 'function') syncTournamentAsync(payload);
+  } catch (_) {}
+}
+
+function _resolveTournamentMeta(source) {
+  const session = source && typeof source === 'object' ? source : null;
+  const schedule = Array.isArray(session?.schedule) ? session.schedule : null;
+  const scheduleMeta = schedule?.meta && typeof schedule.meta === 'object' ? schedule.meta : null;
+  const sessionMeta = session?.meta && typeof session.meta === 'object' ? session.meta : null;
+  const courts = Number(scheduleMeta?.courts ?? sessionMeta?.courts ?? session?.courts);
+  const tours = Number(scheduleMeta?.tours ?? sessionMeta?.tours ?? session?.tours);
+  const n = Number(scheduleMeta?.n ?? sessionMeta?.n ?? session?.n ?? _n);
+  return {
+    mode: String(scheduleMeta?.mode ?? sessionMeta?.mode ?? session?.mode ?? _mode).toUpperCase(),
+    n: Number.isFinite(n) ? n : _n,
+    courts: Number.isFinite(courts) && courts > 0
+      ? courts
+      : (Array.isArray(schedule?.[0]?.pairs) ? schedule[0].pairs.length : 4),
+    tours: Number.isFinite(tours) && tours > 0
+      ? tours
+      : (Array.isArray(schedule) ? schedule.length : 4),
+  };
+}
+
+function _currentTournamentMeta() {
+  return _resolveTournamentMeta(_session);
+}
+
+function _currentTournamentLine() {
+  const meta = _currentTournamentMeta();
+  const modeLabel = _getModeLabel();
+  return `${modeLabel} · ${meta.n} игр. · courts ${meta.courts} · tours ${meta.tours} · seed ${_seed}`;
+}
+
+function _sessionDate() {
+  return (_session?.createdAt || new Date().toISOString()).slice(0, 10);
 }
 
 // ════════════════════════════════════════════════════════
@@ -175,21 +463,35 @@ function _saveSession() {
 // ════════════════════════════════════════════════════════
 function _initSession() {
   const saved = _loadSession();
-  if (saved && saved.mode === _mode && saved.n === _n && saved.seed === _seed) {
+  const savedMeta = _resolveTournamentMeta(saved);
+  const courtsMatch = _courts == null || savedMeta.courts === _courts;
+  const toursMatch = _tours == null || savedMeta.tours === _tours;
+  if (saved && saved.mode === _mode && saved.n === _n && saved.seed === _seed && courtsMatch && toursMatch) {
+    // Migrate old sessions that lack courts/tours fields
+    saved.courts = savedMeta.courts;
+    saved.tours = savedMeta.tours;
+    saved.meta = { mode: savedMeta.mode, n: savedMeta.n, courts: savedMeta.courts, tours: savedMeta.tours };
+    if (saved.schedule && (!saved.schedule.meta || saved.schedule.meta.courts == null || saved.schedule.meta.tours == null)) {
+      saved.schedule.meta = { ...saved.meta };
+    }
     _session = saved;
     return;
   }
   // Generate new schedule
-  const schedule = thaiGenerateSchedule({ mode: _mode, men: _n, women: _n, seed: _seed });
+  const schedule = thaiGenerateSchedule({ mode: _mode, men: _n, women: _n, seed: _seed, courts: _courts, tours: _tours });
   const validation = thaiValidateSchedule(schedule);
   if (!validation.valid) {
     console.error('[Thai] Schedule validation failed:', validation.errors);
   }
+  const meta = _resolveTournamentMeta({ mode: _mode, n: _n, courts: schedule.meta?.courts, tours: schedule.meta?.tours, schedule });
   _session = {
     id: _trnId,
     mode: _mode,
     n: _n,
     seed: _seed,
+    courts: meta.courts,
+    tours: meta.tours,
+    meta: { mode: meta.mode, n: meta.n, courts: meta.courts, tours: meta.tours },
     schedule,
     phase: 'roster',   // 'roster' | 'r1' | 'r2' | 'finished'
     currentTour: 0,
@@ -230,7 +532,7 @@ function _renderTourTabs() {
     const active = i === _activeTour;
     return `<button class="pill-tab${active ? ' active' : ''}${done ? ' done' : ''}"
       role="tab" aria-selected="${active}"
-      onclick="window._thaiGoTour(${i})">Тур ${i + 1}</button>`;
+      data-click="window._thaiGoTour(${i})">Тур ${i + 1}</button>`;
   }).join('');
 }
 
@@ -254,7 +556,7 @@ function _playerName(side, idx) {
   // side: 0 = left (men / playerA), 1 = right (women / playerB)
   const ids = (side === 0)
     ? (_session?.playersM || [])
-    : (_mode === 'MF' ? (_session?.playersW || []) : (_session?.playersM || []));
+    : (_isDualPoolMode() ? (_session?.playersW || []) : (_mode === 'WW' ? (_session?.playersW || []) : (_session?.playersM || [])));
   const id = ids[idx];
   if (!id) return `#${idx}`;
   const p = getPlayerById(id);
@@ -263,7 +565,7 @@ function _playerName(side, idx) {
 
 /** Get pair names for a match. */
 function _pairNames(pair) {
-  if (_mode === 'MF') {
+  if (_isDualPoolMode()) {
     return { left: _playerName(0, pair[0]), right: _playerName(1, pair[1]) };
   }
   // MM or WW — both from same pool
@@ -285,7 +587,7 @@ function _renderRestBadges() {
   }
   const pairs = tour.pairs || [];
 
-  if (_mode === 'MF') {
+  if (_isDualPoolMode()) {
     const menIds = _session.playersM || [];
     const womenIds = _session.playersW || [];
 
@@ -319,7 +621,7 @@ function _renderRestBadges() {
     }
     if (womenNames.length) {
       const s = womenNames.map(x => esc(x)).join(', ');
-      parts.push(`<span class="thai-rest-badge thai-rest-women">😴 Ж: <span class="thai-rest-strong">${s}</span></span>`);
+      parts.push(`<span class="thai-rest-badge thai-rest-women">😴 ${_mode === 'MN' ? 'Н' : 'Ж'}: <span class="thai-rest-strong">${s}</span></span>`);
     }
 
     el.innerHTML = parts.length ? parts.join('') : '';
@@ -382,13 +684,13 @@ function _renderCourts() {
           <span class="thai-diff-big ${diffBigCls}">${diffBigVal}</span>
         </div>`
       : `<div class="thai-score-col">
-          <button class="${btnCls}" onclick="window._thaiScore(${pi},'own',-1)"${disabled}>−</button>
+          <button class="${btnCls}" data-click="window._thaiScore(${pi},'own',-1)"${disabled}>−</button>
           <span class="thai-sc-val" id="thai-own-${pi}">${own}</span>
-          <button class="${btnCls}" onclick="window._thaiScore(${pi},'own',1)"${disabled}>+</button>
+          <button class="${btnCls}" data-click="window._thaiScore(${pi},'own',1)"${disabled}>+</button>
           <span class="thai-sc-sep">:</span>
-          <button class="${btnCls}" onclick="window._thaiScore(${pi},'opp',-1)"${disabled}>−</button>
+          <button class="${btnCls}" data-click="window._thaiScore(${pi},'opp',-1)"${disabled}>−</button>
           <span class="thai-sc-val" id="thai-opp-${pi}">${opp}</span>
-          <button class="${btnCls}" onclick="window._thaiScore(${pi},'opp',1)"${disabled}>+</button>
+          <button class="${btnCls}" data-click="window._thaiScore(${pi},'opp',1)"${disabled}>+</button>
         </div>`;
 
     const badgesBlock = _scoreView === 'diff'
@@ -418,6 +720,185 @@ function _renderCourts() {
   _renderActionBar();
 }
 
+function _rankingPoolKey(stage, playerIds) {
+  if (_isDualPoolMode()) return `${stage}:${playerIds === _session?.playersM ? 'left' : 'right'}`;
+  return `${stage}:${_mode === 'MM' ? 'men' : 'women'}`;
+}
+
+function _ensureRankingState() {
+  if (!_session.r1RankingState || typeof _session.r1RankingState !== 'object') {
+    _session.r1RankingState = { drawGroups: {}, logs: {}, manualActions: [] };
+  }
+  if (!_session.r1RankingState.drawGroups || typeof _session.r1RankingState.drawGroups !== 'object') {
+    _session.r1RankingState.drawGroups = {};
+  }
+  if (!_session.r1RankingState.logs || typeof _session.r1RankingState.logs !== 'object') {
+    _session.r1RankingState.logs = {};
+  }
+  if (!Array.isArray(_session.r1RankingState.manualActions)) {
+    _session.r1RankingState.manualActions = [];
+  }
+  return _session.r1RankingState;
+}
+
+function _persistRankingMeta(poolKey, meta) {
+  if (!_session) return;
+  const rankingState = _ensureRankingState();
+  const nextDrawGroups = {
+    ...(rankingState.drawGroups?.[poolKey] || {}),
+    ...(meta?.drawGroups || {}),
+  };
+  const nextLogs = Array.isArray(meta?.logs) ? meta.logs : [];
+  const prevDrawJson = JSON.stringify(rankingState.drawGroups?.[poolKey] || {});
+  const nextDrawJson = JSON.stringify(nextDrawGroups);
+  const prevLogsJson = JSON.stringify(rankingState.logs?.[poolKey] || []);
+  const nextLogsJson = JSON.stringify(nextLogs);
+  if (prevDrawJson === nextDrawJson && prevLogsJson === nextLogsJson) return;
+
+  rankingState.drawGroups[poolKey] = nextDrawGroups;
+  rankingState.logs[poolKey] = nextLogs;
+  if (nextLogs.length) console.info('[Thai ranking]', poolKey, nextLogs);
+  _saveSession();
+}
+
+function _finalizePoolStandings(stage, playerIds, ownScores, oppScores, opponents) {
+  if (!_session || !playerIds || !playerIds.length) return [];
+  const poolKey = _rankingPoolKey(stage, playerIds);
+  const rankingState = _ensureRankingState();
+  const standings = thaiCalcStandings({
+    ownScores,
+    oppScores,
+    opponents,
+    playerKeys: playerIds,
+    drawGroups: rankingState.drawGroups?.[poolKey] || {},
+    drawSeed: `${_trnId}:${poolKey}`,
+  });
+
+  _persistRankingMeta(poolKey, standings.meta);
+  standings.forEach((standing) => {
+    const id = playerIds[standing.idx];
+    const player = id != null ? getPlayerById(id) : null;
+    standing.name = player ? player.name : (id != null ? id : ('#' + standing.idx));
+    standing.playerId = id || '';
+  });
+  return standings;
+}
+
+function _randomWeight() {
+  try {
+    if (globalThis.crypto?.getRandomValues) {
+      const values = new Uint32Array(1);
+      globalThis.crypto.getRandomValues(values);
+      return values[0];
+    }
+  } catch (_) {}
+  return Math.floor(Math.random() * 4294967296);
+}
+
+function _buildManualDrawOrders(playerKeys) {
+  const ordered = [...(playerKeys || [])]
+    .map((key) => ({ key: String(key), weight: _randomWeight() }))
+    .sort((a, b) => {
+      if (a.weight !== b.weight) return a.weight - b.weight;
+      return a.key.localeCompare(b.key, 'ru');
+    });
+
+  const orders = {};
+  ordered.forEach((entry, index) => {
+    orders[entry.key] = index + 1;
+  });
+  return orders;
+}
+
+function _formatDrawPlayers(players, orders) {
+  return [...(players || [])]
+    .map((playerId) => ({
+      id: String(playerId),
+      order: Number(orders?.[String(playerId)] || Number.MAX_SAFE_INTEGER),
+    }))
+    .sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      return a.id.localeCompare(b.id, 'ru');
+    })
+    .map((entry) => _playerNameById(entry.id))
+    .join(' • ');
+}
+
+function _playerNameById(playerId) {
+  if (playerId === null || playerId === undefined || playerId === '') return '';
+  const player = getPlayerById(String(playerId));
+  return player?.name || String(playerId);
+}
+
+function _renderManualDrawControls(pools) {
+  if (!_session) return '';
+  const rankingState = _ensureRankingState();
+  const sections = [];
+
+  for (const pool of pools) {
+    const poolKey = _rankingPoolKey('r1', pool.ids);
+    const drawLogs = (rankingState.logs?.[poolKey] || []).filter((entry) => entry?.type === 'draw' && Array.isArray(entry.players) && entry.players.length > 1);
+    if (!drawLogs.length) continue;
+
+    const cards = drawLogs.map((entry, index) => {
+      const players = entry.players.map((playerId) => String(playerId));
+      const currentOrders = rankingState.drawGroups?.[poolKey]?.[entry.groupKey] || {};
+      const currentOrder = _formatDrawPlayers(players, currentOrders);
+      return `<div style="border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);display:grid;gap:8px">
+        <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.72">Tie group ${index + 1}</div>
+        <div style="font-size:14px;line-height:1.45">${players.map((playerId) => esc(_playerNameById(playerId))).join(', ')}</div>
+        <div style="font-size:12px;opacity:.78">Current draw: ${esc(currentOrder || players.join(' • '))}</div>
+        <button type="button" data-click="window._thaiManualDraw('${poolKey}','${entry.groupKey}')" class="btn-secondary" style="justify-self:start">🎲 Жеребьёвка заново</button>
+      </div>`;
+    }).join('');
+
+    sections.push(`<div style="display:grid;gap:10px">
+      <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.7">${esc(pool.label)}</div>
+      ${cards}
+    </div>`);
+  }
+
+  if (!sections.length) return '';
+
+  return `<div style="margin-top:16px;display:grid;gap:12px;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:14px;background:rgba(255,255,255,.04)">
+    <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;opacity:.75">Ручная жеребьёвка равных групп</div>
+    <div style="font-size:13px;line-height:1.45;opacity:.82">Показываются только группы, где после всех критериев осталась полная ничья и порядок зафиксирован жеребьёвкой.</div>
+    ${sections.join('')}
+  </div>`;
+}
+
+window._thaiManualDraw = function(poolKey, groupKey) {
+  if (!_session) return;
+  const rankingState = _ensureRankingState();
+  const drawLog = (rankingState.logs?.[poolKey] || []).find(
+    (entry) => entry?.type === 'draw' && String(entry.groupKey || '') === String(groupKey || '')
+  );
+  if (!drawLog || !Array.isArray(drawLog.players) || drawLog.players.length < 2) {
+    showToast('Группа для жеребьёвки не найдена', 'warn');
+    return;
+  }
+
+  if (!rankingState.drawGroups[poolKey] || typeof rankingState.drawGroups[poolKey] !== 'object') {
+    rankingState.drawGroups[poolKey] = {};
+  }
+
+  rankingState.drawGroups[poolKey][groupKey] = _buildManualDrawOrders(drawLog.players);
+  rankingState.manualActions.push({
+    type: 'manual_draw',
+    poolKey: String(poolKey),
+    groupKey: String(groupKey),
+    players: drawLog.players.map((playerId) => String(playerId)),
+    orders: rankingState.drawGroups[poolKey][groupKey],
+    at: new Date().toISOString(),
+  });
+
+  _saveSession();
+  if (_activePanel === 'standings') _renderStandings();
+  if (_activePanel === 'r2') _renderR2();
+  if (_activePanel === 'finished') _renderFinished();
+  showToast('🎲 Жеребьёвка обновлена', 'success');
+};
+
 /** F1.4: Render standings cross-table for the active tour. */
 function _renderStandings() {
   const content = document.getElementById('thai-standings-content');
@@ -443,33 +924,29 @@ function _renderStandings() {
     return {
       ownScores: Array.from({ length: pCount }, () => Array.from({ length: tourCount }, () => null)),
       oppScores: Array.from({ length: pCount }, () => Array.from({ length: tourCount }, () => null)),
+      opponents: Array.from({ length: pCount }, () => Array.from({ length: tourCount }, () => null)),
     };
   }
 
-  function resolveNameFromIds(ids, idx) {
-    const id = ids ? ids[idx] : null;
-    const p = id != null ? getPlayerById(id) : null;
-    return p ? p.name : (id != null ? id : ('#' + idx));
-  }
-
-  function renderTableForIds(ids, ownScores, oppScores) {
-    const standings = thaiCalcStandings({ ownScores, oppScores });
+  function renderTableForIds(ids, ownScores, oppScores, opponents) {
+    const standings = _finalizePoolStandings('r1', ids, ownScores, oppScores, opponents);
     const rows = standings.map((s, i) => ({
       rank: s.place != null ? s.place : (i + 1),
-      name: resolveNameFromIds(ids, s.idx),
+      name: s.name || ('#' + s.idx),
       games: s.rPlayed != null ? s.rPlayed : 0,
       wins: s.wins != null ? s.wins : 0,
       diff: s.diff != null ? s.diff : 0,
-      pts: s.pts != null ? s.pts : 0,
+      pts: s.points != null ? s.points : (s.pts != null ? s.pts : 0),
       K: s.K != null ? s.K : 0,
     }));
     return CrossTable.render({ columns, rows, highlights });
   }
 
-  if (_mode === 'MF') {
+  if (_isDualPoolMode()) {
     const menIds = _session.playersM || [];
     const womenIds = _session.playersW || [];
     if (!menIds.length && !womenIds.length) return;
+    const [leftPool, rightPool] = _getPoolConfigs();
 
     const menArr = initScoreArrays(menIds.length);
     const womenArr = initScoreArrays(womenIds.length);
@@ -491,21 +968,28 @@ function _renderStandings() {
         if (menArr.ownScores[mi]) {
           menArr.ownScores[mi][t] = ownVal;
           menArr.oppScores[mi][t] = oppVal;
+          menArr.opponents[mi][t] = womenIds[wi] || wi;
         }
         if (womenArr.ownScores[wi]) {
           // For women perspective: own=right score (oppVal), opponent=left score (ownVal)
           womenArr.ownScores[wi][t] = oppVal;
           womenArr.oppScores[wi][t] = ownVal;
+          womenArr.opponents[wi][t] = menIds[mi] || mi;
         }
       }
     }
 
-    const menTable = renderTableForIds(menIds, menArr.ownScores, menArr.oppScores);
-    const womenTable = renderTableForIds(womenIds, womenArr.ownScores, womenArr.oppScores);
+    const menTable = renderTableForIds(menIds, menArr.ownScores, menArr.oppScores, menArr.opponents);
+    const womenTable = renderTableForIds(womenIds, womenArr.ownScores, womenArr.oppScores, womenArr.opponents);
+    const drawTools = _renderManualDrawControls([
+      { label: leftPool?.shortLabel || 'Мужчины', ids: menIds },
+      { label: rightPool?.shortLabel || 'Женщины', ids: womenIds },
+    ]);
 
     content.innerHTML =
-      `<div>${menTable}</div><div style="margin-top:12px">${womenTable}</div>`;
+      `<div>${menTable}</div><div style="margin-top:12px">${womenTable}</div>${drawTools}`;
   } else {
+    const soloPool = _getPoolConfigs()[0];
     const ids = _mode === 'WW' ? (_session.playersW || []) : (_session.playersM || []);
     if (!ids.length) return;
 
@@ -528,16 +1012,21 @@ function _renderStandings() {
         if (arr.ownScores[a]) {
           arr.ownScores[a][t] = ownVal;
           arr.oppScores[a][t] = oppVal;
+          arr.opponents[a][t] = ids[b] || b;
         }
         if (arr.ownScores[b]) {
           // For the right player: own=right score (oppVal), opponent=left score (ownVal)
           arr.ownScores[b][t] = oppVal;
           arr.oppScores[b][t] = ownVal;
+          arr.opponents[b][t] = ids[a] || a;
         }
       }
     }
 
-    content.innerHTML = renderTableForIds(ids, arr.ownScores, arr.oppScores);
+    const drawTools = _renderManualDrawControls([
+      { label: soloPool?.shortLabel || (_mode === 'WW' ? 'Игроки Ж' : 'Игроки М'), ids },
+    ]);
+    content.innerHTML = renderTableForIds(ids, arr.ownScores, arr.oppScores, arr.opponents) + drawTools;
   }
 }
 
@@ -621,23 +1110,23 @@ function _renderActionBar() {
   if (!bar) return;
   if (_activePanel === 'roster') {
     bar.style.display = 'flex';
-    bar.innerHTML = `<button class="btn-primary" onclick="thaiStartSession()">▶ Начать турнир</button>`;
+    bar.innerHTML = `<button class="btn-primary" data-click="thaiStartSession()">▶ Начать турнир</button>`;
   } else if (_activePanel === 'courts') {
     const canAdvance = _canAdvanceTour();
     const disabledAttr = canAdvance ? '' : ' disabled style="opacity:.45;pointer-events:none;flex:2"';
     const enabledStyle = canAdvance ? ' style="flex:2"' : '';
     bar.style.display = 'flex';
     bar.innerHTML = `
-      <button class="btn-secondary" style="flex:1" onclick="_thaiShowStandings()">📊 Таблица</button>
-      <button class="btn-primary"${canAdvance ? enabledStyle : disabledAttr} onclick="_thaiNextTour()">▶ Следующий тур</button>`;
+      <button class="btn-secondary" style="flex:1" data-click="_thaiShowStandings()">📊 Таблица</button>
+      <button class="btn-primary"${canAdvance ? enabledStyle : disabledAttr} data-click="_thaiNextTour()">▶ Следующий тур</button>`;
   } else if (_activePanel === 'standings') {
     bar.style.display = 'flex';
     bar.innerHTML = `
-      <button class="btn-secondary" style="flex:1" onclick="_thaiShowCourts()">← Назад</button>
-      <button class="btn-primary" style="flex:2" onclick="_thaiGoR2()">🎯 Посев R2</button>`;
+      <button class="btn-secondary" style="flex:1" data-click="_thaiShowCourts()">← Назад</button>
+      <button class="btn-primary" style="flex:2" data-click="_thaiGoR2()">🎯 Посев R2</button>`;
   } else if (_activePanel === 'r2') {
     bar.style.display = 'flex';
-    bar.innerHTML = `<button class="btn-primary" onclick="_thaiFinish()">🏆 Завершить</button>`;
+    bar.innerHTML = `<button class="btn-primary" data-click="_thaiFinish()">🏆 Завершить</button>`;
   } else {
     bar.style.display = 'none';
   }
@@ -653,15 +1142,13 @@ function _buildR1Standings(playerIds) {
   const schedule = _session.schedule || [];
   const scores = _session.scores || [];
   const n = playerIds.length;
-  // Build ownScores[playerIdx][tourIdx] and oppScores[playerIdx][tourIdx]
   const ownScores = Array.from({ length: n }, () => []);
   const oppScores = Array.from({ length: n }, () => []);
+  const opponents = Array.from({ length: n }, () => []);
 
   for (let ti = 0; ti < schedule.length; ti++) {
     const tour = schedule[ti];
     const tourScores = scores[ti] || [];
-    // Track which player indices participated this tour
-    const participated = new Set();
 
     for (let pi = 0; pi < (tour.pairs || []).length; pi++) {
       const pair = tour.pairs[pi];
@@ -669,7 +1156,7 @@ function _buildR1Standings(playerIds) {
       const leftIdx = pair[0];
       const rightIdx = pair[1];
 
-      if (_mode === 'MF') {
+      if (_isDualPoolMode()) {
         // For MF, this function is called separately for men and women
         // leftIdx is in men pool, rightIdx is in women pool
         // We need to know which pool we're building for
@@ -677,34 +1164,26 @@ function _buildR1Standings(playerIds) {
           // Men pool: left side of each pair
           ownScores[leftIdx].push(sc.own != null ? sc.own : 0);
           oppScores[leftIdx].push(sc.opp != null ? sc.opp : 0);
-          participated.add(leftIdx);
+          opponents[leftIdx].push((_session.playersW || [])[rightIdx] || rightIdx);
         } else {
           // Women pool: right side of each pair
           ownScores[rightIdx].push(sc.opp != null ? sc.opp : 0);
           oppScores[rightIdx].push(sc.own != null ? sc.own : 0);
-          participated.add(rightIdx);
+          opponents[rightIdx].push((_session.playersM || [])[leftIdx] || leftIdx);
         }
       } else {
         // MM/WW: both indices in same pool
         ownScores[leftIdx].push(sc.own != null ? sc.own : 0);
         oppScores[leftIdx].push(sc.opp != null ? sc.opp : 0);
+        opponents[leftIdx].push(playerIds[rightIdx] || rightIdx);
         ownScores[rightIdx].push(sc.opp != null ? sc.opp : 0);
         oppScores[rightIdx].push(sc.own != null ? sc.own : 0);
-        participated.add(leftIdx);
-        participated.add(rightIdx);
+        opponents[rightIdx].push(playerIds[leftIdx] || leftIdx);
       }
     }
   }
 
-  const standings = thaiCalcStandings({ ownScores, oppScores });
-  // Attach player names
-  standings.forEach(s => {
-    const id = playerIds[s.idx];
-    const p = id ? getPlayerById(id) : null;
-    s.name = (p != null ? p.name : null) || id || ('#' + s.idx);
-    s.playerId = id;
-  });
-  return standings;
+  return _finalizePoolStandings('r1', playerIds, ownScores, oppScores, opponents);
 }
 
 /** F1.10: Build standings from R2 scores (for nominations). */
@@ -718,6 +1197,7 @@ function _buildR2Standings(playerIds) {
 
   const ownScores = Array.from({ length: n }, () => []);
   const oppScores = Array.from({ length: n }, () => []);
+  const opponents = Array.from({ length: n }, () => []);
 
   for (let ti = 0; ti < schedule.length; ti++) {
     const tour = schedule[ti];
@@ -729,33 +1209,30 @@ function _buildR2Standings(playerIds) {
       const leftIdx = pair[0];
       const rightIdx = pair[1];
 
-      if (_mode === 'MF') {
+      if (_isDualPoolMode()) {
         // Men pool: left-side (pair[0]) is "own"
         // Women pool: right-side (pair[1]) is "own"
         if (n === (_session.playersM || []).length && playerIds === _session.playersM) {
           ownScores[leftIdx].push(sc.own != null ? sc.own : 0);
           oppScores[leftIdx].push(sc.opp != null ? sc.opp : 0);
+          opponents[leftIdx].push((_session.playersW || [])[rightIdx] || rightIdx);
         } else {
           ownScores[rightIdx].push(sc.opp != null ? sc.opp : 0);
           oppScores[rightIdx].push(sc.own != null ? sc.own : 0);
+          opponents[rightIdx].push((_session.playersM || [])[leftIdx] || leftIdx);
         }
       } else {
         ownScores[leftIdx].push(sc.own != null ? sc.own : 0);
         oppScores[leftIdx].push(sc.opp != null ? sc.opp : 0);
+        opponents[leftIdx].push(playerIds[rightIdx] || rightIdx);
         ownScores[rightIdx].push(sc.opp != null ? sc.opp : 0);
         oppScores[rightIdx].push(sc.own != null ? sc.own : 0);
+        opponents[rightIdx].push(playerIds[leftIdx] || leftIdx);
       }
     }
   }
 
-  const standings = thaiCalcStandings({ ownScores, oppScores });
-  standings.forEach(s => {
-    const id = playerIds[s.idx];
-    const p = id ? getPlayerById(id) : null;
-    s.name = (p != null ? p.name : null) || id || ('#' + s.idx);
-    s.playerId = id;
-  });
-  return standings;
+  return _finalizePoolStandings('r2', playerIds, ownScores, oppScores, opponents);
 }
 
 /** Render R2 seeding zones. F1.7 */
@@ -764,20 +1241,18 @@ function _renderR2Seed() {
   if (!container || !_session) return;
 
   // Build R1 standings
-  const pools = [];
-  if (_mode === 'MF' || _mode === 'MM') {
-    pools.push({ label: _mode === 'MF' ? '♂ Мужчины' : '♂ Игроки', ids: _session.playersM || [], gender: 'M' });
-  }
-  if (_mode === 'MF' || _mode === 'WW') {
-    pools.push({ label: _mode === 'MF' ? '♀ Женщины' : '♀ Игроки', ids: _session.playersW || [], gender: 'W' });
-  }
+  const pools = _getActivePoolConfigs();
 
   const zoneLabels = { hard: '🔴 Hard', advance: '🟠 Advance', medium: '🔵 Medium', lite: '🟢 Lite' };
   let html = '<div class="thai-r2-intro">🎯 Посев R2 — по итогам R1</div>';
 
   for (const pool of pools) {
     const standings = _buildR1Standings(pool.ids);
-    const zones = thaiSeedR2({ players: standings, ppc: Math.max(1, Math.floor(standings.length / 4)) }, pool.gender);
+    const numZones = _currentTournamentMeta().courts || Math.floor(standings.length / 2);
+    const zones = thaiSeedR2(
+      { players: standings, ppc: Math.max(1, Math.floor(standings.length / numZones)) },
+      pool.playerGender
+    );
 
     if (pools.length > 1) {
       html += '<div class="thai-section-title">' + esc(pool.label) + '</div>';
@@ -811,12 +1286,14 @@ function _renderR2Seed() {
   // Store seeding in session for later use
   _session.r2Seeding = pools.map(pool => {
     const standings = _buildR1Standings(pool.ids);
-    return { gender: pool.gender, zones: thaiSeedR2({ players: standings }, pool.gender) };
+    const numZones = _currentTournamentMeta().courts || Math.floor(standings.length / 2);
+    const ppc = Math.max(1, Math.floor(standings.length / numZones));
+    return { poolKey: pool.key, playerGender: pool.playerGender, zones: thaiSeedR2({ players: standings, ppc }, pool.playerGender) };
   });
   _saveSession();
 
   html += '<div style="display:flex;justify-content:center;margin-top:12px">' +
-          '<button class="btn-primary" onclick="window._thaiStartR2Play()">▶ Играть R2</button>' +
+          '<button class="btn-primary" data-click="window._thaiStartR2Play()">▶ Играть R2</button>' +
           '</div>';
   container.innerHTML = html;
 }
@@ -838,12 +1315,12 @@ function _renderR2() {
 }
 
 /** Build map: player pool idx -> zoneKey */
-function _buildR2ZoneMap(gender) {
+function _buildR2ZoneMap(poolKey) {
   const map = {};
   const pools = _session?.r2Seeding || [];
   for (let pi = 0; pi < pools.length; pi++) {
     const pool = pools[pi];
-    if (!pool || pool.gender !== gender) continue;
+    if (!pool || pool.poolKey !== poolKey) continue;
     const zones = pool.zones || [];
     for (let zi = 0; zi < zones.length; zi++) {
       const z = zones[zi];
@@ -883,9 +1360,9 @@ function _renderR2Play() {
   // S7.5: Court-lock
   const jm = globalThis.judgeMode;
 
-  const menZone = _buildR2ZoneMap('M');
-  const womenZone = _buildR2ZoneMap('W');
-  const poolZone = (_mode === 'MM') ? menZone : womenZone;
+  const leftZone = _buildR2ZoneMap('left');
+  const rightZone = _buildR2ZoneMap('right');
+  const soloZone = _buildR2ZoneMap('solo');
 
   let html = '';
   html += '<div class="thai-r2-intro">🎮 Игры R2 · тур ' + (_activeTour + 1) + '</div>';
@@ -901,12 +1378,12 @@ function _renderR2Play() {
     const { left, right } = _pairNames(pair);
 
     let zoneKey = null;
-    if (_mode === 'MF') {
-      const zL = menZone[pair[0]];
-      const zR = womenZone[pair[1]];
+    if (_isDualPoolMode()) {
+      const zL = leftZone[pair[0]];
+      const zR = rightZone[pair[1]];
       zoneKey = zL != null ? zL : (zR != null ? zR : 'hard');
     } else {
-      const z = poolZone[pair[0]];
+      const z = soloZone[pair[0]];
       zoneKey = z != null ? z : 'hard';
     }
 
@@ -923,13 +1400,13 @@ function _renderR2Play() {
       <div class="thai-pair-body">
         <div class="thai-pl-name left">${esc(left)}</div>
         <div class="thai-score-col">
-          <button class="${r2BtnCls}" onclick="window._thaiR2Score(${pi},'own',-1)"${r2Dis}>−</button>
+          <button class="${r2BtnCls}" data-click="window._thaiR2Score(${pi},'own',-1)"${r2Dis}>−</button>
           <span class="thai-sc-val" id="thai-r2-own-${pi}">${own}</span>
-          <button class="${r2BtnCls}" onclick="window._thaiR2Score(${pi},'own',1)"${r2Dis}>+</button>
+          <button class="${r2BtnCls}" data-click="window._thaiR2Score(${pi},'own',1)"${r2Dis}>+</button>
           <span class="thai-sc-sep">:</span>
-          <button class="${r2BtnCls}" onclick="window._thaiR2Score(${pi},'opp',-1)"${r2Dis}>−</button>
+          <button class="${r2BtnCls}" data-click="window._thaiR2Score(${pi},'opp',-1)"${r2Dis}>−</button>
           <span class="thai-sc-val" id="thai-r2-opp-${pi}">${opp}</span>
-          <button class="${r2BtnCls}" onclick="window._thaiR2Score(${pi},'opp',1)"${r2Dis}>+</button>
+          <button class="${r2BtnCls}" data-click="window._thaiR2Score(${pi},'opp',1)"${r2Dis}>+</button>
         </div>
         <div class="thai-pl-name right">${esc(right)}</div>
       </div>
@@ -951,20 +1428,12 @@ function _renderR2Play() {
 function _buildTelegramReport() {
   if (!_session) return '';
 
-  const pools = [];
-  if (_mode === 'MF' || _mode === 'MM') {
-    pools.push({ label: _mode === 'MF' ? '♂ Мужчины' : '♂ Игроки', ids: _session.playersM || [] });
-  }
-  if (_mode === 'MF' || _mode === 'WW') {
-    pools.push({ label: _mode === 'MF' ? '♀ Женщины' : '♀ Игроки', ids: _session.playersW || [] });
-  }
-
-  const modeLabel = { MF: 'Микст М/Ж', MM: 'Мужской', WW: 'Женский' }[_mode] || _mode;
+  const pools = _getActivePoolConfigs();
   const medals = ['🥇', '🥈', '🥉'];
 
   const lines = [];
   lines.push('🏆 Турнир завершён!');
-  lines.push(modeLabel + ' · ' + _n + ' игр. · seed ' + _seed);
+  lines.push(_currentTournamentLine());
   lines.push('');
 
   for (const pool of pools) {
@@ -1020,22 +1489,14 @@ function _renderFinished() {
   const container = document.getElementById('thai-finished-content');
   if (!container || !_session) return;
 
-  const pools = [];
-  if (_mode === 'MF' || _mode === 'MM') {
-    pools.push({ label: _mode === 'MF' ? '♂ Мужчины' : '♂ Игроки', ids: _session.playersM || [], gender: 'M' });
-  }
-  if (_mode === 'MF' || _mode === 'WW') {
-    pools.push({ label: _mode === 'MF' ? '♀ Женщины' : '♀ Игроки', ids: _session.playersW || [], gender: 'W' });
-  }
-
-  const modeLabel = { MF: 'Микст М/Ж', MM: 'Мужской', WW: 'Женский' }[_mode] || _mode;
+  const pools = _getActivePoolConfigs();
   let html = '';
 
   // Header
   html += '<div class="thai-finished-header">';
   html += '<div class="thai-finished-icon">🏆</div>';
   html += '<div class="thai-finished-title">Турнир завершён!</div>';
-  html += '<div class="thai-finished-sub">' + esc(modeLabel) + ' · ' + _n + ' игр. · seed ' + _seed + '</div>';
+  html += '<div class="thai-finished-sub">' + esc(_currentTournamentLine()) + '</div>';
   html += '</div>';
 
   for (const pool of pools) {
@@ -1121,14 +1582,14 @@ function _renderFinished() {
   html += '<div class="thai-section-title thai-telegram-title">Telegram-отчёт</div>';
   html += '<textarea id="thai-telegram-text" class="thai-telegram-textarea" readonly></textarea>';
   html += '<div class="thai-telegram-actions">';
-  html += '  <button class="btn-secondary" onclick="window._thaiCopyTelegram()">📋 Скопировать в буфер</button>';
+  html += '  <button class="btn-secondary" data-click="window._thaiCopyTelegram()">📋 Скопировать в буфер</button>';
   html += '</div>';
   html += '</div>';
 
   // F3.1: Export buttons (JSON + CSV)
   html += '<div style="display:flex;gap:8px;justify-content:center;margin:16px 0">';
-  html += '  <button class="btn-secondary" onclick="window._thaiExportJSON()">JSON</button>';
-  html += '  <button class="btn-secondary" onclick="window._thaiExportCSV()">CSV</button>';
+  html += '  <button class="btn-secondary" data-click="window._thaiExportJSON()">JSON</button>';
+  html += '  <button class="btn-secondary" data-click="window._thaiExportCSV()">CSV</button>';
   html += '</div>';
 
   // S8.8: Finalize — send results to server
@@ -1137,7 +1598,7 @@ function _renderFinished() {
   if (alreadyFinalized) {
     html += '<div style="color:var(--muted);font-size:.85em">✅ Результаты отправлены на сервер</div>';
   } else {
-    html += '<button class="btn-primary" onclick="window._thaiFinalizeTournament()">📤 Отправить результаты</button>';
+    html += '<button class="btn-primary" data-click="window._thaiFinalizeTournament()">📤 Отправить результаты</button>';
   }
   html += '</div>';
 
@@ -1201,20 +1662,21 @@ window._thaiCopyTelegram = async function() {
 // F3.1: Export JSON
 window._thaiExportJSON = function() {
   if (!_session) return;
-  const pools = [];
-  if (_mode === 'MF' || _mode === 'MM') pools.push({ label: 'Мужчины', ids: _session.playersM || [], gender: 'M' });
-  if (_mode === 'MF' || _mode === 'WW') pools.push({ label: 'Женщины', ids: _session.playersW || [], gender: 'W' });
+  const pools = _getActivePoolConfigs();
 
   const result = {
     format: 'Thai Mixed',
     mode: _mode,
     n: _n,
+    courts: _currentTournamentMeta().courts,
+    tours: _currentTournamentMeta().tours,
     seed: _seed,
-    date: _session.meta?.date || new Date().toISOString().slice(0, 10),
-    trnId: _session.trnId,
+    date: _sessionDate(),
+    trnId: _session.id || _trnId,
+    meta: _currentTournamentMeta(),
     pools: pools.map(p => ({
-      label: p.label,
-      gender: p.gender,
+      label: p.shortLabel || p.label,
+      gender: p.playerGender,
       standings: _buildR1Standings(p.ids),
     })),
   };
@@ -1225,9 +1687,7 @@ window._thaiExportJSON = function() {
 // F3.1: Export CSV
 window._thaiExportCSV = function() {
   if (!_session) return;
-  const pools = [];
-  if (_mode === 'MF' || _mode === 'MM') pools.push({ label: 'Мужчины', ids: _session.playersM || [], gender: 'M' });
-  if (_mode === 'MF' || _mode === 'WW') pools.push({ label: 'Женщины', ids: _session.playersW || [], gender: 'W' });
+  const pools = _getActivePoolConfigs();
 
   const headers = ['Пул', 'Место', 'Имя', 'Очки', 'Разница', 'Победы', 'Коэф', 'Мячи', 'Лучший раунд', 'Сыграно'];
   const rows = [];
@@ -1240,7 +1700,7 @@ window._thaiExportCSV = function() {
       ]);
     }
   }
-  const dateStr = (_session.meta?.date || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+  const dateStr = _sessionDate().replace(/-/g, '');
   exportToCSV(headers, rows, 'thai_' + dateStr + '_' + _mode + '.csv');
 };
 
@@ -1248,9 +1708,7 @@ window._thaiExportCSV = function() {
 window._thaiFinalizeTournament = async function() {
   if (!_session || _session.finalized) return;
 
-  const pools = [];
-  if (_mode === 'MF' || _mode === 'MM') pools.push({ ids: _session.playersM || [], gender: 'M' });
-  if (_mode === 'MF' || _mode === 'WW') pools.push({ ids: _session.playersW || [], gender: 'W' });
+  const pools = _getActivePoolConfigs();
 
   const results = [];
   for (const pool of pools) {
@@ -1345,8 +1803,10 @@ function _thaiFinishTournament() {
   _persistTournamentRecord(today);
   // Async server sync (A1.3)
   if (typeof syncTournamentAsync === 'function') {
-    syncTournamentAsync({ id: _trnId, format: 'Thai Mixed', mode: _mode, n: _n,
-                          seed: _seed, date: today, status: 'finished',
+    const meta = _currentTournamentMeta();
+    syncTournamentAsync({ id: _trnId, format: 'Thai Mixed', mode: meta.mode, n: meta.n,
+                          courts: meta.courts, tours: meta.tours, seed: _seed, date: today, status: 'finished',
+                          meta,
                           schedule: _session.schedule });
   }
   showToast('🏆 Турнир завершён!', 'success');
@@ -1357,7 +1817,7 @@ function _persistTournamentRecord(date) {
   try {
     const arr = JSON.parse(localStorage.getItem('kotc3_tournaments') || '[]');
     const existing = arr.findIndex(t => t.id === _trnId);
-    const modeLabel = { MF: 'Микст', MM: 'Мужской', WW: 'Женский' }[_mode] || _mode;
+    const modeLabel = _getModeLabel();
     const record = {
       id: _trnId,
       name: `Thai Mixed (${modeLabel}, ${_n} игр.)`,
@@ -1366,11 +1826,11 @@ function _persistTournamentRecord(date) {
       date,
       status: 'finished',
       level: 'medium',
-      capacity: _mode === 'MF' ? _n * 2 : _n,
+      capacity: _isDualPoolMode() ? _n * 2 : _n,
       participants: [],
       waitlist: [],
       winners: [],
-      thaiMeta: { mode: _mode, n: _n, seed: _seed },
+      thaiMeta: { mode: _currentTournamentMeta().mode, n: _currentTournamentMeta().n, courts: _currentTournamentMeta().courts, tours: _currentTournamentMeta().tours, seed: _seed },
     };
     if (existing >= 0) arr[existing] = record;
     else arr.push(record);
@@ -1384,7 +1844,7 @@ function _persistTournamentRecord(date) {
 window.thaiStartSession = function() {
   // Require roster selection before switching to R1.
   const sel = globalThis._thaiRosterGetSelection?.();
-  const required = { needM: _mode === 'MM' ? _n : _mode === 'MF' ? _n : 0, needW: _mode === 'WW' ? _n : _mode === 'MF' ? _n : 0 };
+  const required = _getRequiredRosterCounts();
   if (!sel || sel.menIds.length !== required.needM || sel.womenIds.length !== required.needW) {
     showToast('❌ Выберите полный ростер игроков перед стартом', 'error');
     return;
@@ -1407,9 +1867,59 @@ window.thaiStartSession = function() {
 // ════════════════════════════════════════════════════════
 // A1.1: Bootstrap
 // ════════════════════════════════════════════════════════
-(function boot() {
+(async function boot() {
   _installInlineEventBridge();
+
+  const hasExplicitThaiGridParams =
+    _params.has('mode') &&
+    _params.has('n') &&
+    _params.has('courts') &&
+    _params.has('tours');
+  if (_trnId && !/^thai_/i.test(_trnId) && !hasExplicitThaiGridParams) {
+    try {
+      const signal =
+        typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+          ? AbortSignal.timeout(5000)
+          : undefined;
+      const res = await fetch(
+        `/api/sudyam/bootstrap?tournamentId=${encodeURIComponent(_trnId)}&format=thai`,
+        { cache: 'no-store', credentials: 'include', signal }
+      );
+      if (!res.ok) {
+        showToast('Не удалось загрузить настройки турнира', 'error');
+        return;
+      }
+      const data = await res.json().catch(() => null);
+      const judgeParams = data?.thaiJudgeParams;
+      if (!judgeParams || typeof judgeParams !== 'object') {
+        showToast('Не удалось загрузить настройки турнира', 'error');
+        return;
+      }
+      const nextMode = String(judgeParams.mode || '').trim().toUpperCase();
+      if (['MF', 'MN', 'MM', 'WW'].includes(nextMode)) _mode = nextMode;
+
+      const nextN = Number(judgeParams.n);
+      if (Number.isInteger(nextN) && nextN >= 4 && nextN % 2 === 0) _n = nextN;
+
+      const nextCourts = Number(judgeParams.courts);
+      if (Number.isInteger(nextCourts) && nextCourts >= 1) _courts = nextCourts;
+
+      const nextTours = Number(judgeParams.tours);
+      if (Number.isInteger(nextTours) && nextTours >= 1) _tours = nextTours;
+
+      console.warn('[Thai Boot] Auto-corrected params from API:', judgeParams);
+      if (Array.isArray(data?.bootstrapState?.participants)) {
+        _bootstrapParticipants = data.bootstrapState.participants;
+      }
+    } catch (err) {
+      console.error('[Thai Boot] Settings fetch failed:', err);
+      showToast('Ошибка загрузки настроек турнира', 'error');
+      return;
+    }
+  }
+
   _initSession();
+  const initialSelection = await _resolveInitialRosterSelection();
 
   // Mount roster selection panel (F0.3).
   initThaiRosterPanel({
@@ -1419,15 +1929,20 @@ window.thaiStartSession = function() {
     loadPlayerDB,
     showToast,
     schedule: _session?.schedule,
+    initialMenIds: initialSelection?.menIds,
+    initialWomenIds: initialSelection?.womenIds,
   });
+  if (initialSelection?.source === 'admin' || initialSelection?.source === 'local') {
+    showToast('📋 Ростер предзаполнен из сохранённой расстановки', 'success');
+  }
 
   // Update nav title & info bar
-  const modeLabel = { MF: 'Микст М/Ж', MM: 'Мужской', WW: 'Женский' }[_mode] || _mode;
+  const modeLabel = _getModeLabel();
   document.getElementById('thai-nav-title').textContent = `🌴 Тай (${modeLabel}, ${_n})`;
   document.getElementById('thai-mode-badge').textContent = _mode;
   document.getElementById('thai-mode-badge').classList.add(_mode);
   document.getElementById('thai-info-text').textContent =
-    `Режим: ${modeLabel} · ${_n} игр. · seed ${_seed}`;
+    `Режим: ${_currentTournamentLine()}`;
 
   // S6.3: replace static onclick= handlers with CSP-safe addEventListener.
   document.getElementById('fmt-nav-back')?.addEventListener('click', () => {

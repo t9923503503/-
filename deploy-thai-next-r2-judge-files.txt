@@ -1,0 +1,11 @@
+﻿web/lib/thai-live/core.ts
+web/lib/thai-live/service.ts
+web/lib/sudyam-bootstrap.ts
+web/lib/thai-live/types.ts
+web/app/admin/tournaments/page.tsx
+web/components/thai-live/ThaiJudgeWorkspace.tsx
+web/components/thai-live/ThaiOperatorPanel.tsx
+tests/unit/thai-live-core.test.js
+tests/unit/thai-admin-live-source-contract.test.js
+tests/unit/thai-judge-source-contract.test.js
+STATUS.md

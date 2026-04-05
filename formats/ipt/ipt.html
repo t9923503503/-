@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d0d1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://sv-ugra.ru; img-src 'self' data:;">
+  <title>IPT Double Trouble — Лютые Пляжники</title>
+  <link rel="icon" href="../../assets/favicon.png" type="image/png">
+  <link rel="stylesheet" href="../../shared/base.css">
+  <link rel="stylesheet" href="ipt.css">
+</head>
+<body>
+
+  <!-- Navigation bar -->
+  <nav class="fmt-nav" id="ipt-nav">
+    <button class="fmt-nav-back" id="ipt-back-btn">← Назад</button>
+    <span class="fmt-nav-title">👑 DOUBLE TROUBLE</span>
+    <div class="fmt-nav-sep"></div>
+    <div class="pill-tabs" id="ipt-group-nav"></div>
+  </nav>
+
+  <!-- Toast -->
+  <div id="ipt-toast"></div>
+
+  <!-- Main content -->
+  <main class="fmt-content">
+
+    <!-- ── PANEL 1: РОСТЕР ── -->
+    <div id="ipt-roster-panel">
+      <div style="text-align:center;padding:8px 0 14px">
+        <div style="font:700 1.1rem Barlow,sans-serif;color:var(--gold)">✏️ РОСТЕР</div>
+        <div style="font:.85em Barlow,sans-serif;color:var(--muted);margin-top:4px">Настройки турнира и имена игроков</div>
+      </div>
+      <div id="ipt-roster-content"></div>
+    </div>
+
+    <!-- ── PANEL 2: ОБЗОР КОРТОВ ── -->
+    <div id="ipt-overview-panel">
+      <div style="text-align:center;padding:8px 0 14px">
+        <div style="font:700 1.1rem Barlow,sans-serif;color:var(--gold)">🏟️ КОРТЫ</div>
+        <div style="font:.85em Barlow,sans-serif;color:var(--muted);margin-top:4px">Состав групп по кортам</div>
+      </div>
+      <div id="ipt-overview-content"></div>
+    </div>
+
+    <!-- ── PANEL 3: ИГРА ── -->
+    <div id="ipt-game-panel">
+      <div id="ipt-game-content"></div>
+    </div>
+
+    <!-- ── PANEL 4: ФИНИШ ── -->
+    <div id="ipt-finished-panel">
+      <div id="ipt-finished-content"></div>
+    </div>
+
+  </main>
+
+  <!-- Fixed action bar -->
+  <div id="ipt-action-bar"></div>
+
+  <!-- ── ADAPTER GLOBALS (classic, runs before ipt-format.js) ── -->
+  <script src="./ipt-adapters.js"></script>
+
+  <!-- IPT game logic (classic, читает глобалы из адаптера при вызове функций) -->
+  <script src="../../assets/js/ui/ipt-format.js"></script>
+
+  <!-- Shared modules (ESM) — выставляют globalThis.sharedPlayers, globalThis.sharedApi -->
+  <script type="module" src="../../shared/players.js"></script>
+  <script type="module" src="../../shared/api.js"></script>
+
+  <!-- Boot module (ESM) — перегружает window.showToast/switchTab, инициализирует UI -->
+  <script type="module" src="./ipt-boot.js"></script>
+
+</body>
+</html>

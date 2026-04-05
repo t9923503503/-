@@ -125,15 +125,21 @@ const DEFAULT_MALE_PLAYERS = [
   'Грузин',
   'Андрей',
   'Салмин',
+  'Салмин М',
   'Шерметов',
   'Фатин',
   'Гадаборшев',
   'Паничкин',
   'Шелгачев',
+  'Шелгачев А',
   'Пивин',
   'Надымов',
+  'Надымов Н',
   'Александр',
+  'Микуляк',
   'Килатов',
+  'Рогожкин А',
+  'Рукавишников',
 ];
 
 function ensureDefaultPlayers(db) {
@@ -189,8 +195,12 @@ function loadPlayerDB() {
     const seeded = ensureDefaultPlayers(normalized);
     _playerDbCache = seeded.db;
     _playerDbCacheTs = ts;
-    if (seeded.changed) savePlayerDB(seeded.db);
-    return _playerDbCache;
+    if (seeded.changed) {
+      savePlayerDB(seeded.db);
+      _playerDbCache = seeded.db;
+      _playerDbCacheTs = +(localStorage.getItem('kotc3_playerdb_ts') || Date.now());
+    }
+    return seeded.db;
   } catch(e){
     return [];
   }

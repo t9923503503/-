@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'volley-static-v64';
+const CACHE_VERSION = 'volley-static-v68';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -56,6 +56,15 @@ const CORE_ASSETS = [
   './formats/thai/thai-format.js',
   './formats/thai/thai-roster.js',
   './formats/thai/thai.css',
+  './shared/base.css',
+  './shared/utils.js',
+  './shared/players.js',
+  './shared/api.js',
+  './shared/auth.js',
+  './formats/ipt/ipt.html',
+  './formats/ipt/ipt-adapters.js',
+  './formats/ipt/ipt-boot.js',
+  './formats/ipt/ipt.css',
   './shared/export-utils.js',
   './shared/i18n.js',
   './shared/realtime.js',
@@ -78,6 +87,19 @@ self.addEventListener('activate', event => {
   );
 });
 
+/** @param {Response} res */
+function looksLikeJsResponse(res) {
+  if (!res || !res.ok) return false;
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  return !ct.includes('text/html');
+}
+
+/** @param {URL} url @param {Request} request */
+function isCssRequest(url, request) {
+  if (request.destination === 'style') return true;
+  return url.pathname.toLowerCase().endsWith('.css');
+}
+
 self.addEventListener('fetch', event => {
   const { request } = event;
   if (request.method !== 'GET') return;
@@ -85,15 +107,27 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
+  // Таблицы стилей не трогаем — Safari/iPad иногда криво применяет CSS из SW.
+  if (isCssRequest(url, request)) {
+    return;
+  }
+
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then(response => {
           const copy = response.clone();
-          caches.open(CACHE_VERSION).then(cache => cache.put('./index.html', copy)).catch(() => {});
+          // Cache the actual navigated page (not always index.html)
+          caches.open(CACHE_VERSION).then(cache => cache.put(request, copy)).catch(() => {});
           return response;
         })
-        .catch(() => caches.match('./index.html'))
+        .catch(() => {
+          const p = url.pathname;
+          if (p.includes('/formats/ipt/'))  return caches.match('./formats/ipt/ipt.html');
+          if (p.includes('/formats/thai/')) return caches.match('./formats/thai/thai.html');
+          if (p.includes('/formats/kotc/')) return caches.match('./formats/kotc/kotc.html');
+          return caches.match('./index.html');
+        })
     );
     return;
   }
@@ -101,13 +135,24 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(request).then(cached => {
       if (cached) return cached;
-      return fetch(request).then(response => {
-        if (response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE_VERSION).then(cache => cache.put(request, copy)).catch(() => {});
-        }
-        return response;
-      });
+      return fetch(request)
+        .then(response => {
+          if (response.ok) {
+            const isJs = /\.m?js$/i.test(url.pathname);
+            const cacheThis = !isJs || looksLikeJsResponse(response);
+            if (cacheThis) {
+              const copy = response.clone();
+              caches.open(CACHE_VERSION).then(cache => cache.put(request, copy)).catch(() => {});
+            }
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(request, { ignoreSearch: true }).then(fallback => {
+            if (fallback) return fallback;
+            return Response.error();
+          })
+        );
     })
   );
 });

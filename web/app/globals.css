@@ -168,3 +168,25 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+body.judge-workspace {
+  background: #050914;
+}
+
+body.judge-workspace > header,
+body.judge-workspace > footer {
+  display: none;
+}
+
+body.judge-workspace > main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+body.judge-workspace > main > * {
+  flex: 1 1 auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+}

@@ -1,10 +1,19 @@
 import Link from 'next/link';
 import type { Tournament } from '@/lib/types';
+import { isThaiAdminFormat } from '@/lib/admin-legacy-sync';
+import { buildThaiSpectatorBoardUrl } from '@/lib/tournament-links';
+import {
+  buildTournamentEventKey,
+  sortTournamentGroupsForCalendar,
+} from '@/lib/calendar';
+import {
+  fallbackPosterForTournament,
+  isLikelyHostedPlayerOrVkPhoto,
+} from '@/lib/tournament-poster';
 
-/** A group of sub-tournaments that form one event (same date + format) */
 export interface TournamentGroup {
   key: string;
-  baseName: string;        // e.g. "Round Robin" or "Король площадки"
+  baseName: string;
   date: string;
   time: string;
   location: string;
@@ -14,19 +23,34 @@ export interface TournamentGroup {
   prize: string;
   totalCapacity: number;
   totalParticipants: number;
-  /** Categories within this event, e.g. HARD M, HARD W, MEDIUM M ... */
+  totalWaitlist: number;
+  partnerRequestCount: number;
   categories: {
     id: string;
     level: string;
     division: string;
     participantCount: number;
     capacity: number;
+    waitlistCount: number;
+    partnerRequestCount: number;
     name: string;
   }[];
 }
 
-const levelOrder: Record<string, number> = { hard: 0, advance: 0, medium: 1, easy: 2 };
-const levelLabels: Record<string, string> = { hard: 'HARD', advance: 'ADVANCE', medium: 'MEDIUM', easy: 'LITE' };
+const levelOrder: Record<string, number> = {
+  hard: 0,
+  advance: 0,
+  medium: 1,
+  easy: 2,
+};
+
+const levelLabels: Record<string, string> = {
+  hard: 'HARD',
+  advance: 'ADVANCE',
+  medium: 'MEDIUM',
+  easy: 'LITE',
+};
+
 const levelColors: Record<string, string> = {
   hard: 'bg-red-500/20 text-red-300 border-red-500/40',
   advance: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
@@ -36,10 +60,11 @@ const levelColors: Record<string, string> = {
 
 const statusLabels: Record<Tournament['status'], string> = {
   open: 'Открыта запись',
-  full: 'Заполнен',
-  finished: 'Завершён',
-  cancelled: 'Отменён',
+  full: 'Основной состав заполнен',
+  finished: 'Турнир завершен',
+  cancelled: 'Турнир отменен',
 };
+
 const statusStyles: Record<Tournament['status'], string> = {
   open: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
   full: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
@@ -49,110 +74,77 @@ const statusStyles: Record<Tournament['status'], string> = {
 
 const formatDescriptions: Record<string, { tagline: string; features: string[] }> = {
   'King of the Court': {
-    tagline: 'Займи трон или стой в очереди!',
+    tagline: 'Займи трон или стой в очереди на атаку.',
     features: [
-      'Сторона Короля — зарабатываешь очки',
-      'Сторона Претендента — свергни монарха',
-      'Таймер на раунд — сирена, итоги',
+      'Сторона короля приносит очки',
+      'Сторона претендента выбивает лидеров',
+      'Динамичные короткие раунды с постоянной ротацией',
     ],
   },
   'Round Robin': {
-    tagline: 'Каждый сам за себя!',
+    tagline: 'Каждый сам за себя, но партнеры постоянно меняются.',
     features: [
-      'Нон-стоп смена партнёров и соперников',
-      'Несколько туров — разные напарники',
-      'Победитель в каждой категории',
+      'Много коротких игр без долгих пауз',
+      'Несколько туров с разными напарниками',
+      'Отдельный победитель в каждой категории',
     ],
   },
   'IPT Mixed': {
-    tagline: 'Двое против всех!',
+    tagline: 'Пара на весь турнир и плотная борьба до конца.',
     features: [
-      'Стабильная связка на весь турнир',
-      'Микст — мужчина + женщина',
-      'Максимальная сыгранность',
+      'Фиксированная связка на весь турнир',
+      'Микстовый формат: мужчина + женщина',
+      'Максимум сыгранности и тактики',
     ],
   },
 };
 
-function isLikelyDirectImageUrl(url: string): boolean {
-  const value = String(url || '').trim();
-  if (!value) return false;
-  if (value.startsWith('/')) return true;
-  try {
-    const u = new URL(value);
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
-    if (u.hostname.includes('disk.yandex')) return false;
-    if (u.hostname === 'yadi.sk') return false;
-    if (u.hostname.includes('drive.google')) return false;
-    return /\.(png|jpe?g|webp|gif|svg)$/i.test(u.pathname);
-  } catch {
-    return false;
-  }
-}
-
-function fallbackPosterForFormat(format: string): string {
-  const fmt = (format || '').toLowerCase();
-  if (fmt.includes('king')) return '/images/pravila/kotc.svg';
-  if (fmt.includes('round')) return '/images/pravila/mixup.svg';
-  if (fmt.includes('double')) return '/images/pravila/double.svg';
-  return '/images/pravila/kotc.svg';
-}
-
 function formatDate(dateStr: string): string {
   if (!dateStr) return '';
+
   try {
-    const d = new Date(dateStr + 'T00:00:00');
-    const months = [
-      'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
-    ];
-    const weekdays = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
-    return `${d.getDate()} ${months[d.getMonth()]} · ${weekdays[d.getDay()]}`;
+    const date = new Date(`${dateStr}T00:00:00`);
+    return new Intl.DateTimeFormat('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      weekday: 'short',
+    }).format(date);
   } catch {
     return dateStr;
   }
 }
 
-/** Group an array of tournaments into event groups */
 export function groupTournaments(tournaments: Tournament[]): TournamentGroup[] {
-  const map = new Map<string, Tournament[]>();
+  const grouped = new Map<string, Tournament[]>();
 
-  for (const t of tournaments) {
-    // Group key: date + format. No date → individual
-    const key = t.date && t.format ? `${t.date}||${t.format}` : `solo||${t.id}`;
-    const arr = map.get(key) ?? [];
-    arr.push(t);
-    map.set(key, arr);
+  for (const tournament of tournaments) {
+    const key = buildTournamentEventKey(tournament);
+    const list = grouped.get(key) ?? [];
+    list.push(tournament);
+    grouped.set(key, list);
   }
 
   const groups: TournamentGroup[] = [];
 
-  for (const [key, items] of map) {
-    // Sort categories: by level order, then division
+  for (const [key, items] of grouped) {
     items.sort((a, b) => {
-      const la = levelOrder[a.level?.toLowerCase()] ?? 9;
-      const lb = levelOrder[b.level?.toLowerCase()] ?? 9;
-      if (la !== lb) return la - lb;
-      return (a.division ?? '').localeCompare(b.division ?? '');
+      const aLevel = levelOrder[a.level?.toLowerCase()] ?? 9;
+      const bLevel = levelOrder[b.level?.toLowerCase()] ?? 9;
+      if (aLevel !== bLevel) return aLevel - bLevel;
+      return (a.division ?? '').localeCompare(b.division ?? '', 'ru');
     });
 
     const first = items[0];
-    // Extract base name: "Round Robin · HARD" → "Round Robin"
-    let baseName = first.format || first.name;
-    if (items.length === 1) baseName = first.name;
+    const photo = items.find((item) => item.photoUrl)?.photoUrl ?? '';
+    const prize = items.find((item) => item.prize)?.prize ?? '';
 
-    // Find photo from any sub-tournament
-    const photo = items.find(t => t.photoUrl)?.photoUrl ?? '';
-    const prize = items.find(t => t.prize)?.prize ?? '';
-
-    // Determine overall status: if any open → open, if any full → full, else finished
     let status: Tournament['status'] = 'finished';
-    if (items.some(t => t.status === 'open')) status = 'open';
-    else if (items.some(t => t.status === 'full')) status = 'full';
+    if (items.some((item) => item.status === 'open')) status = 'open';
+    else if (items.some((item) => item.status === 'full')) status = 'full';
 
     groups.push({
       key,
-      baseName,
+      baseName: items.length === 1 ? first.name : first.format || first.name,
       date: first.date,
       time: first.time,
       location: first.location,
@@ -160,229 +152,303 @@ export function groupTournaments(tournaments: Tournament[]): TournamentGroup[] {
       status,
       photoUrl: photo,
       prize,
-      totalCapacity: items.reduce((s, t) => s + t.capacity, 0),
-      totalParticipants: items.reduce((s, t) => s + t.participantCount, 0),
-      categories: items.map(t => ({
-        id: t.id,
-        level: t.level?.toLowerCase() ?? '',
-        division: t.division ?? '',
-        participantCount: t.participantCount,
-        capacity: t.capacity,
-        name: t.name,
+      totalCapacity: items.reduce((sum, item) => sum + item.capacity, 0),
+      totalParticipants: items.reduce((sum, item) => sum + item.participantCount, 0),
+      totalWaitlist: items.reduce((sum, item) => sum + Number(item.waitlistCount ?? 0), 0),
+      partnerRequestCount: items.reduce(
+        (sum, item) => sum + Number(item.partnerRequestCount ?? 0),
+        0
+      ),
+      categories: items.map((item) => ({
+        id: item.id,
+        level: item.level?.toLowerCase() ?? '',
+        division: item.division ?? '',
+        participantCount: item.participantCount,
+        capacity: item.capacity,
+        waitlistCount: Number(item.waitlistCount ?? 0),
+        partnerRequestCount: Number(item.partnerRequestCount ?? 0),
+        name: item.name,
       })),
     });
   }
 
-  return groups;
+  return sortTournamentGroupsForCalendar(groups);
 }
 
 export default function EventCard({ group }: { group: TournamentGroup }) {
   const isOpen = group.status === 'open';
   const isFull = group.status === 'full';
   const isFinished = group.status === 'finished';
-  const fmt = formatDescriptions[group.format] ?? null;
+  const formatInfo = formatDescriptions[group.format] ?? null;
 
   const albumUrl = String(group.photoUrl || '').trim();
-  const posterSrc = isLikelyDirectImageUrl(albumUrl) ? albumUrl : fallbackPosterForFormat(group.format || group.baseName);
-  const showAlbumLink = Boolean(albumUrl) && !isLikelyDirectImageUrl(albumUrl);
+  const posterSrc = isLikelyHostedPlayerOrVkPhoto(albumUrl)
+    ? albumUrl
+    : fallbackPosterForTournament({ format: group.format || group.baseName });
+  const showAlbumLink = Boolean(albumUrl) && !isLikelyHostedPlayerOrVkPhoto(albumUrl);
+  const fillPercent =
+    group.totalCapacity > 0
+      ? Math.min(100, Math.round((group.totalParticipants / group.totalCapacity) * 100))
+      : 0;
+  const spotsLeft =
+    group.totalCapacity > 0
+      ? Math.max(0, group.totalCapacity - group.totalParticipants)
+      : null;
+  const uniqueDivisions = [
+    ...new Set(group.categories.map((category) => category.division).filter(Boolean)),
+  ];
+  const singleLink =
+    group.categories.length === 1 ? `/calendar/${group.categories[0].id}` : null;
 
-  const fillPercent = group.totalCapacity > 0
-    ? Math.min(100, Math.round((group.totalParticipants / group.totalCapacity) * 100))
-    : 0;
-
-  // Unique levels in this event
-  const uniqueLevels = [...new Set(group.categories.map(c => c.level))];
-  // Unique divisions
-  const uniqueDivisions = [...new Set(group.categories.map(c => c.division).filter(Boolean))];
-
-  // For single-category group, link directly
-  const singleLink = group.categories.length === 1 ? `/calendar/${group.categories[0].id}` : null;
-
-  const cardContent = (
-    <article className={`
-      relative rounded-2xl border overflow-hidden transition-all duration-300
-      ${isOpen
-        ? 'border-brand/40 bg-gradient-to-br from-brand/5 to-transparent hover:border-brand/70 hover:shadow-[0_0_30px_rgba(255,90,0,0.15)]'
-        : isFull
-          ? 'border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-transparent hover:border-amber-500/50'
-          : 'border-white/10 bg-surface-light/30 hover:border-white/20'}
-    `}>
-      {/* Poster */}
-      <div className="relative w-full aspect-[2.2/1] overflow-hidden">
-        <img
-          src={posterSrc}
-          alt={group.baseName}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          loading="lazy"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/50 to-transparent" />
-        <span className={`absolute top-4 right-4 px-3 py-1.5 rounded-full text-xs font-body font-semibold border backdrop-blur-sm ${statusStyles[group.status]}`}>
-          {statusLabels[group.status]}
-        </span>
-        {showAlbumLink && (
-          <a
-            href={albumUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="absolute bottom-4 left-4 z-20 px-3 py-1.5 rounded-full text-xs font-body font-semibold border border-white/20 bg-black/30 text-text-primary/90 backdrop-blur-sm hover:border-brand/50 hover:text-brand transition-colors"
+  return (
+    <div className="group">
+      <article
+        className={[
+          'relative overflow-hidden rounded-2xl border transition-all duration-300',
+          isOpen
+            ? 'border-brand/40 bg-gradient-to-br from-brand/5 to-transparent hover:border-brand/70 hover:shadow-[0_0_30px_rgba(255,90,0,0.15)]'
+            : isFull
+              ? 'border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-transparent hover:border-amber-500/50'
+              : 'border-white/10 bg-surface-light/30 hover:border-white/20',
+        ].join(' ')}
+      >
+        <div className="relative aspect-[2.2/1] w-full overflow-hidden">
+          <img
+            src={posterSrc}
+            alt={group.baseName}
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            loading="lazy"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/55 to-transparent" />
+          <span
+            className={[
+              'absolute right-4 top-4 rounded-full border px-3 py-1.5 text-xs font-body font-semibold backdrop-blur-sm',
+              statusStyles[group.status],
+            ].join(' ')}
           >
-            📸 Фото
-          </a>
-        )}
-      </div>
-
-      <div className="p-6 relative z-0">
-        {/* Title */}
-        <h3 className="font-heading text-3xl md:text-4xl text-text-primary leading-tight tracking-wide group-hover:text-brand transition-colors">
-          {group.baseName}
-        </h3>
-
-        {/* Date / Time / Location */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-body">
-          {group.date && (
-            <span className="inline-flex items-center gap-1.5 text-brand font-semibold">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {formatDate(group.date)}
-            </span>
-          )}
-          {group.time && (
-            <span className="inline-flex items-center gap-1.5 text-text-primary/80">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" />
-              </svg>
-              {group.time.slice(0, 5)}
-            </span>
-          )}
-          {group.location && (
-            <span className="inline-flex items-center gap-1.5 text-text-primary/80">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              {group.location}
-            </span>
-          )}
+            {statusLabels[group.status]}
+          </span>
+          {showAlbumLink ? (
+            <a
+              href={albumUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="absolute bottom-4 left-4 z-20 rounded-full border border-white/20 bg-black/30 px-3 py-1.5 text-xs font-body font-semibold text-text-primary/90 backdrop-blur-sm transition-colors hover:border-brand/50 hover:text-brand"
+            >
+              Фото
+            </a>
+          ) : null}
         </div>
 
-        {/* Divisions */}
-        {uniqueDivisions.length > 0 && (
-          <div className="mt-3 flex gap-2">
-            {uniqueDivisions.map(d => (
-              <span key={d} className="px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-xs font-body text-text-primary/80">
-                {d}
-              </span>
-            ))}
-            {group.format && (
-              <span className="px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-xs font-body text-text-primary/80">
-                {group.format}
-              </span>
-            )}
-          </div>
-        )}
+        <div className="relative z-0 p-6">
+          <h3 className="font-heading text-3xl leading-tight tracking-wide text-text-primary transition-colors group-hover:text-brand md:text-4xl">
+            {group.baseName}
+          </h3>
 
-        {/* Format description */}
-        {fmt && (isOpen || isFull) && (
-          <div className="mt-4 p-4 rounded-xl bg-white/[0.03] border border-white/5">
-            <p className="text-brand font-body font-semibold text-sm italic">{fmt.tagline}</p>
-            <ul className="mt-2 space-y-1">
-              {fmt.features.map((f, i) => (
-                <li key={i} className="text-xs text-text-primary/70 font-body flex items-start gap-2">
-                  <span className="text-brand mt-0.5">&#10003;</span>
-                  {f}
-                </li>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-body">
+            {group.date ? (
+              <span className="inline-flex items-center gap-1.5 font-semibold text-brand">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                {formatDate(group.date)}
+              </span>
+            ) : null}
+            {group.time ? (
+              <span className="inline-flex items-center gap-1.5 text-text-primary/80">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 6v6l4 2" />
+                </svg>
+                {group.time.slice(0, 5)}
+              </span>
+            ) : null}
+            {group.location ? (
+              <span className="inline-flex items-center gap-1.5 text-text-primary/80">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                {group.location}
+              </span>
+            ) : null}
+          </div>
+
+          {uniqueDivisions.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {uniqueDivisions.map((division) => (
+                <span
+                  key={division}
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs font-body text-text-primary/80"
+                >
+                  {division}
+                </span>
               ))}
-            </ul>
-          </div>
-        )}
+              {group.format ? (
+                <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs font-body text-text-primary/80">
+                  {group.format}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
 
-        {/* Categories grid */}
-        {group.categories.length > 1 && (
-          <div className="mt-4">
-            <p className="text-xs font-body text-text-primary/50 uppercase tracking-widest mb-2">
-              Категории
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {group.categories.map(cat => {
-                const lvlLabel = levelLabels[cat.level] ?? cat.level;
-                const lvlColor = levelColors[cat.level] ?? 'bg-white/5 text-text-primary/60 border-white/10';
-                return (
-                  <Link
-                    key={cat.id}
-                    href={`/calendar/${cat.id}`}
-                    className={`flex flex-col items-center p-3 rounded-xl border transition-colors hover:bg-white/5 ${lvlColor}`}
+          {spotsLeft != null || group.totalWaitlist > 0 || group.partnerRequestCount > 0 ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {spotsLeft != null && (isOpen || isFull) ? (
+                <span className="rounded-full border border-brand/30 bg-brand/10 px-3 py-1 text-xs font-body font-semibold text-brand-light">
+                  {isOpen ? `Осталось мест: ${spotsLeft}` : 'Доступен лист ожидания'}
+                </span>
+              ) : null}
+              {group.totalWaitlist > 0 ? (
+                <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-body font-semibold text-amber-300">
+                  Лист ожидания: {group.totalWaitlist}
+                </span>
+              ) : null}
+              {group.partnerRequestCount > 0 ? (
+                <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-xs font-body font-semibold text-sky-200">
+                  Ищут пару: {group.partnerRequestCount}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
+          {formatInfo && (isOpen || isFull) ? (
+            <div className="mt-4 rounded-xl border border-white/5 bg-white/[0.03] p-4">
+              <p className="text-sm font-body font-semibold italic text-brand">
+                {formatInfo.tagline}
+              </p>
+              <ul className="mt-2 space-y-1">
+                {formatInfo.features.map((feature) => (
+                  <li
+                    key={feature}
+                    className="flex items-start gap-2 text-xs font-body text-text-primary/70"
                   >
-                    <span className="font-heading text-sm tracking-wider">{lvlLabel}</span>
-                    {cat.division && (
-                      <span className="text-[10px] font-body opacity-70 mt-0.5">
-                        {cat.division === 'Мужской' ? '♂ Муж' : cat.division === 'Женский' ? '♀ Жен' : cat.division}
+                    <span className="mt-0.5 text-brand">&#10003;</span>
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {group.categories.length > 1 ? (
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-body uppercase tracking-widest text-text-primary/50">
+                Категории
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {group.categories.map((category) => {
+                  const levelLabel = levelLabels[category.level] ?? category.level;
+                  const levelColor =
+                    levelColors[category.level] ?? 'bg-white/5 text-text-primary/60 border-white/10';
+
+                  return (
+                    <Link
+                      key={category.id}
+                      href={`/calendar/${category.id}`}
+                      className={`flex flex-col items-center rounded-xl border p-3 transition-colors hover:bg-white/5 ${levelColor}`}
+                    >
+                      <span className="font-heading text-sm tracking-wider">
+                        {levelLabel}
                       </span>
-                    )}
-                    <span className="text-[10px] font-body opacity-50 mt-1">
-                      {cat.participantCount}/{cat.capacity}
-                    </span>
-                  </Link>
-                );
-              })}
+                      {category.division ? (
+                        <span className="mt-0.5 text-[10px] font-body opacity-70">
+                          {category.division === 'Мужской'
+                            ? '♂ Муж'
+                            : category.division === 'Женский'
+                              ? '♀ Жен'
+                              : category.division}
+                        </span>
+                      ) : null}
+                      <span className="mt-1 text-[10px] font-body opacity-50">
+                        {category.participantCount}/{category.capacity}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {group.prize ? (
+            <div className="mt-3 inline-flex items-center gap-2 text-sm font-body text-amber-300">
+              <span>🏆</span>
+              <span>{group.prize}</span>
+            </div>
+          ) : null}
+
+          <div className="mt-5">
+            <div className="mb-1.5 flex items-center justify-between text-xs font-body text-text-primary/60">
+              <span>
+                Всего участников:{' '}
+                <span className="font-semibold text-text-primary/90">
+                  {group.totalParticipants}
+                </span>
+                /{group.totalCapacity}
+              </span>
+              {spotsLeft != null && (isOpen || isFull) ? (
+                <span>Свободно: {spotsLeft}</span>
+              ) : null}
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className={[
+                  'h-full rounded-full transition-all duration-500',
+                  fillPercent >= 90
+                    ? 'bg-red-500'
+                    : fillPercent >= 70
+                      ? 'bg-amber-500'
+                      : 'bg-brand',
+                ].join(' ')}
+                style={{ width: `${fillPercent}%` }}
+              />
             </div>
           </div>
-        )}
 
-        {/* Prize */}
-        {group.prize && (
-          <div className="mt-3 inline-flex items-center gap-2 text-sm font-body text-amber-300">
-            <span>🏆</span><span>{group.prize}</span>
-          </div>
-        )}
+          {isOpen || isFull ? (
+            <div className="mt-5">
+              <span className="inline-flex w-full items-center justify-center rounded-xl bg-brand px-6 py-3 text-sm font-body font-semibold text-surface transition-colors group-hover:bg-brand-light">
+                {isOpen
+                  ? 'Открыть турнир и записаться'
+                  : 'Открыть турнир и встать в waitlist'}
+              </span>
+            </div>
+          ) : null}
 
-        {/* Total capacity bar */}
-        <div className="mt-5">
-          <div className="flex items-center justify-between text-xs font-body text-text-primary/60 mb-1.5">
-            <span>
-              Всего участников: <span className="text-text-primary/90 font-semibold">{group.totalParticipants}</span>/{group.totalCapacity}
-            </span>
-          </div>
-          <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                fillPercent >= 90 ? 'bg-red-500' : fillPercent >= 70 ? 'bg-amber-500' : 'bg-brand'
-              }`}
-              style={{ width: `${fillPercent}%` }}
-            />
-          </div>
+          {isFinished && group.categories.length <= 1 ? (
+            <div className="mt-5">
+              <span className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 px-6 py-3 text-sm font-body text-text-primary/80 transition-colors group-hover:border-brand/40 group-hover:text-brand">
+                Открыть турнир и результаты
+              </span>
+            </div>
+          ) : null}
         </div>
 
-        {/* CTA */}
-        {isOpen && (
-          <div className="mt-5">
-            <span className="inline-flex items-center justify-center w-full px-6 py-3 rounded-xl bg-brand text-surface font-body font-semibold text-sm group-hover:bg-brand-light transition-colors">
-              Записаться на турнир
-            </span>
-          </div>
-        )}
-        {isFinished && group.categories.length <= 1 && (
-          <div className="mt-5">
-            <span className="inline-flex items-center justify-center w-full px-6 py-3 rounded-xl border border-white/15 text-text-primary/80 font-body text-sm group-hover:border-brand/40 group-hover:text-brand transition-colors">
-              Результаты турнира →
-            </span>
-          </div>
-        )}
-      </div>
+        {singleLink ? (
+          <Link
+            href={singleLink}
+            aria-label={`Открыть турнир: ${group.baseName}`}
+            className="absolute inset-0 z-10"
+          >
+            <span className="sr-only">Открыть турнир</span>
+          </Link>
+        ) : null}
 
-      {singleLink && (
-        <Link
-          href={singleLink}
-          aria-label={`Открыть турнир: ${group.baseName}`}
-          className="absolute inset-0 z-10"
-        >
-          <span className="sr-only">Открыть турнир</span>
-        </Link>
-      )}
-    </article>
+        {isFinished && isThaiAdminFormat(group.format) ? (
+          <div className="relative z-20 flex flex-col gap-2 border-t border-white/10 bg-surface px-6 py-4">
+            {group.categories.map((category) => (
+              <Link
+                key={category.id}
+                href={buildThaiSpectatorBoardUrl(category.id)}
+                className="inline-flex w-full items-center justify-center rounded-xl border border-sky-500/35 bg-sky-500/10 px-4 py-2.5 text-sm font-body font-semibold text-sky-200 transition-colors hover:border-sky-400/50 hover:bg-sky-500/15"
+              >
+                Табло для зрителей
+                {group.categories.length > 1 ? ` · ${category.name}` : ''}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+      </article>
+    </div>
   );
-
-  // For multi-category, the card itself is not a link (categories inside are).
-  // For single-category, we use an overlay <Link> inside the card to avoid nested anchors.
-  return <div className="group">{cardContent}</div>;
 }

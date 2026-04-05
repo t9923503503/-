@@ -1,7 +1,11 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import type { HomeStats } from '@/lib/queries';
 import type { LeaderboardEntry, Tournament } from '@/lib/types';
+import {
+  fallbackPosterForTournament,
+  isLikelyHostedPlayerOrVkPhoto,
+} from '@/lib/tournament-poster';
+import PlayerPhoto from '@/components/ui/PlayerPhoto';
 
 interface LandingDesktopProps {
   stats: HomeStats;
@@ -9,38 +13,20 @@ interface LandingDesktopProps {
   tournaments: Tournament[];
 }
 
-const HERO_BG_DESKTOP = '/pencil/generated-1774519763568.png';
-const HERO_BG_MOBILE = '/pencil/generated-1774470854016.png';
+/** CSS-only hero/cards: `/pencil/*.png` were never in git; missing files break prod after rsync --delete on public/. */
+const HERO_BACKDROP =
+  'absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,rgba(0,209,255,0.22),transparent_55%),radial-gradient(ellipse_80%_60%_at_100%_50%,rgba(255,122,0,0.12),transparent_50%),linear-gradient(165deg,#0c1628_0%,#14101c_45%,#0a0a0f_100%)]';
 
-const PLAYER_IMAGES = [
-  {
-    desktop: '/pencil/generated-1774516753003.png',
-    mobile: '/pencil/generated-1774518054424.png',
-    avatar: '/pencil/generated-1774518118241.png',
-  },
-  {
-    desktop: '/pencil/generated-1774516791238.png',
-    mobile: '/pencil/generated-1774516791238.png',
-  },
-  {
-    desktop: '/pencil/generated-1774516824534.png',
-    mobile: '/pencil/generated-1774516824534.png',
-  },
+const PLAYER_HEADER_BACKGROUNDS = [
+  'bg-gradient-to-br from-cyan-950/90 via-slate-950 to-[#11161F]',
+  'bg-gradient-to-br from-fuchsia-950/80 via-slate-950 to-[#11161F]',
+  'bg-gradient-to-br from-orange-950/80 via-slate-950 to-[#11161F]',
 ];
 
-const TOURNAMENT_IMAGES = [
-  {
-    desktop: '/pencil/generated-1774517022369.png',
-    mobile: '/pencil/generated-1774517342373.png',
-  },
-  {
-    desktop: '/pencil/generated-1774517061161.png',
-    mobile: '/pencil/generated-1774517061161.png',
-  },
-  {
-    desktop: '/pencil/generated-1774517094951.png',
-    mobile: '/pencil/generated-1774517094951.png',
-  },
+const TOURNAMENT_HEADER_BACKGROUNDS = [
+  'bg-gradient-to-br from-sky-900/70 via-[#162032] to-[#121722]',
+  'bg-gradient-to-br from-violet-900/60 via-[#161528] to-[#121722]',
+  'bg-gradient-to-br from-emerald-900/50 via-[#121f24] to-[#121722]',
 ];
 
 function initials(name: string) {
@@ -92,43 +78,29 @@ function StatCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ResponsiveFillImage({
-  desktopSrc,
-  mobileSrc,
-  alt,
-  className,
-}: {
-  desktopSrc: string;
-  mobileSrc?: string;
-  alt: string;
-  className: string;
-}) {
-  const mobile = mobileSrc ?? desktopSrc;
-
-  return (
-    <>
-      <Image src={mobile} alt={alt} fill unoptimized className={`${className} md:hidden`} />
-      <Image src={desktopSrc} alt={alt} fill unoptimized className={`${className} hidden md:block`} />
-    </>
-  );
-}
-
 function PlayerAvatar({
   player,
-  avatarImage,
   featured = false,
 }: {
   player: LeaderboardEntry;
-  avatarImage?: string;
   featured?: boolean;
 }) {
+  const sizePx = featured ? 64 : 48;
   const sizeClass = featured ? 'h-16 w-16 rounded-2xl' : 'h-12 w-12 rounded-xl';
   const gradient = featured ? 'from-[#00D1FF] to-[#6366F1]' : 'from-[#FF69B4] to-[#FF5A00]';
+  const url = String(player.photoUrl || '').trim();
 
-  if (avatarImage) {
+  if (url) {
     return (
-      <div className={`relative overflow-hidden border border-white/15 ${sizeClass}`}>
-        <Image src={avatarImage} alt={player.name} fill unoptimized className="object-cover" />
+      <div
+        className={`shrink-0 overflow-hidden border-2 border-white/20 shadow-lg ${sizeClass}`}
+      >
+        <PlayerPhoto
+          photoUrl={url}
+          alt={player.name}
+          width={sizePx}
+          height={sizePx}
+        />
       </div>
     );
   }
@@ -138,24 +110,25 @@ function PlayerAvatar({
       className={`flex items-center justify-center bg-gradient-to-br ${gradient} text-white ${sizeClass}`}
       style={{ fontFamily: 'Sora, sans-serif' }}
     >
-      <span className={`font-black ${featured ? 'text-2xl' : 'text-lg'}`}>{initials(player.name).charAt(0)}</span>
+      <span className={`font-black ${featured ? 'text-2xl' : 'text-lg'}`}>
+        {initials(player.name).charAt(0)}
+      </span>
     </div>
   );
 }
 
 function PlayerCard({
   player,
-  desktopImage,
-  mobileImage,
-  avatarImage,
+  headerClass,
   featured = false,
 }: {
   player: LeaderboardEntry;
-  desktopImage: string;
-  mobileImage?: string;
-  avatarImage?: string;
+  headerClass: string;
   featured?: boolean;
 }) {
+  const bannerUrl = String(player.photoUrl || '').trim();
+  const showBannerPhoto = isLikelyHostedPlayerOrVkPhoto(bannerUrl);
+
   return (
     <Link
       href={`/players/${player.playerId}`}
@@ -164,11 +137,17 @@ function PlayerCard({
       }`}
     >
       <div className={`relative overflow-hidden ${featured ? 'h-44' : 'h-40'}`}>
-        <ResponsiveFillImage
-          desktopSrc={desktopImage}
-          mobileSrc={mobileImage}
-          alt={player.name}
-          className="object-cover transition-transform duration-300 group-hover:scale-105"
+        {showBannerPhoto ? (
+          <img
+            src={bannerUrl}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+            loading="lazy"
+          />
+        ) : null}
+        <div
+          className={`absolute inset-0 transition-transform duration-300 group-hover:scale-[1.03] ${headerClass} ${showBannerPhoto ? 'opacity-50' : ''}`}
+          aria-hidden
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[#11161F] via-[#11161F]/45 to-transparent" />
       </div>
@@ -182,7 +161,7 @@ function PlayerCard({
         </div>
 
         <div className="flex items-center gap-3">
-          <PlayerAvatar player={player} avatarImage={featured ? avatarImage : undefined} featured={featured} />
+          <PlayerAvatar player={player} featured={featured} />
           <div className="min-w-0">
             <div
               className={`truncate font-black uppercase tracking-[-0.04em] text-white ${featured ? 'text-3xl' : 'text-2xl'}`}
@@ -236,76 +215,96 @@ function PlayerCard({
 
 function TournamentCard({
   tournament,
-  desktopImage,
-  mobileImage,
+  headerClass,
 }: {
   tournament: Tournament;
-  desktopImage: string;
-  mobileImage?: string;
+  headerClass: string;
 }) {
   const status = statusMeta(tournament.status);
+  const albumUrl = String(tournament.photoUrl || '').trim();
+  const posterSrc = isLikelyHostedPlayerOrVkPhoto(albumUrl)
+    ? albumUrl
+    : fallbackPosterForTournament(tournament);
+  const showAlbumLink = Boolean(albumUrl) && !isLikelyHostedPlayerOrVkPhoto(albumUrl);
 
   return (
-    <Link
-      href={`/calendar/${tournament.id}`}
-      className="group overflow-hidden rounded-[24px] border border-white/10 bg-[#121722] transition-all duration-200 hover:-translate-y-1 hover:border-brand/40"
-    >
-      <div className="relative h-44 overflow-hidden">
-        <ResponsiveFillImage
-          desktopSrc={desktopImage}
-          mobileSrc={mobileImage}
-          alt={tournament.name}
-          className="object-cover transition-transform duration-300 group-hover:scale-105"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#121722] via-[#121722]/45 to-transparent" />
-        <div className="absolute left-4 top-4">
-          <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.18em] ${status.cls}`}>
-            {status.label}
-          </span>
+    <div className="group overflow-hidden rounded-[24px] border border-white/10 bg-[#121722] transition-all duration-200 hover:-translate-y-1 hover:border-brand/40">
+      <Link
+        href={`/calendar/${tournament.id}`}
+        className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-[#121722]"
+      >
+        <div className="relative h-44 overflow-hidden">
+          <img
+            src={posterSrc}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+            loading="lazy"
+          />
+          <div
+            className={`pointer-events-none absolute inset-0 opacity-45 transition-transform duration-300 group-hover:scale-[1.03] ${headerClass}`}
+            aria-hidden
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#121722] via-[#121722]/45 to-transparent" />
+          <div className="absolute left-4 top-4">
+            <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.18em] ${status.cls}`}>
+              {status.label}
+            </span>
+          </div>
+          <div className="absolute bottom-4 left-4 text-sm font-semibold text-white">
+            {formatDate(tournament.date)}
+            {tournament.time ? ` • ${tournament.time}` : ''}
+          </div>
         </div>
-        <div className="absolute bottom-4 left-4 text-sm font-semibold text-white">
-          {formatDate(tournament.date)}
-          {tournament.time ? ` • ${tournament.time}` : ''}
-        </div>
-      </div>
 
-      <div className="space-y-3 p-5">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-brand">
-          {tournament.level || tournament.division || 'Турнир'}
+        <div className="space-y-3 p-5">
+          <div className="text-[11px] uppercase tracking-[0.22em] text-brand">
+            {tournament.level || tournament.division || 'Турнир'}
+          </div>
+          <div
+            className="text-2xl font-black tracking-[-0.04em] text-white"
+            style={{ fontFamily: 'Sora, sans-serif' }}
+          >
+            {tournament.name}
+          </div>
+          <div className="text-sm text-slate-400">{tournament.format || 'King of the Court'}</div>
+          <div className="flex items-center justify-between border-t border-white/10 pt-3 text-sm">
+            <span className="text-slate-400">Регистрация</span>
+            <span className="font-bold text-cyan-300">
+              {tournament.participantCount}/{tournament.capacity || 0}
+            </span>
+          </div>
         </div>
-        <div
-          className="text-2xl font-black tracking-[-0.04em] text-white"
-          style={{ fontFamily: 'Sora, sans-serif' }}
-        >
-          {tournament.name}
+      </Link>
+      {showAlbumLink && (
+        <div className="border-t border-white/10 px-5 pb-4 pt-2">
+          <a
+            href={albumUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-brand hover:text-brand/80"
+          >
+            📸 Фото турнира
+          </a>
         </div>
-        <div className="text-sm text-slate-400">{tournament.format || 'King of the Court'}</div>
-        <div className="flex items-center justify-between border-t border-white/10 pt-3 text-sm">
-          <span className="text-slate-400">Регистрация</span>
-          <span className="font-bold text-cyan-300">
-            {tournament.participantCount}/{tournament.capacity || 0}
-          </span>
-        </div>
-      </div>
-    </Link>
+      )}
+    </div>
   );
 }
 
 export default function LandingDesktop({ stats, topPlayers, tournaments }: LandingDesktopProps) {
   const playerCards = topPlayers.slice(0, 3).map((player, index) => ({
     player,
-    desktopImage: PLAYER_IMAGES[index]?.desktop ?? PLAYER_IMAGES[PLAYER_IMAGES.length - 1].desktop,
-    mobileImage: PLAYER_IMAGES[index]?.mobile ?? PLAYER_IMAGES[PLAYER_IMAGES.length - 1].mobile,
-    avatarImage: PLAYER_IMAGES[index]?.avatar,
+    headerClass:
+      PLAYER_HEADER_BACKGROUNDS[index] ??
+      PLAYER_HEADER_BACKGROUNDS[PLAYER_HEADER_BACKGROUNDS.length - 1],
     featured: index === 0,
   }));
 
   const tournamentCards = tournaments.slice(0, 3).map((tournament, index) => ({
     tournament,
-    desktopImage:
-      TOURNAMENT_IMAGES[index]?.desktop ?? TOURNAMENT_IMAGES[TOURNAMENT_IMAGES.length - 1].desktop,
-    mobileImage:
-      TOURNAMENT_IMAGES[index]?.mobile ?? TOURNAMENT_IMAGES[TOURNAMENT_IMAGES.length - 1].mobile,
+    headerClass:
+      TOURNAMENT_HEADER_BACKGROUNDS[index] ??
+      TOURNAMENT_HEADER_BACKGROUNDS[TOURNAMENT_HEADER_BACKGROUNDS.length - 1],
   }));
 
   return (
@@ -313,12 +312,7 @@ export default function LandingDesktop({ stats, topPlayers, tournaments }: Landi
       <section className="px-4 pb-8 pt-6 md:px-6 md:pb-14 md:pt-8">
         <div className="mx-auto max-w-7xl overflow-hidden rounded-[36px] border border-white/10 bg-[#0A0A0F] shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
           <div className="relative min-h-[420px] overflow-hidden md:min-h-[520px]">
-            <ResponsiveFillImage
-              desktopSrc={HERO_BG_DESKTOP}
-              mobileSrc={HERO_BG_MOBILE}
-              alt="Hero background"
-              className="object-cover"
-            />
+            <div className={HERO_BACKDROP} aria-hidden />
             <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,10,15,0.12),rgba(10,10,15,0.22)_20%,rgba(10,10,15,0.7)_70%,rgba(10,10,15,0.92))]" />
 
             <div className="relative flex min-h-[420px] flex-col items-center justify-end px-6 py-10 text-center md:min-h-[520px] md:justify-center md:px-12 md:py-16">
@@ -370,15 +364,8 @@ export default function LandingDesktop({ stats, topPlayers, tournaments }: Landi
           </div>
 
           <div className="grid gap-6 lg:grid-cols-[1.18fr_1fr_1fr]">
-            {playerCards.map(({ player, desktopImage, mobileImage, avatarImage, featured }) => (
-              <PlayerCard
-                key={player.playerId}
-                player={player}
-                desktopImage={desktopImage}
-                mobileImage={mobileImage}
-                avatarImage={avatarImage}
-                featured={featured}
-              />
+            {playerCards.map(({ player, headerClass, featured }) => (
+              <PlayerCard key={player.playerId} player={player} headerClass={headerClass} featured={featured} />
             ))}
           </div>
         </div>
@@ -402,13 +389,8 @@ export default function LandingDesktop({ stats, topPlayers, tournaments }: Landi
           </div>
 
           <div className="grid gap-5 lg:grid-cols-3">
-            {tournamentCards.map(({ tournament, desktopImage, mobileImage }) => (
-              <TournamentCard
-                key={tournament.id}
-                tournament={tournament}
-                desktopImage={desktopImage}
-                mobileImage={mobileImage}
-              />
+            {tournamentCards.map(({ tournament, headerClass }) => (
+              <TournamentCard key={tournament.id} tournament={tournament} headerClass={headerClass} />
             ))}
           </div>
         </div>
@@ -426,8 +408,7 @@ export default function LandingDesktop({ stats, topPlayers, tournaments }: Landi
                 Готов к игре?
               </h2>
               <p className="mt-4 text-base leading-7 text-white/70 md:text-lg">
-                Выбирай турнир в календаре, находи пару и выходи на песок. На мобильной
-                версии теперь тоже используются отдельные изображения из Pencil.
+                Выбирай турнир в календаре, находи пару и выходи на песок.
               </p>
             </div>
 

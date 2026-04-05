@@ -66,11 +66,9 @@ function getLegacyCredentials(): AdminCredential[] {
   const adminPin = String(process.env.ADMIN_PIN || FALLBACK_ADMIN_PIN).trim();
   const operatorPin = String(process.env.ADMIN_OPERATOR_PIN || '').trim();
   const viewerPin = String(process.env.ADMIN_VIEWER_PIN || '').trim();
-  const sudyamPin = String(process.env.SUDYAM_PIN || FALLBACK_ADMIN_PIN).trim();
   if (adminPin) list.push({ id: 'legacy-admin', role: 'admin', pin: adminPin });
   if (operatorPin) list.push({ id: 'legacy-operator', role: 'operator', pin: operatorPin });
   if (viewerPin) list.push({ id: 'legacy-viewer', role: 'viewer', pin: viewerPin });
-  if (sudyamPin) list.push({ id: 'legacy-sudyam', role: 'admin', pin: sudyamPin });
   return list;
 }
 

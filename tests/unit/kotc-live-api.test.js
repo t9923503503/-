@@ -6,6 +6,7 @@ describe('KOTC live API normalization', () => {
     vi.useRealTimers();
   });
 
+  // Первая загрузка `api.ts` через Vite в jsdom может занять >5s на холодном старте.
   it('fetchSnapshot normalizes backend snapshots where courts is an array', async () => {
     const payload = {
       session: {
@@ -20,6 +21,10 @@ describe('KOTC live API normalization', () => {
           courtIdx: 1,
           courtVersion: 11,
           roundIdx: 1,
+          activeSlotIdx: 2,
+          activeServerPlayerIdx: 1,
+          waitingServerPlayerIdx: 0,
+          serverPlayerIdxBySlot: [0, null, 1, 0],
           scores: { home: 5, away: 4 },
           timerStatus: 'running',
           timerDurationMs: 60000,
@@ -54,10 +59,14 @@ describe('KOTC live API normalization', () => {
     expect(snapshot.nc).toBe(2);
     expect(Object.keys(snapshot.courts)).toEqual(['1', '2']);
     expect(snapshot.courts[1].roundIdx).toBe(1);
+    expect(snapshot.courts[1].activeSlotIdx).toBe(2);
+    expect(snapshot.courts[1].activeServerPlayerIdx).toBe(1);
+    expect(snapshot.courts[1].waitingServerPlayerIdx).toBe(0);
+    expect(snapshot.courts[1].serverPlayerIdxBySlot).toEqual([0, null, 1, 0]);
     expect(snapshot.courts[1].scores.home).toBe(5);
     expect(snapshot.courts[2].roundIdx).toBe(3);
     expect(snapshot.courts[2].scores.away).toBe(7);
-  });
+  }, 30_000);
 
   it('listSessions times out instead of hanging forever on bootstrap', async () => {
     vi.useFakeTimers();
@@ -79,5 +88,5 @@ describe('KOTC live API normalization', () => {
     await vi.advanceTimersByTimeAsync(8_100);
 
     await assertion;
-  });
+  }, 30_000);
 });

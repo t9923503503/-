@@ -13,11 +13,13 @@ function tr(key, params) {
 let _rosterFmt    = localStorage.getItem('kotc3_roster_fmt')    || 'standard';
 
 // ── Thai Format Launcher state (A0.3) ─────────────────────────
-let _thaiMode = localStorage.getItem('kotc3_thai_mode') || 'MF';  // 'MF'|'MM'|'WW'
+let _thaiMode = localStorage.getItem('kotc3_thai_mode') || 'MF';  // 'MF'|'MN'|'MM'|'WW'
 let _thaiN    = parseInt(localStorage.getItem('kotc3_thai_n') || '8', 10); // 8|10
 let _thaiSeed = parseInt(localStorage.getItem('kotc3_thai_seed') || '1', 10);
 let _thaiLimit  = parseInt(localStorage.getItem('kotc3_thai_lim') || '21', 10);
 let _thaiFinish = localStorage.getItem('kotc3_thai_finish') || 'hard';
+let _thaiScheduleCourtsStr = localStorage.getItem('kotc3_thai_schedule_courts') || '';
+let _thaiScheduleToursStr = localStorage.getItem('kotc3_thai_schedule_tours') || '';
 function _loadSelectedIds(key) {
   try {
     const parsed = JSON.parse(localStorage.getItem(key) || '[]');
@@ -27,6 +29,7 @@ function _loadSelectedIds(key) {
   }
 }
 let _thaiSelectedIds = _loadSelectedIds('kotc3_thai_sel');
+let _thaiSecondarySelectedIds = _loadSelectedIds('kotc3_thai_sel_secondary');
 let _iptCourts    = parseInt(localStorage.getItem('kotc3_ipt_courts') || '2', 10);
 let _iptLimit     = parseInt(localStorage.getItem('kotc3_ipt_lim')    || '21', 10);
 let _iptFinish    = localStorage.getItem('kotc3_ipt_finish') || 'hard';
@@ -344,8 +347,9 @@ function _renderFmtCard() {
       <div class="sc-lbl" style="margin:10px 0 4px">${tr('format.participantsLabel', {n: needed})}</div>
       ${_renderIPTPlayerList()}
 
-      <div class="sc-btns" style="margin-top:12px">
+      <div class="sc-btns" style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
         <button class="btn-apply ipt-launch-btn" onclick="launchQuickIPT()">🏐 ${tr('format.launchIpt')}</button>
+        <button class="btn-apply" style="background:rgba(199,125,255,.18);border-color:rgba(199,125,255,.35);color:var(--purple)" onclick="launchQuickIPTMobile()">📱 Мобильный интерфейс</button>
       </div>
     </div>`;
   }
@@ -393,33 +397,32 @@ function _renderFmtCard() {
   </div>`;
 }
 
-async function launchQuickIPT() {
+// ── IPT shared helpers ─────────────────────────────────────────────────────
+
+/** Resolve & validate participant list. Returns array or null on cancel. */
+async function _resolveQuickIPTParticipantsOrConfirm() {
   const needed = _iptCourts * 8;
   const selectedIds = [..._iptSelectedIds];
   if (selectedIds.length < 8) {
     showToast('❌ ' + tr('format.minPlayers', { n: selectedIds.length }), 'error');
-    return;
+    return null;
   }
   if (selectedIds.length !== needed) {
     const ok = await showConfirm(tr('format.selectedMismatch', { sel: selectedIds.length, needed }));
-    if (!ok) return;
+    if (!ok) return null;
   }
-
-  // Use selected real players from DB
   const db = loadPlayerDB();
-  const participants = selectedIds
-    .map(id => db.find(p => p.id === id))
-    .filter(Boolean);
-
+  const participants = selectedIds.map(id => db.find(p => p.id === id)).filter(Boolean);
   if (participants.length < 8) {
     showToast('❌ ' + tr('format.playersNotFound'), 'error');
-    return;
+    return null;
   }
+  return participants;
+}
 
-  // Create / overwrite quick tournament
-  let arr = getTournaments();
-  arr = arr.filter(t => t.id !== 'ipt_quick');
-  const trn = {
+/** Build ipt_quick tournament object (single source of structure). */
+function _buildQuickIPTTrn(participants) {
+  return {
     id:           'ipt_quick',
     name:         tr('format.iptQuickName'),
     format:       'IPT Mixed',
@@ -428,22 +431,44 @@ async function launchQuickIPT() {
     gender:       _iptGender,
     date:         new Date().toISOString().split('T')[0],
     venue:        '',
-    capacity:     needed,
+    capacity:     _iptCourts * 8,
     participants: participants.map(p => p.id),
     ipt: {
-      pointLimit:   _iptLimit,
-      finishType:   _iptFinish,
-      courts:       _iptCourts,
-      gender:       _iptGender,
-      currentGroup: 0,
-      groups:       null
+      pointLimit:       _iptLimit,
+      finishType:       _iptFinish,
+      courts:           _iptCourts,
+      gender:           _iptGender,
+      currentGroup:     0,
+      groups:           null,
+      serverSyncStatus: 'none',
     }
   };
-  arr.push(trn);
+}
+
+async function launchQuickIPT() {
+  const participants = await _resolveQuickIPTParticipantsOrConfirm();
+  if (!participants) return;
+
+  let arr = getTournaments();
+  arr = arr.filter(t => t.id !== 'ipt_quick');
+  arr.push(_buildQuickIPTTrn(participants));
   saveTournaments(arr);
 
   showToast('👑 ' + tr('format.iptLaunchToast', { courts: _iptCourts, players: participants.length }));
   setTimeout(() => openIPT('ipt_quick'), 300);
+}
+
+/** Launch IPT in standalone mobile interface. */
+async function launchQuickIPTMobile() {
+  const participants = await _resolveQuickIPTParticipantsOrConfirm();
+  if (!participants) return;
+
+  let arr = getTournaments();
+  arr = arr.filter(t => t.id !== 'ipt_quick');
+  arr.push(_buildQuickIPTTrn(participants));
+  saveTournaments(arr);
+
+  window.location.href = './formats/ipt/ipt.html?trnId=ipt_quick';
 }
 
 // ── Thai Format Launcher helpers (A0.3) ────────────────────────────────────
@@ -467,6 +492,24 @@ function setThaiN(n) {
 function setThaiSeed(seed) {
   _thaiSeed = parseInt(seed, 10) || 1;
   localStorage.setItem('kotc3_thai_seed', _thaiSeed);
+}
+
+function setThaiScheduleCourts(v) {
+  _thaiScheduleCourtsStr = String(v ?? '').trim();
+  if (_thaiScheduleCourtsStr) localStorage.setItem('kotc3_thai_schedule_courts', _thaiScheduleCourtsStr);
+  else localStorage.removeItem('kotc3_thai_schedule_courts');
+}
+
+function setThaiScheduleTours(v) {
+  _thaiScheduleToursStr = String(v ?? '').trim();
+  if (_thaiScheduleToursStr) localStorage.setItem('kotc3_thai_schedule_tours', _thaiScheduleToursStr);
+  else localStorage.removeItem('kotc3_thai_schedule_tours');
+}
+
+function _parseThaiScheduleOpt(str) {
+  if (str == null || str === '') return undefined;
+  const n = parseInt(String(str), 10);
+  return Number.isInteger(n) && n >= 1 ? n : undefined;
 }
 
 function setThaiLimit(lim) {
@@ -680,6 +723,20 @@ function _renderThaiCard() {
         value="${_thaiSeed}"
         oninput="setThaiSeed(this.value)" placeholder="1"/>
     </div>
+    <div class="sc-row">
+      <span class="sc-lbl">${tr('format.thaiCourtsPerTourOpt')}</span>
+      <input class="trn-form-inp" type="number" step="1" min="1"
+        style="flex:1;min-width:80px"
+        value="${escAttr(_thaiScheduleCourtsStr)}"
+        oninput="setThaiScheduleCourts(this.value)" placeholder="${escAttr(tr('format.optionalAuto'))}"/>
+    </div>
+    <div class="sc-row">
+      <span class="sc-lbl">${tr('format.thaiToursOpt')}</span>
+      <input class="trn-form-inp" type="number" step="1" min="1"
+        style="flex:1;min-width:80px"
+        value="${escAttr(_thaiScheduleToursStr)}"
+        oninput="setThaiScheduleTours(this.value)" placeholder="${escAttr(tr('format.optionalAuto'))}"/>
+    </div>
 
     <div class="sc-lbl" style="margin:10px 0 4px">${tr('format.participantsLabel', { n: needed })}</div>
     ${_renderThaiPlayerList()}
@@ -707,6 +764,9 @@ function launchThaiFormat() {
   const db = loadPlayerDB();
   const participants = selectedIds.map(id => db.find(p => p.id === id)).filter(Boolean);
 
+  const optCourts = _parseThaiScheduleOpt(_thaiScheduleCourtsStr);
+  const optTours = _parseThaiScheduleOpt(_thaiScheduleToursStr);
+
   let arr = getTournaments();
   arr = arr.filter(t => t.id !== 'thai_quick');
   const trn = {
@@ -725,7 +785,9 @@ function launchThaiFormat() {
       n:          n,
       seed:       seed,
       pointLimit: _thaiLimit,
-      finishType: _thaiFinish
+      finishType: _thaiFinish,
+      ...(optCourts != null ? { courts: optCourts } : {}),
+      ...(optTours != null ? { tours: optTours } : {}),
     }
   };
   arr.push(trn);
@@ -733,7 +795,27 @@ function launchThaiFormat() {
 
   showToast('🌴 ' + tr('format.thaiLaunchToast', { n: participants.length }));
 
-  const href = `formats/thai/thai.html?mode=${encodeURIComponent(mode)}&n=${encodeURIComponent(String(n))}&seed=${encodeURIComponent(String(seed))}&trnId=thai_quick`;
+  const build = globalThis.sharedFormatLinks?.buildThaiFormatUrl;
+  const href = typeof build === 'function'
+    ? build({
+        mode,
+        n,
+        seed,
+        trnId: 'thai_quick',
+        ...(optCourts != null ? { courts: optCourts } : {}),
+        ...(optTours != null ? { tours: optTours } : {}),
+      })
+    : (() => {
+        const q = new URLSearchParams({
+          mode: String(mode),
+          n: String(n),
+          seed: String(seed),
+          trnId: 'thai_quick',
+        });
+        if (optCourts != null) q.set('courts', String(optCourts));
+        if (optTours != null) q.set('tours', String(optTours));
+        return `formats/thai/thai.html?${q.toString()}`;
+      })();
   setTimeout(() => {
     window.open(href, '_blank');
   }, 300);
@@ -742,6 +824,452 @@ function launchThaiFormat() {
 // ══════════════════════════════════════════════════════════════
 // A2.3: KOTC Format Launcher
 // ══════════════════════════════════════════════════════════════
+function _thaiQuickIsDualMode(mode = _thaiMode) {
+  return mode === 'MF' || mode === 'MN';
+}
+
+function _thaiQuickRequiredTotal(mode = _thaiMode, n = _thaiN) {
+  return _thaiQuickIsDualMode(mode) ? n * 2 : n;
+}
+
+function _thaiQuickSecondaryKey(mode = _thaiMode) {
+  return mode === 'MF' ? 'w' : mode === 'MN' ? 'n' : null;
+}
+
+function _thaiQuickSetFor(groupKey, mode = _thaiMode) {
+  return groupKey && groupKey === _thaiQuickSecondaryKey(mode)
+    ? _thaiSecondarySelectedIds
+    : _thaiSelectedIds;
+}
+
+function _thaiQuickOtherSetFor(groupKey, mode = _thaiMode) {
+  const secondaryKey = _thaiQuickSecondaryKey(mode);
+  if (!secondaryKey) return null;
+  return groupKey === secondaryKey ? _thaiSelectedIds : _thaiSecondarySelectedIds;
+}
+
+function _persistThaiQuickSelections() {
+  localStorage.setItem('kotc3_thai_sel', JSON.stringify([..._thaiSelectedIds]));
+  localStorage.setItem('kotc3_thai_sel_secondary', JSON.stringify([..._thaiSecondarySelectedIds]));
+}
+
+function _clearThaiQuickSelections() {
+  _thaiSelectedIds.clear();
+  _thaiSecondarySelectedIds.clear();
+  _persistThaiQuickSelections();
+}
+
+function _thaiQuickGroupDefs(mode = _thaiMode) {
+  if (mode === 'MF') {
+    return [
+      { key: 'm', title: tr('roster.men'), genderKey: 'm', badge: tr('format.menLabel'), icon: '♂', playerIcon: '🏐', emptyText: tr('format.noMenInDb') },
+      { key: 'w', title: tr('roster.women'), genderKey: 'w', badge: tr('format.womenLabel'), icon: '♀', playerIcon: '🏐', emptyText: tr('format.noWomenInDb') },
+    ];
+  }
+  if (mode === 'MN') {
+    return [
+      { key: 'm', title: tr('roster.men'), genderKey: 'm', badge: tr('format.menLabel'), icon: '♂', playerIcon: '🏐', emptyText: tr('format.noMenInDb') },
+      { key: 'n', title: 'Новички', genderKey: 'm', badge: 'НОВ', icon: '🆕', playerIcon: '🆕', emptyText: 'Нет мужчин для пула новичков' },
+    ];
+  }
+  if (mode === 'WW') {
+    return [
+      { key: 'w', title: tr('roster.women'), genderKey: 'w', badge: tr('format.womenLabel'), icon: '♀', playerIcon: '🏐', emptyText: tr('format.noWomenInDb') },
+    ];
+  }
+  return [
+    { key: 'm', title: tr('roster.men'), genderKey: 'm', badge: tr('format.menLabel'), icon: '♂', playerIcon: '🏐', emptyText: tr('format.noMenInDb') },
+  ];
+}
+
+function _sanitizeThaiQuickSelections(db) {
+  const byId = new Map(db.map(p => [String(p.id), p]));
+  const defs = _thaiQuickGroupDefs();
+  const primaryDef = defs[0] || null;
+  const secondaryDef = defs[1] || null;
+  let changed = false;
+
+  for (const id of [..._thaiSelectedIds]) {
+    const player = byId.get(id);
+    if (!player || (primaryDef && _normG(player) !== primaryDef.genderKey)) {
+      _thaiSelectedIds.delete(id);
+      changed = true;
+    }
+  }
+
+  for (const id of [..._thaiSecondarySelectedIds]) {
+    const player = byId.get(id);
+    if (!secondaryDef || !player || _normG(player) !== secondaryDef.genderKey || _thaiSelectedIds.has(id)) {
+      _thaiSecondarySelectedIds.delete(id);
+      changed = true;
+    }
+  }
+
+  if (changed) _persistThaiQuickSelections();
+}
+
+function _autofillThaiQuickSelections(db) {
+  if ((_thaiSelectedIds.size + _thaiSecondarySelectedIds.size) > 0 || db.length === 0) return;
+
+  if (_thaiMode === 'MF') {
+    db.filter(p => _normG(p) === 'm').slice(0, _thaiN).forEach(p => _thaiSelectedIds.add(p.id));
+    db.filter(p => _normG(p) === 'w').slice(0, _thaiN).forEach(p => _thaiSecondarySelectedIds.add(p.id));
+  } else if (_thaiMode === 'MN') {
+    const men = db.filter(p => _normG(p) === 'm');
+    const taken = new Set();
+    men.slice(0, _thaiN).forEach(p => {
+      _thaiSelectedIds.add(p.id);
+      taken.add(p.id);
+    });
+    men.filter(p => !taken.has(p.id)).slice(0, _thaiN).forEach(p => _thaiSecondarySelectedIds.add(p.id));
+  } else if (_thaiMode === 'WW') {
+    db.filter(p => _normG(p) === 'w').slice(0, _thaiN).forEach(p => _thaiSelectedIds.add(p.id));
+  } else {
+    db.filter(p => _normG(p) === 'm').slice(0, _thaiN).forEach(p => _thaiSelectedIds.add(p.id));
+  }
+
+  _persistThaiQuickSelections();
+}
+
+function _buildThaiQuickSummary(db) {
+  const byId = new Map(db.map(p => [String(p.id), p]));
+  const groups = _thaiQuickGroupDefs().map(def => {
+    const ids = [..._thaiQuickSetFor(def.key)].filter(id => {
+      const player = byId.get(id);
+      return player && _normG(player) === def.genderKey;
+    });
+    return { ...def, ids, count: ids.length };
+  });
+  const needed = _thaiQuickRequiredTotal();
+  const total = groups.reduce((sum, group) => sum + group.count, 0);
+  return {
+    groups,
+    total,
+    needed,
+    ready: groups.length ? groups.every(group => group.count === _thaiN) && total === needed : false,
+    over: groups.some(group => group.count > _thaiN) || total > needed,
+    primaryCount: groups[0]?.count || 0,
+    secondaryCount: groups[1]?.count || 0,
+  };
+}
+
+function _thaiQuickCountText(summary) {
+  if (_thaiMode === 'MF') {
+    return tr('format.selectedCountMix', { sel: summary.total, needed: summary.needed, m: summary.primaryCount, w: summary.secondaryCount });
+  }
+  if (_thaiMode === 'MN') {
+    return `Выбрано: ${summary.total} / ${summary.needed} (М${summary.primaryCount} Н${summary.secondaryCount})`;
+  }
+  return tr('format.selectedCount', { sel: summary.total, needed: summary.needed });
+}
+
+function _thaiQuickColor(current, target) {
+  return current === target ? '#6ABF69' : current > target ? '#e94560' : 'var(--muted)';
+}
+
+function _refreshThaiQuickIndicators(db = loadPlayerDB().filter(p => !p.id.startsWith('thai_quick_'))) {
+  const summary = _buildThaiQuickSummary(db);
+  const totalEl = document.getElementById('thai-ps-count');
+  if (totalEl) {
+    totalEl.textContent = _thaiQuickCountText(summary);
+    totalEl.style.color = summary.ready ? '#6ABF69' : summary.over ? '#e94560' : 'var(--muted)';
+  }
+  summary.groups.forEach(group => {
+    const countEl = document.getElementById(`thai-ps-group-${group.key}-count`);
+    if (countEl) {
+      countEl.textContent = `${group.count} / ${_thaiN}`;
+      countEl.style.color = _thaiQuickColor(group.count, _thaiN);
+    }
+  });
+}
+
+function _thaiQuickError() {
+  if (_thaiMode === 'MF') return `Выберите ровно ${_thaiN} мужчин и ${_thaiN} женщин`;
+  if (_thaiMode === 'MN') return `Выберите ровно ${_thaiN} мужчин и ${_thaiN} новичков`;
+  if (_thaiMode === 'WW') return `Выберите ровно ${_thaiN} женщин`;
+  return `Выберите ровно ${_thaiN} мужчин`;
+}
+
+function setThaiMode(mode) {
+  _thaiMode = mode;
+  localStorage.setItem('kotc3_thai_mode', mode);
+  _clearThaiQuickSelections();
+  const card = document.getElementById('fmt-settings-card');
+  if (card) card.outerHTML = _renderFmtCard();
+}
+
+function setThaiN(n) {
+  _thaiN = n;
+  localStorage.setItem('kotc3_thai_n', n);
+  _clearThaiQuickSelections();
+  const card = document.getElementById('fmt-settings-card');
+  if (card) card.outerHTML = _renderFmtCard();
+}
+
+function thaiTogglePlayer(pid, groupKey) {
+  const activeKey = groupKey || (_thaiQuickGroupDefs()[0]?.key || 'm');
+  const selectedSet = _thaiQuickSetFor(activeKey);
+  const otherSet = _thaiQuickOtherSetFor(activeKey);
+
+  if (selectedSet.has(pid)) selectedSet.delete(pid);
+  else {
+    if (otherSet) otherSet.delete(pid);
+    selectedSet.add(pid);
+  }
+
+  _persistThaiQuickSelections();
+
+  if (_thaiMode === 'MN') {
+    const card = document.getElementById('fmt-settings-card');
+    if (card) card.outerHTML = _renderFmtCard();
+    return;
+  }
+
+  _refreshThaiQuickIndicators();
+}
+
+function thaiSelectAll(groupKey) {
+  const def = _thaiQuickGroupDefs().find(item => item.key === groupKey);
+  if (!def) return;
+  const db = loadPlayerDB().filter(p => !p.id.startsWith('thai_quick_'));
+  const selectedSet = _thaiQuickSetFor(groupKey);
+  const otherSet = _thaiQuickOtherSetFor(groupKey);
+  selectedSet.clear();
+  for (const player of db) {
+    if (_normG(player) !== def.genderKey) continue;
+    if (otherSet && otherSet.has(player.id)) continue;
+    selectedSet.add(player.id);
+    if (selectedSet.size >= _thaiN) break;
+  }
+  _persistThaiQuickSelections();
+  const card = document.getElementById('fmt-settings-card');
+  if (card) card.outerHTML = _renderFmtCard();
+}
+
+function thaiDeselectAll(groupKey) {
+  if (groupKey) _thaiQuickSetFor(groupKey).clear();
+  else _clearThaiQuickSelections();
+  _persistThaiQuickSelections();
+  const card = document.getElementById('fmt-settings-card');
+  if (card) card.outerHTML = _renderFmtCard();
+}
+
+function _renderThaiPlayerList() {
+  const db = loadPlayerDB().filter(p => !p.id.startsWith('thai_quick_'));
+  _sanitizeThaiQuickSelections(db);
+  _autofillThaiQuickSelections(db);
+  const summary = _buildThaiQuickSummary(db);
+
+  function renderGroup(def) {
+    const selectedSet = _thaiQuickSetFor(def.key);
+    const players = db.filter(p => _normG(p) === def.genderKey);
+    const sorted = [...players].sort((a, b) => {
+      const aS = selectedSet.has(a.id) ? 0 : 1;
+      const bS = selectedSet.has(b.id) ? 0 : 1;
+      if (aS !== bS) return aS - bS;
+      return (a.name || '').localeCompare(b.name || '', 'ru');
+    });
+    const count = summary.groups.find(group => group.key === def.key)?.count || 0;
+    let html = `<div class="ipt-ps-gender-hdr">${def.icon} ${def.title}
+      <span style="cursor:pointer;font-size:11px;background:#333;padding:2px 8px;border-radius:6px;margin-left:6px" onclick="thaiSelectAll('${def.key}')">${tr('format.selectAll')}</span>
+      <span style="cursor:pointer;font-size:11px;background:#333;padding:2px 8px;border-radius:6px;margin-left:4px" onclick="thaiDeselectAll('${def.key}')">${tr('format.deselectAll')}</span>
+      <span id="thai-ps-group-${def.key}-count" style="margin-left:auto;font-size:12px;color:${_thaiQuickColor(count, _thaiN)}">${count} / ${_thaiN}</span>
+    </div>`;
+    if (!sorted.length) return html + `<div class="sc-info" style="padding:6px 0;opacity:.5">${def.emptyText}</div>`;
+    sorted.forEach((p, idx) => {
+      const checked = selectedSet.has(p.id) ? 'checked' : '';
+      html += `<label class="ipt-pl-item thai-pl-item" data-name="${escAttr(p.name)}" style="display:flex;align-items:center;gap:8px;padding:6px 8px;cursor:pointer">
+        <span style="color:var(--muted);font-size:11px;min-width:16px">${def.icon}</span>
+        <span style="min-width:24px;text-align:right;color:var(--muted);font-size:12px">${idx + 1}</span>
+        <input type="checkbox" ${checked} onchange="thaiTogglePlayer('${escAttr(p.id)}', '${def.key}')" style="accent-color:#f5a623"/>
+        <span style="font-size:13px">${def.playerIcon}</span>
+        <span style="flex:1;font-size:14px">${esc(p.name)}</span>
+        <span style="font-size:10px;background:rgba(245,166,35,.15);color:#f5a623;padding:1px 6px;border-radius:4px">${def.badge}</span>
+      </label>`;
+    });
+    return html;
+  }
+
+  let listHtml = `<div style="margin:8px 0 4px">
+    <input class="trn-form-inp" type="text" placeholder="${escAttr(tr('format.searchPlayer'))}"
+      oninput="thaiPlayerSearch(this.value)" style="width:100%;box-sizing:border-box"/>
+  </div>
+  <div style="max-height:340px;overflow-y:auto;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:4px">`;
+
+  _thaiQuickGroupDefs().forEach(def => {
+    listHtml += renderGroup(def);
+  });
+
+  listHtml += `</div>
+  <div id="thai-ps-count" style="text-align:center;font-size:13px;font-weight:600;margin-top:6px;color:${summary.ready ? '#6ABF69' : summary.over ? '#e94560' : 'var(--muted)'}">
+    ${_thaiQuickCountText(summary)}
+  </div>`;
+
+  return listHtml;
+}
+
+function _renderThaiCard() {
+  const needed = _thaiQuickRequiredTotal();
+  const infoLine = _thaiMode === 'MF'
+    ? tr('format.kotcTotalInfo', { m: _thaiN, w: _thaiN, total: needed })
+    : _thaiMode === 'MN'
+      ? `${_thaiN} мужчин + ${_thaiN} новичков = <strong>${tr('format.thaiPersons', { n: needed })}</strong>`
+      : `${tr(_thaiMode === 'MM' ? 'format.thaiMenCount' : 'format.thaiWomenCount', { n: _thaiN })} = <strong>${tr('format.thaiPersons', { n: needed })}</strong>`;
+  const mnHint = _thaiMode === 'MN'
+    ? `<div class="sc-info" style="margin-top:0">М = основной пул, Н = отдельный пул новичков.</div>`
+    : '';
+
+  return `<div class="settings-card" id="fmt-settings-card">
+    <div class="sc-title">⚙️ ${tr('format.thaiTitle')}</div>
+    <div class="fmt-mode-tabs">
+      <button class="fmt-tab" onclick="switchRosterFmt('standard')">🏐 ${tr('format.standard')}</button>
+      <button class="fmt-tab" onclick="switchRosterFmt('ipt')">🧮 ${tr('format.ipt')}</button>
+      <button class="fmt-tab on" onclick="switchRosterFmt('thai')">🌴 ${tr('format.thaiMixed')}</button>
+        <button class="fmt-tab" onclick="switchRosterFmt('kotc')">👑 ${tr('format.kotc')}</button>
+    </div>
+
+    <div class="sc-row" style="margin-top:10px">
+      <span class="sc-lbl">${tr('format.playersLabel')}</span>
+      <div class="seg">
+        <button class="seg-btn${_thaiN===8?' on':''}" onclick="setThaiN(8)">8</button>
+        <button class="seg-btn${_thaiN===10?' on':''}" onclick="setThaiN(10)">10</button>
+      </div>
+    </div>
+    <div class="sc-info" style="margin-top:0">${infoLine}</div>
+    ${mnHint}
+
+    <div class="sc-row">
+      <span class="sc-lbl">${tr('format.pointLimit')}</span>
+      <div class="seg" id="seg-thai-lim">
+        ${[10,12,15,18,21].map(v=>`<button class="seg-btn${_thaiLimit===v?' on':''}" onclick="setThaiLimit(${v})">${v}</button>`).join('')}
+      </div>
+    </div>
+    <div class="sc-row">
+      <span class="sc-lbl">${tr('format.finishLabel')}</span>
+      <div class="seg" id="seg-thai-finish">
+        <button class="seg-btn${_thaiFinish==='hard'?' on':''}" onclick="setThaiFinish('hard')">${tr('format.hard')}</button>
+        <button class="seg-btn${_thaiFinish==='balance'?' on':''}" onclick="setThaiFinish('balance')">${tr('format.balance')}</button>
+      </div>
+    </div>
+    <div class="sc-row">
+      <span class="sc-lbl">${tr('format.rosterLabel')}</span>
+      <div class="seg">
+        <button class="seg-btn${_thaiMode==='MM'?' on':''}" onclick="setThaiMode('MM')">${tr('format.maleMode')}</button>
+        <button class="seg-btn${_thaiMode==='WW'?' on':''}" onclick="setThaiMode('WW')">${tr('format.femaleMode')}</button>
+        <button class="seg-btn${_thaiMode==='MF'?' on':''}" onclick="setThaiMode('MF')">${tr('format.mixedMode')}</button>
+        <button class="seg-btn${_thaiMode==='MN'?' on':''}" onclick="setThaiMode('MN')">🆕 М/Н</button>
+      </div>
+    </div>
+
+    <div class="sc-row">
+      <span class="sc-lbl">${tr('format.seedLabel')}</span>
+      <input class="trn-form-inp" type="number" step="1" min="1"
+        style="flex:1;min-width:100px"
+        value="${_thaiSeed}"
+        oninput="setThaiSeed(this.value)" placeholder="1"/>
+    </div>
+    <div class="sc-row">
+      <span class="sc-lbl">${tr('format.thaiCourtsPerTourOpt')}</span>
+      <input class="trn-form-inp" type="number" step="1" min="1"
+        style="flex:1;min-width:80px"
+        value="${escAttr(_thaiScheduleCourtsStr)}"
+        oninput="setThaiScheduleCourts(this.value)" placeholder="${escAttr(tr('format.optionalAuto'))}"/>
+    </div>
+    <div class="sc-row">
+      <span class="sc-lbl">${tr('format.thaiToursOpt')}</span>
+      <input class="trn-form-inp" type="number" step="1" min="1"
+        style="flex:1;min-width:80px"
+        value="${escAttr(_thaiScheduleToursStr)}"
+        oninput="setThaiScheduleTours(this.value)" placeholder="${escAttr(tr('format.optionalAuto'))}"/>
+    </div>
+
+    <div class="sc-lbl" style="margin:10px 0 4px">${tr('format.participantsLabel', { n: needed })}</div>
+    ${_renderThaiPlayerList()}
+
+    <div class="sc-btns" style="margin-top:12px">
+      <button class="btn-apply ipt-launch-btn" onclick="launchThaiFormat()">🌴 ${tr('format.launchThai')}</button>
+    </div>
+  </div>`;
+}
+
+function launchThaiFormat() {
+  const mode = String(_thaiMode || '').toUpperCase();
+  const n = Number(_thaiN);
+  const seed = parseInt(String(_thaiSeed || '1'), 10);
+  const db = loadPlayerDB().filter(p => !p.id.startsWith('thai_quick_'));
+  _sanitizeThaiQuickSelections(db);
+  const summary = _buildThaiQuickSummary(db);
+
+  if (!summary.ready || summary.over) {
+    showToast(`❌ ${_thaiQuickError()}`, 'error');
+    return;
+  }
+
+  const primaryIds = summary.groups[0]?.ids.slice() || [];
+  const secondaryIds = summary.groups[1]?.ids.slice() || [];
+  const participants = [...primaryIds, ...secondaryIds].map(id => db.find(p => p.id === id)).filter(Boolean);
+  const optCourts = _parseThaiScheduleOpt(_thaiScheduleCourtsStr);
+  const optTours = _parseThaiScheduleOpt(_thaiScheduleToursStr);
+  const prefillMenIds = mode === 'WW' ? [] : primaryIds.slice();
+  const prefillWomenIds = mode === 'WW' ? primaryIds.slice() : secondaryIds.slice();
+
+  let arr = getTournaments();
+  arr = arr.filter(t => t.id !== 'thai_quick');
+  const trn = {
+    id: 'thai_quick',
+    name: tr('format.thaiQuickName'),
+    format: mode === 'MN' ? 'Thai Men + Novice' : mode === 'MF' ? 'Thai Mixed' : mode === 'MM' ? 'Thai Men' : 'Thai Women',
+    status: 'open',
+    level: 'medium',
+    gender: mode === 'MF' ? 'mixed' : mode === 'WW' ? 'female' : 'male',
+    date: new Date().toISOString().split('T')[0],
+    venue: '',
+    capacity: _thaiQuickRequiredTotal(mode, n),
+    participants: participants.map(p => p.id),
+    thaiMeta: {
+      mode,
+      n,
+      seed,
+      pointLimit: _thaiLimit,
+      finishType: _thaiFinish,
+      prefillMenIds,
+      prefillWomenIds,
+      ...(optCourts != null ? { courts: optCourts } : {}),
+      ...(optTours != null ? { tours: optTours } : {}),
+    },
+  };
+  arr.push(trn);
+  saveTournaments(arr);
+
+  showToast('🌴 ' + tr('format.thaiLaunchToast', { n: participants.length }));
+
+  const build = globalThis.sharedFormatLinks?.buildThaiFormatUrl;
+  const href = typeof build === 'function'
+    ? build({
+        mode,
+        n,
+        seed,
+        trnId: 'thai_quick',
+        ...(optCourts != null ? { courts: optCourts } : {}),
+        ...(optTours != null ? { tours: optTours } : {}),
+      })
+    : (() => {
+        const q = new URLSearchParams({
+          mode: String(mode),
+          n: String(n),
+          seed: String(seed),
+          trnId: 'thai_quick',
+        });
+        if (optCourts != null) q.set('courts', String(optCourts));
+        if (optTours != null) q.set('tours', String(optTours));
+        return `formats/thai/thai.html?${q.toString()}`;
+      })();
+
+  setTimeout(() => {
+    window.open(href, '_blank');
+  }, 300);
+}
+
 let _kotcNc = parseInt(localStorage.getItem('kotc3_kotc_nc') || '4', 10);
 
 function _renderKotcCard() {

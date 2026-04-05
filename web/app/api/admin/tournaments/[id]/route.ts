@@ -6,24 +6,6 @@ import { adminErrorResponse } from '@/lib/admin-errors';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const auth = requireApiRole(req, 'viewer');
-  if (!auth.ok) return auth.response;
-  try {
-    const { id } = await params;
-    if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
-
-    const tournament = await getTournamentById(id);
-    if (!tournament) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    return NextResponse.json(tournament);
-  } catch (err) {
-    return adminErrorResponse(err, 'tournaments.getById');
-  }
-}
-
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -75,7 +57,7 @@ export async function DELETE(
         return NextResponse.json(
           {
             error:
-              'Delete blocked by DB policy (RLS). Ensure the DATABASE_URL role can DELETE from tournaments (e.g. BYPASSRLS or a DELETE policy).',
+              'Delete blocked by DB policy (RLS). Ensure the server API role can DELETE from tournaments.',
           },
           { status: 403 }
         );

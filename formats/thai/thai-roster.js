@@ -23,12 +23,13 @@ function _sortedByPtsThenName(players) {
 
 function _getRequired({ mode, n }) {
   if (mode === 'MF') return { needM: n, needW: n };
+  if (mode === 'MN') return { needM: n, needW: n };
   if (mode === 'MM') return { needM: n, needW: 0 };
   if (mode === 'WW') return { needM: 0, needW: n };
   return { needM: n, needW: n };
 }
 
-function _renderSection({ title, genderIcon, players, selectedIds, required, filterQuery, onToggleId }) {
+function _renderSection({ groupKey, title, genderIcon, players, selectedIds, required, filterQuery }) {
   const show = !filterQuery
     ? players
     : players.filter(p => (p.name || '').toLowerCase().includes(filterQuery));
@@ -50,7 +51,7 @@ function _renderSection({ title, genderIcon, players, selectedIds, required, fil
         const label = _esc(p.name || '—');
         return `
           <label class="thai-pl-row" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06)">
-            <input type="checkbox" ${checked} onchange="window._thaiRosterToggle('${_esc(id)}')">
+            <input type="checkbox" ${checked} data-change="window._thaiRosterToggle('${_esc(groupKey)}','${_esc(id)}')">
             <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</span>
             <span style="font-size:.78em;color:var(--muted)">${p.level ? _esc(p.level) : ''}</span>
           </label>`;
@@ -67,17 +68,26 @@ export function initThaiRosterPanel({
   loadPlayerDB,
   showToast,
   schedule = null,
+  initialMenIds = [],
+  initialWomenIds = [],
 } = {}) {
   const container = typeof document !== 'undefined' ? document.getElementById(containerId) : null;
   if (!container) return;
 
   const db = typeof loadPlayerDB === 'function' ? loadPlayerDB() : [];
   const { needM, needW } = _getRequired({ mode, n });
-
-  const menPool = mode === 'MM' || mode === 'MF' ? db.filter(p => p?.gender === 'M') : [];
-  const womenPool = mode === 'WW' || mode === 'MF' ? db.filter(p => p?.gender === 'W') : [];
+  const isDualPoolMode = mode === 'MF' || mode === 'MN';
+  const overlappingPools = mode === 'MN';
+  const menPool = mode === 'MM' || mode === 'MF' || mode === 'MN' ? db.filter(p => p?.gender === 'M') : [];
+  const womenPool = mode === 'WW'
+    ? db.filter(p => p?.gender === 'W')
+    : isDualPoolMode
+      ? db.filter(p => p?.gender === (mode === 'MN' ? 'M' : 'W'))
+      : [];
   const menSorted = _sortedByPtsThenName(menPool);
   const womenSorted = _sortedByPtsThenName(womenPool);
+  const preferredMenOrder = Array.isArray(initialMenIds) ? initialMenIds.map(id => String(id)) : [];
+  const preferredWomenOrder = Array.isArray(initialWomenIds) ? initialWomenIds.map(id => String(id)) : [];
 
   const selectedMen = new Set();
   const selectedWomen = new Set();
@@ -95,7 +105,9 @@ export function initThaiRosterPanel({
       if (keepM.includes(p.id) && selectedMen.size < needM) selectedMen.add(p.id);
     });
     womenSorted.forEach(p => {
-      if (keepW.includes(p.id) && selectedWomen.size < needW) selectedWomen.add(p.id);
+      if (keepW.includes(p.id) && selectedWomen.size < needW && (!overlappingPools || !selectedMen.has(p.id))) {
+        selectedWomen.add(p.id);
+      }
     });
 
     for (const p of menSorted) {
@@ -104,19 +116,60 @@ export function initThaiRosterPanel({
     }
     for (const p of womenSorted) {
       if (selectedWomen.size >= needW) break;
+      if (overlappingPools && selectedMen.has(p.id)) continue;
       selectedWomen.add(p.id);
     }
   }
 
-  function toggleId(id) {
+  function seedInitialSelection(selectedIds, preferredIds, sortedPlayers, limit, forbiddenIds = null) {
+    const poolIds = new Set(sortedPlayers.map(player => player.id));
+    for (const id of preferredIds) {
+      if (selectedIds.size >= limit) break;
+      if (!poolIds.has(id)) continue;
+      if (forbiddenIds && forbiddenIds.has(id)) continue;
+      selectedIds.add(id);
+    }
+  }
+
+  seedInitialSelection(selectedMen, preferredMenOrder, menSorted, needM);
+  seedInitialSelection(selectedWomen, preferredWomenOrder, womenSorted, needW, overlappingPools ? selectedMen : null);
+
+  function buildOrderedSelection(selectedIds, preferredIds, sortedPlayers) {
+    const ordered = [];
+    const seen = new Set();
+    for (const id of preferredIds) {
+      if (selectedIds.has(id) && !seen.has(id)) {
+        ordered.push(id);
+        seen.add(id);
+      }
+    }
+    for (const player of sortedPlayers) {
+      if (selectedIds.has(player.id) && !seen.has(player.id)) {
+        ordered.push(player.id);
+        seen.add(player.id);
+      }
+    }
+    return ordered;
+  }
+
+  function toggleId(groupKey, id) {
     const player = db.find(p => p?.id === id);
     if (!player) return;
-    if (player.gender === 'M') {
+    if (groupKey === 'men') {
       if (selectedMen.has(id)) selectedMen.delete(id);
-      else if (selectedMen.size < needM) selectedMen.add(id);
-    } else if (player.gender === 'W') {
+      else if (player.gender === 'M' && selectedMen.size < needM) {
+        if (overlappingPools) selectedWomen.delete(id);
+        selectedMen.add(id);
+      }
+    } else if (groupKey === 'women') {
       if (selectedWomen.has(id)) selectedWomen.delete(id);
-      else if (selectedWomen.size < needW) selectedWomen.add(id);
+      else {
+        const allowedGender = mode === 'MN' ? 'M' : 'W';
+        if (player.gender === allowedGender && selectedWomen.size < needW) {
+          if (overlappingPools) selectedMen.delete(id);
+          selectedWomen.add(id);
+        }
+      }
     }
     render();
   }
@@ -124,10 +177,10 @@ export function initThaiRosterPanel({
   globalThis._thaiRosterToggle = toggleId;
 
   function getSelectedMenIdsOrdered() {
-    return menSorted.filter(p => selectedMen.has(p.id)).map(p => p.id);
+    return buildOrderedSelection(selectedMen, preferredMenOrder, menSorted);
   }
   function getSelectedWomenIdsOrdered() {
-    return womenSorted.filter(p => selectedWomen.has(p.id)).map(p => p.id);
+    return buildOrderedSelection(selectedWomen, preferredWomenOrder, womenSorted);
   }
 
   globalThis._thaiRosterGetSelection = () => ({
@@ -147,6 +200,11 @@ export function initThaiRosterPanel({
     const menIdsOrdered = getSelectedMenIdsOrdered();
     const womenIdsOrdered = getSelectedWomenIdsOrdered();
     const complete = menIdsOrdered.length === needM && womenIdsOrdered.length === needW;
+    const rosterTitle =
+      mode === 'MN' ? '🧍 Тай М/Н — ростер' :
+      mode === 'MF' ? '🧍 Тай-микст — ростер' :
+      mode === 'MM' ? '🧍 Тай мужской — ростер' :
+      '🧍 Тай женский — ростер';
 
     function _nameByIdx(list, idx) {
       if (!list || list.length <= idx) return null;
@@ -178,7 +236,7 @@ export function initThaiRosterPanel({
                     const b = pair?.[1];
                     let left = null;
                     let right = null;
-                    if (mode === 'MF') {
+                    if (mode === 'MF' || mode === 'MN') {
                       left = _nameByIdx(menIdsOrdered, a);
                       right = _nameByIdx(womenIdsOrdered, b);
                     } else if (mode === 'MM') {
@@ -207,7 +265,7 @@ export function initThaiRosterPanel({
     const header = `
       <div class="session-info-bar" style="margin-top:0">
         <span class="session-info-badge ${mode}">${mode}</span>
-        <span>Требуется: ${needM}♂ / ${needW}♀</span>
+        <span>${mode === 'MN' ? `Требуется: ${needM} мужчин / ${needW} новичков` : `Требуется: ${needM}♂ / ${needW}♀`}</span>
       </div>`;
 
     const search = `
@@ -218,7 +276,7 @@ export function initThaiRosterPanel({
           type="text"
           placeholder="Фамилия…"
           style="flex:1;min-width:120px"
-          oninput="window._thaiRosterSetFilter(this.value)"
+          data-input="window._thaiRosterSetFilter(this.value)"
         />
       </div>
     `;
@@ -226,41 +284,41 @@ export function initThaiRosterPanel({
     const menSel = selectedMen;
     const womenSel = selectedWomen;
 
-    const menBlock = (mode === 'MF' || mode === 'MM')
+    const menBlock = (mode === 'MF' || mode === 'MN' || mode === 'MM')
       ? _renderSection({
+          groupKey: 'men',
           title: 'Мужчины',
           genderIcon: '🏋️',
           players: menSorted,
           selectedIds: menSel,
           required: needM,
           filterQuery,
-          onToggleId: toggleId,
         })
       : '';
 
-    const womenBlock = (mode === 'MF' || mode === 'WW')
+    const womenBlock = (mode === 'MF' || mode === 'MN' || mode === 'WW')
       ? _renderSection({
-          title: 'Женщины',
-          genderIcon: '👩',
+          groupKey: 'women',
+          title: mode === 'MN' ? 'Новички' : 'Женщины',
+          genderIcon: mode === 'MN' ? '🆕' : '👩',
           players: womenSorted,
           selectedIds: womenSel,
           required: needW,
           filterQuery,
-          onToggleId: toggleId,
         })
       : '';
 
     const actions = `
       <div class="sc-btns" style="margin-top:12px">
-        <button class="btn-dist" onclick="window._thaiRosterAutoBalance()">📋 Автобаланс</button>
-        <button class="btn-apply ipt-launch-btn" ${complete ? '' : 'disabled'} onclick="thaiStartSession()">✅ Запустить сессию</button>
+        <button class="btn-dist" data-click="window._thaiRosterAutoBalance()">📋 Автобаланс</button>
+        <button class="btn-apply ipt-launch-btn" ${complete ? '' : 'disabled'} data-click="thaiStartSession()">✅ Запустить сессию</button>
       </div>
       <div class="sc-warn">Счёт/таблицы появятся после старта.</div>
     `;
 
     container.innerHTML = `
       <div class="settings-card" style="margin:0">
-        <div class="sc-title">🧍 Тай-микст — ростер</div>
+        <div class="sc-title">${rosterTitle}</div>
         ${header}
         ${search}
         ${menBlock}
@@ -281,4 +339,3 @@ export function initThaiRosterPanel({
 
 // Legacy exports kept minimal; main usage is `initThaiRosterPanel` from thai.html.
 export default { initThaiRosterPanel };
-

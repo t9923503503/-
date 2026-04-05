@@ -70,8 +70,11 @@ function openIPT(trnId) {
   _iptActiveTrnId = trnId;
   try { localStorage.setItem('kotc3_ipt_active', trnId); } catch(e) {}
   document.getElementById('td-modal')?.remove();
+  if (typeof buildAll === 'function') {
+    buildAll();
+  }
   // Switch to court 0 (first group) — reuses existing nav
-  switchTab(0);
+  return switchTab(0);
 }
 
 // ── Render a group embedded in a court screen (no timer) ──────

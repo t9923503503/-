@@ -27,7 +27,7 @@ export async function DELETE(
         return NextResponse.json(
           {
             error:
-              'Delete blocked by DB policy (RLS). Ensure the DATABASE_URL role can DELETE from players (e.g. BYPASSRLS or a DELETE policy).',
+              'Delete blocked by DB policy (RLS). Ensure the server API role can DELETE from players.',
           },
           { status: 403 }
         );

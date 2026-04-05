@@ -5,14 +5,19 @@ import {
   applyTournamentOverrides,
   getTournamentOverride,
 } from './tournament-overrides';
+import {
+  enrichTournamentRuntimeState,
+  resolveTournamentStatus,
+} from './tournament-status';
+import { sortTournamentsForCalendar } from './calendar';
+import {
+  RATING_POINTS_TABLE,
+  effectiveRatingPtsFromStored,
+  ratingPointsForPlace,
+  sqlEffectiveRatingPointsExpr,
+} from './rating-points';
 
-/* Professional Points — same table as SPA (assets/js/state/app-state.js) */
-const POINTS_TABLE = [
-  100,90,82,76,70,65,60,56,52,48,  // 1-10  HARD
-  44,42,40,38,36,34,32,30,28,26,   // 11-20 MEDIUM
-  24,22,20,18,16,14,12,10,8,7,     // 21-30
-  6,5,4,3,2,2,1,1,1,1              // 31-40 LITE
-];
+const PLAYER_DB_EXTERNAL_ID = '__playerdb__';
 
 function toIsoDate(value: unknown): string {
   if (!value) return '';
@@ -30,9 +35,120 @@ function normalizeNameQuery(value: string): string {
   return value.trim().replace(/\s+/g, ' ');
 }
 
+function normalizeTournamentSettings(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+export function shouldHideTournamentFromPublic(input: {
+  name?: unknown;
+  location?: unknown;
+  settings?: unknown;
+}): boolean {
+  const settings = normalizeTournamentSettings(input.settings);
+  if (
+    settings.hideFromPublic === true ||
+    settings.publicVisible === false ||
+    settings.internalOnly === true ||
+    settings.qaMode === true ||
+    settings.isQa === true ||
+    settings.isTest === true ||
+    settings.demoMode === true
+  ) {
+    return true;
+  }
+
+  const haystack = ` ${[
+    input.name,
+    input.location,
+    settings.tag,
+    settings.label,
+    settings.notes,
+  ]
+    .map((value) => String(value ?? '').trim().toLowerCase())
+    .filter(Boolean)
+    .join(' ')} `;
+
+  return [
+    ' qa ',
+    ' demo ',
+    ' test ',
+    ' tmp ',
+    ' debug ',
+    ' smoke ',
+    ' staging ',
+    ' демо ',
+    ' тест ',
+    ' отладка ',
+  ].some((token) => haystack.includes(token));
+}
+
+function mapTournamentRow(row: Record<string, unknown>): Tournament {
+  return {
+    id: String(row.id ?? ''),
+    name: String(row.name ?? ''),
+    date: toIsoDate(row.date),
+    time: String(row.time ?? ''),
+    location: String(row.location ?? ''),
+    format: String(row.format ?? ''),
+    division: String(row.division ?? ''),
+    level: String(row.level ?? ''),
+    capacity: Number(row.capacity ?? 0),
+    status: String(row.status ?? 'open') as Tournament['status'],
+    participantCount: Number(row.participant_count ?? 0),
+    waitlistCount: Number(row.waitlist_count ?? 0),
+    partnerRequestCount: Number(row.partner_request_count ?? 0),
+    prize: String(row.prize ?? ''),
+    photoUrl: String(row.photo_url ?? ''),
+    formatCode: String(row.format_code ?? ''),
+    description:
+      row.description != null && String(row.description).trim().length > 0
+        ? String(row.description)
+        : undefined,
+    participantListText:
+      row.participant_list_text != null && String(row.participant_list_text).trim().length > 0
+        ? String(row.participant_list_text)
+        : undefined,
+  };
+}
+
+async function fetchPartnerRequestCounts(
+  tournamentIds: string[]
+): Promise<Map<string, number>> {
+  if (!process.env.DATABASE_URL || tournamentIds.length === 0) {
+    return new Map<string, number>();
+  }
+
+  const pool = getPool();
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         pr.tournament_id::text AS tournament_id,
+         COUNT(*)::int AS partner_request_count
+       FROM player_requests pr
+       WHERE pr.tournament_id::text = ANY($1::text[])
+         AND pr.status = 'pending'
+         AND COALESCE(pr.registration_type, 'solo') = 'solo'
+         AND COALESCE(pr.partner_wanted, true) = true
+       GROUP BY pr.tournament_id`,
+      [tournamentIds]
+    );
+
+    return new Map(
+      rows.map((row) => [
+        String(row.tournament_id ?? ''),
+        Number(row.partner_request_count ?? 0),
+      ])
+    );
+  } catch {
+    return new Map<string, number>();
+  }
+}
+
 /**
- * Leaderboard computed from tournament_results.place via POINTS_TABLE.
- * This matches exactly how the SPA (recalcAllPlayerStats) computes ratings.
+ * Leaderboard: сумма эффективных очков за место (POINTS_TABLE), для rating_pool=novice — половина (округление).
  */
 export async function fetchLeaderboard(
   type: RatingType = 'M',
@@ -41,8 +157,8 @@ export async function fetchLeaderboard(
   if (!process.env.DATABASE_URL) return [];
   const pool = getPool();
 
-  // Build a VALUES list for the points lookup: (place, pts)
-  const valuesRows = POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
+  const valuesRows = RATING_POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
+  const eff = sqlEffectiveRatingPointsExpr('tr');
 
   const { rows } = await pool.query(
     `WITH pts(place, pts) AS (VALUES ${valuesRows})
@@ -51,7 +167,7 @@ export async function fetchLeaderboard(
        p.name,
        p.gender,
        p.photo_url,
-       COALESCE(SUM(COALESCE(lk.pts, 1)), 0)::int AS rating,
+       COALESCE(SUM(${eff}), 0)::int AS rating,
        COUNT(DISTINCT tr.tournament_id)::int AS tournaments,
        COALESCE(SUM(tr.wins), 0)::int AS wins,
        MAX(t.date) AS last_seen
@@ -61,7 +177,7 @@ export async function fetchLeaderboard(
      LEFT JOIN pts lk ON lk.place = tr.place
      WHERE tr.rating_type = $1
      GROUP BY p.id, p.name, p.gender, p.photo_url
-     HAVING COALESCE(SUM(COALESCE(lk.pts, 1)), 0) > 0
+     HAVING COALESCE(SUM(${eff}), 0) > 0
      ORDER BY rating DESC
      LIMIT $2`,
     [type, limit]
@@ -93,13 +209,13 @@ export async function fetchPlayer(id: string): Promise<Player | null> {
   const data = rows[0];
   if (!data) return null;
 
-  // Compute ratings & tournament counts from tournament_results (source of truth)
-  const valuesRows = POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
+  const valuesRows = RATING_POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
+  const eff = sqlEffectiveRatingPointsExpr('tr');
   const { rows: computed } = await pool.query(
     `WITH pts(place, pts) AS (VALUES ${valuesRows})
      SELECT
        tr.rating_type,
-       COALESCE(SUM(COALESCE(lk.pts, 1)), 0)::int AS rating,
+       COALESCE(SUM(${eff}), 0)::int AS rating,
        COUNT(DISTINCT tr.tournament_id)::int AS tournaments,
        COALESCE(SUM(tr.wins), 0)::int AS wins,
        MAX(t.date) AS last_seen
@@ -193,47 +309,53 @@ export async function fetchTournaments(
   status?: string
 ): Promise<Tournament[]> {
   if (!process.env.DATABASE_URL) {
-    return applyTournamentOverrides([]).slice(0, limit);
+    return sortTournamentsForCalendar(applyTournamentOverrides([])).slice(0, limit);
   }
   const pool = getPool();
+  const queryLimit = Math.max(limit, 200);
 
-  let query = `
-    SELECT t.*, COUNT(tp.id)::int AS participant_count
+  const query = `
+    SELECT t.*,
+           COUNT(tp.id) FILTER (WHERE COALESCE(tp.is_waitlist, false) = false)::int AS participant_count,
+           COUNT(tp.id) FILTER (WHERE COALESCE(tp.is_waitlist, false) = true)::int AS waitlist_count
     FROM tournaments t
     LEFT JOIN tournament_participants tp ON tp.tournament_id = t.id
+    WHERE COALESCE(t.name, '') <> '__playerdb__'
+    GROUP BY t.id
+    ORDER BY t.date ASC NULLS LAST, t.time ASC NULLS LAST
+    LIMIT $1
   `;
-  const params: (string | number)[] = [];
-
-  if (status) {
-    params.push(status);
-    query += ` WHERE t.status = $${params.length}`;
-  }
-
-  query += ' GROUP BY t.id ORDER BY t.date DESC';
-  params.push(limit);
-  query += ` LIMIT $${params.length}`;
 
   try {
-    const { rows } = await pool.query(query, params);
+    const { rows } = await pool.query(query, [queryLimit]);
+    const visibleRows = rows.filter((row) => {
+      if (String(row.name ?? '') === PLAYER_DB_EXTERNAL_ID) return false;
+      return !shouldHideTournamentFromPublic({
+        name: row.name,
+        location: row.location,
+        settings: row.settings,
+      });
+    });
 
-    return applyTournamentOverrides(rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      date: toIsoDate(row.date),
-      time: row.time ?? '',
-      location: row.location ?? '',
-      format: row.format ?? '',
-      division: row.division ?? '',
-      level: row.level ?? '',
-      capacity: row.capacity ?? 0,
-      status: row.status ?? 'open',
-      participantCount: row.participant_count ?? 0,
-      prize: row.prize ?? '',
-      photoUrl: row.photo_url ?? '',
-      formatCode: row.format_code ?? '',
-    })));
+    const partnerCounts = await fetchPartnerRequestCounts(
+      visibleRows.map((row) => String(row.id ?? '')).filter(Boolean)
+    );
+    const tournaments = sortTournamentsForCalendar(
+      applyTournamentOverrides(
+        visibleRows.map((row) => ({
+          ...mapTournamentRow(row),
+          partnerRequestCount: partnerCounts.get(String(row.id ?? '')) ?? 0,
+        }))
+      ).map((tournament) => enrichTournamentRuntimeState(tournament))
+    );
+
+    const filtered = status
+      ? tournaments.filter((tournament) => tournament.status === status)
+      : tournaments;
+
+    return filtered.slice(0, limit);
   } catch {
-    return applyTournamentOverrides([]).slice(0, limit);
+    return sortTournamentsForCalendar(applyTournamentOverrides([])).slice(0, limit);
   }
 }
 
@@ -245,22 +367,91 @@ export interface HomeStats {
   womenCount: number;
 }
 
+export interface ActiveThaiJudgeTournament {
+  tournamentId: string;
+  name: string;
+  date: string;
+  time: string;
+  location: string;
+  variant: string;
+  pointLimit: number;
+  roundNo: number;
+  roundType: 'r1' | 'r2';
+  currentTourNo: number;
+  courtCount: number;
+}
+
 export async function fetchHomeStats(): Promise<HomeStats> {
   if (!process.env.DATABASE_URL) return { tournamentCount: 0, playerCount: 0, openCount: 0, menCount: 0, womenCount: 0 };
   const pool = getPool();
 
-  const [tRes, pRes] = await Promise.all([
-    pool.query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE status = 'open')::int AS open FROM tournaments`),
+  const [visibleTournaments, pRes] = await Promise.all([
+    fetchTournaments(1000),
     pool.query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE gender = 'M')::int AS men, count(*) FILTER (WHERE gender = 'W')::int AS women FROM players WHERE status = 'active'`),
   ]);
 
   return {
-    tournamentCount: tRes.rows[0]?.total ?? 0,
-    openCount: tRes.rows[0]?.open ?? 0,
+    tournamentCount: visibleTournaments.length,
+    openCount: visibleTournaments.filter((tournament) => tournament.status === 'open').length,
     playerCount: pRes.rows[0]?.total ?? 0,
     menCount: pRes.rows[0]?.men ?? 0,
     womenCount: pRes.rows[0]?.women ?? 0,
   };
+}
+
+export async function fetchActiveThaiJudgeTournaments(): Promise<ActiveThaiJudgeTournament[]> {
+  if (!process.env.DATABASE_URL) return [];
+  const pool = getPool();
+
+  const { rows } = await pool.query(
+    `
+      SELECT
+        t.id::text AS tournament_id,
+        COALESCE(t.name, '') AS name,
+        t.date AS tournament_date,
+        COALESCE(t.time::text, '') AS tournament_time,
+        COALESCE(t.location, '') AS tournament_location,
+        COALESCE(t.settings->>'thaiVariant', '') AS thai_variant,
+        COALESCE(NULLIF(t.settings->>'thaiPointLimit', ''), '15')::int AS thai_point_limit,
+        r.round_no,
+        r.round_type,
+        COALESCE(r.current_tour_no, 1)::int AS current_tour_no,
+        COUNT(c.id)::int AS court_count
+      FROM tournaments t
+      JOIN thai_round r
+        ON r.tournament_id = t.id
+       AND r.status = 'live'
+      LEFT JOIN thai_court c ON c.round_id = r.id
+      WHERE LOWER(COALESCE(t.format, '')) = 'thai'
+        AND COALESCE(t.status, '') <> 'cancelled'
+      GROUP BY t.id, t.name, t.date, t.time, t.location, t.settings, r.round_no, r.round_type, r.current_tour_no
+      ORDER BY
+        t.date DESC NULLS LAST,
+        NULLIF(BTRIM(COALESCE(t.time::text, '')), '') DESC NULLS LAST,
+        t.name ASC
+    `,
+  );
+
+  return rows
+    .filter((row) =>
+      !shouldHideTournamentFromPublic({
+        name: row.name,
+        location: row.tournament_location,
+      })
+    )
+    .map((row) => ({
+      tournamentId: String(row.tournament_id ?? ''),
+      name: String(row.name ?? ''),
+      date: toIsoDate(row.tournament_date),
+      time: String(row.tournament_time ?? ''),
+      location: String(row.tournament_location ?? ''),
+      variant: String(row.thai_variant ?? ''),
+      pointLimit: Number(row.thai_point_limit ?? 15),
+      roundNo: Number(row.round_no ?? 1),
+      roundType: String(row.round_type ?? 'r1').trim().toLowerCase() === 'r2' ? 'r2' : 'r1',
+      currentTourNo: Number(row.current_tour_no ?? 1),
+      courtCount: Number(row.court_count ?? 0),
+    }));
 }
 
 export interface RankingCounts {
@@ -292,7 +483,7 @@ export async function fetchTournamentById(
   const override = getTournamentOverride(id);
   if (!process.env.DATABASE_URL) {
     if (!override) return null;
-    return applyTournamentOverride({
+    return enrichTournamentRuntimeState(applyTournamentOverride({
       id,
       name: '',
       date: '',
@@ -304,10 +495,11 @@ export async function fetchTournamentById(
       capacity: 0,
       status: 'open',
       participantCount: 0,
+      waitlistCount: 0,
       prize: '',
       photoUrl: '',
       formatCode: '',
-    });
+    }));
   }
   const pool = getPool();
 
@@ -315,7 +507,8 @@ export async function fetchTournamentById(
   try {
     const res = await pool.query(
       `
-        SELECT t.*, COUNT(tp.id)::int AS participant_count
+        SELECT t.*, COUNT(tp.id) FILTER (WHERE COALESCE(tp.is_waitlist, false) = false)::int AS participant_count,
+               COUNT(tp.id) FILTER (WHERE COALESCE(tp.is_waitlist, false) = true)::int AS waitlist_count
         FROM tournaments t
         LEFT JOIN tournament_participants tp ON tp.tournament_id = t.id
         WHERE t.id = $1
@@ -327,7 +520,7 @@ export async function fetchTournamentById(
     rows = res.rows;
   } catch {
     if (!override) return null;
-    return applyTournamentOverride({
+    return enrichTournamentRuntimeState(applyTournamentOverride({
       id,
       name: '',
       date: '',
@@ -339,16 +532,17 @@ export async function fetchTournamentById(
       capacity: 0,
       status: 'open',
       participantCount: 0,
+      waitlistCount: 0,
       prize: '',
       photoUrl: '',
       formatCode: '',
-    });
+    }));
   }
 
   const data = rows[0];
   if (!data) {
     if (!override) return null;
-    return applyTournamentOverride({
+    return enrichTournamentRuntimeState(applyTournamentOverride({
       id,
       name: '',
       date: '',
@@ -360,28 +554,19 @@ export async function fetchTournamentById(
       capacity: 0,
       status: 'open',
       participantCount: 0,
+      waitlistCount: 0,
       prize: '',
       photoUrl: '',
       formatCode: '',
-    });
+    }));
   }
 
-  return applyTournamentOverride({
-    id: data.id,
-    name: data.name,
-    date: toIsoDate(data.date),
-    time: data.time ?? '',
-    location: data.location ?? '',
-    format: data.format ?? '',
-    division: data.division ?? '',
-    level: data.level ?? '',
-    capacity: data.capacity ?? 0,
-    status: data.status ?? 'open',
-    participantCount: data.participant_count ?? 0,
-    prize: data.prize ?? '',
-    photoUrl: data.photo_url ?? '',
-    formatCode: data.format_code ?? '',
-  });
+  return enrichTournamentRuntimeState(
+    applyTournamentOverride({
+      ...mapTournamentRow(data),
+      partnerRequestCount: (await fetchPartnerRequestCounts([id])).get(id) ?? 0,
+    })
+  );
 }
 
 export async function fetchPlayerMatches(
@@ -401,6 +586,7 @@ export async function fetchPlayerMatches(
         tr.place,
         tr.game_pts,
         tr.rating_pts,
+        tr.rating_pool,
         tr.gender,
         tr.rating_type,
         tr.wins,
@@ -426,7 +612,10 @@ export async function fetchPlayerMatches(
     playerName: r.player_name,
     place: Number(r.place ?? 0),
     gamePts: Number(r.game_pts ?? 0),
-    ratingPts: Number(r.rating_pts ?? 0),
+    ratingPts: ratingPointsForPlace(
+      Number(r.place ?? 0),
+      r.rating_pool === 'novice' ? 'novice' : 'pro',
+    ),
     gender: (r.gender ?? 'M') as 'M' | 'W',
     tournamentId: r.tournament_id,
     tournamentName: r.tournament_name ?? '',
@@ -532,7 +721,8 @@ export async function fetchPartnerRequests(filters: PartnerFilters = {}): Promis
     `pr.status = 'pending'`,
     `COALESCE(pr.registration_type, 'solo') = 'solo'`,
     `COALESCE(pr.partner_wanted, true) = true`,
-    `t.status IN ('open', 'full')`,
+    `COALESCE(t.status, 'open') <> 'cancelled'`,
+    `(t.date IS NULL OR t.date >= CURRENT_DATE)`,
   ];
   const params: string[] = [];
 
@@ -663,6 +853,7 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
 
   const { rows: results } = await pool.query(
     `SELECT tr.place, tr.game_pts, tr.rating_pts, tr.wins, tr.diff, tr.balls, tr.rating_type,
+            tr.rating_pool,
             t.name AS tournament_name, t.date AS tournament_date, t.format
      FROM tournament_results tr
      JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
@@ -680,7 +871,10 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
   const places = results.map(r => Number(r.place)).filter(p => p > 0);
   const avgPlace = places.length ? +(places.reduce((a, b) => a + b, 0) / places.length).toFixed(1) : 0;
   const bestPlace = places.length ? Math.min(...places) : 0;
-  const totalRatingPts = results.reduce((s, r) => s + Number(r.rating_pts || 0), 0);
+  const totalRatingPts = results.reduce((s, r) => {
+    const pool = r.rating_pool === 'novice' ? 'novice' : 'pro';
+    return s + ratingPointsForPlace(Number(r.place), pool);
+  }, 0);
   const avgRatingPts = totalTournaments ? +(totalRatingPts / totalTournaments).toFixed(1) : 0;
   const totalWins = results.reduce((s, r) => s + Number(r.wins || 0), 0);
   const totalBalls = results.reduce((s, r) => s + Number(r.balls || 0), 0);
@@ -692,7 +886,8 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
   let bestTournament: PlayerExtendedStats['bestTournament'] = null;
   let bestPts = -Infinity;
   for (const r of results) {
-    const pts = Number(r.rating_pts || 0);
+    const pool = r.rating_pool === 'novice' ? 'novice' : 'pro';
+    const pts = ratingPointsForPlace(Number(r.place), pool);
     if (pts > bestPts) {
       bestPts = pts;
       bestTournament = { name: r.tournament_name, date: toIsoDate(r.tournament_date), place: Number(r.place), pts };
@@ -706,17 +901,18 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
   }
   const currentStreak = { type: (streakCount > 0 ? 'top3' : 'none') as 'top3' | 'none', count: streakCount };
 
-  const valuesRows = POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
+  const valuesRows = RATING_POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
+  const eff = sqlEffectiveRatingPointsExpr('tr');
   const { rows: ranks } = await pool.query(
     `WITH pts(place, pts) AS (VALUES ${valuesRows}),
     ranked AS (
       SELECT tr.player_id, tr.rating_type,
-             ROW_NUMBER() OVER (PARTITION BY tr.rating_type ORDER BY SUM(COALESCE(lk.pts,1)) DESC) AS rn
+             ROW_NUMBER() OVER (PARTITION BY tr.rating_type ORDER BY SUM(${eff}) DESC) AS rn
       FROM tournament_results tr
       JOIN players p ON p.id = tr.player_id AND p.status = 'active'
       LEFT JOIN pts lk ON lk.place = tr.place
       GROUP BY tr.player_id, tr.rating_type
-      HAVING SUM(COALESCE(lk.pts,1)) > 0
+      HAVING SUM(${eff}) > 0
     )
     SELECT rating_type, rn FROM ranked WHERE player_id = $1`,
     [playerId]
@@ -758,7 +954,7 @@ export async function fetchTournamentResults(tournamentId: string): Promise<Tour
   const { rows } = await pool.query(
     `SELECT tr.player_id, p.name AS player_name, p.photo_url AS player_photo_url,
             tr.place, tr.game_pts, tr.rating_pts, tr.wins, tr.diff, tr.balls,
-            tr.rating_type, tr.gender
+            tr.rating_type, tr.gender, tr.rating_pool
      FROM tournament_results tr
      JOIN players p ON p.id = tr.player_id
      WHERE tr.tournament_id = $1
@@ -766,17 +962,23 @@ export async function fetchTournamentResults(tournamentId: string): Promise<Tour
     [tournamentId]
   );
 
-  return rows.map(r => ({
-    playerId: r.player_id,
-    playerName: r.player_name,
-    playerPhotoUrl: r.player_photo_url ?? '',
-    place: Number(r.place ?? 0),
-    gamePts: Number(r.game_pts ?? 0),
-    ratingPts: Number(r.rating_pts ?? 0),
-    wins: Number(r.wins ?? 0),
-    diff: Number(r.diff ?? 0),
-    balls: Number(r.balls ?? 0),
-    ratingType: r.rating_type ?? '',
-    gender: r.gender ?? '',
-  }));
+  return rows.map((r) => {
+    const place = Number(r.place ?? 0);
+    const poolKind = r.rating_pool === 'novice' ? 'novice' : 'pro';
+    const ratingPts = effectiveRatingPtsFromStored(place, poolKind, r.rating_pts);
+
+    return {
+      playerId: r.player_id,
+      playerName: r.player_name,
+      playerPhotoUrl: r.player_photo_url ?? '',
+      place,
+      gamePts: Number(r.game_pts ?? 0),
+      ratingPts,
+      wins: Number(r.wins ?? 0),
+      diff: Number(r.diff ?? 0),
+      balls: Number(r.balls ?? 0),
+      ratingType: r.rating_type ?? '',
+      gender: r.gender ?? '',
+    };
+  });
 }

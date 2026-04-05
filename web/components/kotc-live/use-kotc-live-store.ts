@@ -48,6 +48,7 @@ interface KotcLiveState {
   structureEpoch: number;
   phase: string;
   nc: number;
+  ppc: number;
   courts: Record<number, KotcCourtState>;
   presence: KotcPresenceItem[];
   connectionStatus: KotcConnectionStatus;
@@ -133,16 +134,64 @@ function saveStoredSeat(value: StoredSeatInfo | null): void {
   window.localStorage.setItem(STORED_SEAT_KEY, JSON.stringify(value));
 }
 
+function normalizeServerSlots(
+  value: unknown,
+  fallback: Array<number | null> | undefined,
+  slotCount = 4,
+): Array<number | null> {
+  const source = Array.isArray(value) ? value : fallback ?? [];
+  return Array.from({ length: slotCount }, (_, index) => {
+    const candidate = source[index];
+    const numeric = candidate == null ? null : Number(candidate);
+    return numeric === 0 || numeric === 1 ? numeric : null;
+  });
+}
+
+function deriveServeState(
+  activeSlotIdxValue: unknown,
+  serverSlotsValue: unknown,
+  fallbackSlots: Array<number | null> | undefined,
+  slotCount = 4,
+): {
+  activeSlotIdx: number;
+  activeServerPlayerIdx: number | null;
+  waitingServerPlayerIdx: number | null;
+  serverPlayerIdxBySlot: Array<number | null>;
+} {
+  const serverPlayerIdxBySlot = normalizeServerSlots(serverSlotsValue, fallbackSlots, slotCount);
+  const numericActive = Number(activeSlotIdxValue);
+  const activeSlotIdx =
+    Number.isInteger(numericActive) && numericActive >= 0 && numericActive < slotCount ? numericActive : 0;
+  const waitingSlotIdx = slotCount > 1 ? (activeSlotIdx + 1) % slotCount : 0;
+  return {
+    activeSlotIdx,
+    activeServerPlayerIdx: serverPlayerIdxBySlot[activeSlotIdx] ?? null,
+    waitingServerPlayerIdx: serverPlayerIdxBySlot[waitingSlotIdx] ?? null,
+    serverPlayerIdxBySlot,
+  };
+}
+
 function mergeCourtPatch(
   previous: KotcCourtState | undefined,
   patch: Partial<KotcCourtState>,
   fallbackIdx: number,
 ): KotcCourtState {
+  const serveState = deriveServeState(
+    patch.activeSlotIdx ?? previous?.activeSlotIdx,
+    patch.serverPlayerIdxBySlot,
+    previous?.serverPlayerIdxBySlot,
+  );
   return {
     courtIdx: patch.courtIdx ?? previous?.courtIdx ?? fallbackIdx,
     courtVersion: patch.courtVersion ?? previous?.courtVersion ?? 0,
     roundIdx: patch.roundIdx ?? previous?.roundIdx ?? 0,
+    rosterM: patch.rosterM ?? previous?.rosterM ?? [],
+    rosterW: patch.rosterW ?? previous?.rosterW ?? [],
     scores: patch.scores ?? previous?.scores ?? {},
+    activeSlotIdx: serveState.activeSlotIdx,
+    activeServerPlayerIdx: serveState.activeServerPlayerIdx,
+    waitingServerPlayerIdx: serveState.waitingServerPlayerIdx,
+    serverPlayerIdxBySlot: serveState.serverPlayerIdxBySlot,
     timerStatus: patch.timerStatus ?? previous?.timerStatus ?? "",
     timerDurationMs: patch.timerDurationMs ?? previous?.timerDurationMs ?? 0,
     timerEndsAt: patch.timerEndsAt ?? previous?.timerEndsAt ?? null,
@@ -164,14 +213,48 @@ function parseCourtFromDelta(
     (courtRaw.timer as Record<string, unknown> | undefined) ??
     (courtRaw.timer_state as Record<string, unknown> | undefined) ??
     {};
+  const serveRaw =
+    (courtRaw.serve as Record<string, unknown> | undefined) ??
+    (courtRaw.serve_state as Record<string, unknown> | undefined) ??
+    {};
+  const activeSlotSource =
+    serveRaw.activeSlotIdx ??
+    serveRaw.active_slot_idx ??
+    courtRaw.activeSlotIdx ??
+    courtRaw.active_slot_idx;
   return {
     courtIdx,
     courtVersion: Number(courtRaw.courtVersion ?? courtRaw.court_version ?? 0),
     roundIdx: Number(courtRaw.roundIdx ?? courtRaw.round_idx ?? 0),
+    rosterM: Array.isArray(courtRaw.rosterM)
+      ? courtRaw.rosterM
+      : Array.isArray(courtRaw.roster_m)
+        ? courtRaw.roster_m
+        : Array.isArray(courtRaw.roster_m_json)
+          ? courtRaw.roster_m_json
+          : undefined,
+    rosterW: Array.isArray(courtRaw.rosterW)
+      ? courtRaw.rosterW
+      : Array.isArray(courtRaw.roster_w)
+        ? courtRaw.roster_w
+        : Array.isArray(courtRaw.roster_w_json)
+          ? courtRaw.roster_w_json
+          : undefined,
     scores:
       typeof courtRaw.scores === "object" && courtRaw.scores
         ? (courtRaw.scores as Record<string, unknown>)
         : undefined,
+    activeSlotIdx: activeSlotSource == null ? undefined : Number(activeSlotSource),
+    serverPlayerIdxBySlot:
+      Array.isArray(serveRaw.serverPlayerIdxBySlot)
+        ? (serveRaw.serverPlayerIdxBySlot as Array<number | null>)
+        : Array.isArray(serveRaw.server_player_idx_by_slot)
+          ? (serveRaw.server_player_idx_by_slot as Array<number | null>)
+          : Array.isArray(courtRaw.serverPlayerIdxBySlot)
+            ? (courtRaw.serverPlayerIdxBySlot as Array<number | null>)
+            : Array.isArray(courtRaw.server_player_idx_by_slot)
+              ? (courtRaw.server_player_idx_by_slot as Array<number | null>)
+              : undefined,
     timerStatus:
       typeof timerRaw.status === "string"
         ? timerRaw.status
@@ -256,6 +339,7 @@ function reducer(state: KotcLiveState, action: Action): KotcLiveState {
         presence: [],
         phase: "",
         nc: 4,
+        ppc: 4,
       };
     case "setDisplayName":
       return { ...state, displayName: action.displayName };
@@ -272,6 +356,7 @@ function reducer(state: KotcLiveState, action: Action): KotcLiveState {
         structureEpoch: action.snapshot.structureEpoch,
         phase: action.snapshot.phase || state.phase,
         nc: action.snapshot.nc || state.nc,
+        ppc: action.snapshot.ppc || state.ppc,
         courts: action.snapshot.courts,
         presence: action.snapshot.presence,
         lastGapScope: null,
@@ -342,6 +427,7 @@ const initialState: KotcLiveState = {
   structureEpoch: 0,
   phase: "",
   nc: 4,
+  ppc: 4,
   courts: {},
   presence: [],
   connectionStatus: "idle",

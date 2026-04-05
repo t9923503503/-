@@ -4,6 +4,7 @@ import { listPendingRequests, approveRequest, rejectRequest } from '@/lib/admin-
 import { writeAuditLog } from '@/lib/admin-audit';
 import { normalizeRequestInput, validateRequestInput } from '@/lib/admin-validators';
 import { adminErrorResponse } from '@/lib/admin-errors';
+import { notifyPlayerRequestReviewed } from '@/lib/tournament-notifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,16 @@ export async function POST(req: NextRequest) {
 
     if (input.action === 'approve') {
       const result = await approveRequest(input.requestId);
-      if (!result.request) return NextResponse.json({ error: 'Request not found or already processed' }, { status: 404 });
+      if (!result.request) {
+        const errorText =
+          typeof result === 'object' && result && 'error' in result
+            ? String(result.error ?? '')
+            : '';
+        return NextResponse.json(
+          { error: errorText || 'Request not found or already processed' },
+          { status: errorText ? 400 : 404 }
+        );
+      }
       await writeAuditLog({
         actorId: auth.actor.id,
         actorRole: auth.actor.role,
@@ -42,6 +52,7 @@ export async function POST(req: NextRequest) {
         reason: input.reason || 'Approved',
         afterState: { request: result.request, newPlayerId: result.newPlayerId },
       });
+      await notifyPlayerRequestReviewed(input.requestId, 'approved');
       return NextResponse.json(result);
     }
 
@@ -57,6 +68,7 @@ export async function POST(req: NextRequest) {
         reason: input.reason || 'Rejected',
         afterState: result,
       });
+      await notifyPlayerRequestReviewed(input.requestId, 'rejected');
       return NextResponse.json(result);
     }
 

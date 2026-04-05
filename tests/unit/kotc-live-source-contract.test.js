@@ -37,4 +37,17 @@ describe('KOTC live source contracts', () => {
     expect(store).toContain('dispatch({ type: "applySnapshot", snapshot });');
     expect(store).not.toContain('const court = await fetchCourt(current.selectedSessionId, packet.court_idx, current.seatToken);');
   });
+
+  it('serve-state stays in court scope across service and judge UI', () => {
+    const service = read('web/lib/kotc-live/service.ts');
+    const judgeFlow = read('web/components/kotc-live/judge/KotcLiveJudgeFlow.tsx');
+    const judgeScreen = read('web/components/kotc-live/judge/JudgeScreen.tsx');
+
+    expect(service).toContain("command.commandType === 'court.server_select'");
+    expect(service).toContain("command.commandType === 'court.server_swap'");
+    expect(service).toContain('server_slots_json');
+    expect(judgeFlow).toContain('commandType: isSelected ? "court.server_swap" : "court.server_select"');
+    expect(judgeScreen).toContain('Следующие');
+    expect(judgeScreen).toContain('getCourtServeState');
+  });
 });

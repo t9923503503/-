@@ -7,6 +7,9 @@ interface ViewerModeProps {
   courtIdx: number;
   court: KotcCourtState | undefined;
   clockOffsetMs: number;
+  phase?: string;
+  nc: number;
+  ppc: number;
   onLeave: () => void;
 }
 
@@ -16,7 +19,9 @@ export function ViewerMode(props: ViewerModeProps) {
       {...props}
       readOnly={true}
       onScore={() => {}}
+      onServerTap={() => {}}
       onTimer={() => {}}
+      onRoundChange={() => {}}
     />
   );
 }

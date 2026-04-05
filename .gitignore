@@ -10,11 +10,33 @@ server_restore.env
 # Next.js build output (should never be committed)
 web/.next/
 
+# Local one-off standalone tarball for remote deploy (see scripts/push-next-standalone-remote.py)
+deploy-web-standalone.tar.gz
+
 # Environment files with secrets
 web/.env.local
+scripts/deploy-server.env
 
 # Vite static bundle output
 dist/
 
 # TypeScript incremental cache
 *.tsbuildinfo
+
+# Артефакты деплоя / архивы (не в репозитории)
+deploy-*.tar
+deploy-*.tar.gz
+deploy-*.zip
+tmp-*.tar
+*_hotfix*.tar
+3103.zip
+.next/
+tmp-*.png
+tmp-*.txt
+tmp_*.ts
+tmp_extract.js
+
+# Локальные снимки для выкладки (не в git)
+.deploy/
+artifacts/
+_site/

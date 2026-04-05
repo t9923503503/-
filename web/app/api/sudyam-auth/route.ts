@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { COOKIE_NAME } from '@/lib/auth';
+import { getExpectedJudgePin } from '@/lib/judge-pin';
 
 export const dynamic = 'force-dynamic';
-const FALLBACK_SUDYAM_PIN = '7319';
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000;
 
@@ -12,15 +12,6 @@ type AttemptBucket = {
 };
 
 const attemptsByIp = new Map<string, AttemptBucket>();
-
-function getExpectedPin(): string {
-  const configuredPin = String(process.env.SUDYAM_PIN || '').trim();
-  if (configuredPin) return configuredPin;
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('SUDYAM_PIN env var is required in production');
-  }
-  return FALLBACK_SUDYAM_PIN;
-}
 
 function getClientIp(req: NextRequest): string {
   const forwarded = req.headers.get('x-forwarded-for');
@@ -44,7 +35,7 @@ function getRateLimitState(ip: string): AttemptBucket {
 export async function POST(req: NextRequest) {
   let expectedPin: string;
   try {
-    expectedPin = getExpectedPin();
+    expectedPin = getExpectedJudgePin();
   } catch (err) {
     console.error('[API] sudyam-auth config error:', err);
     return NextResponse.json({ error: 'Auth service misconfigured' }, { status: 503 });

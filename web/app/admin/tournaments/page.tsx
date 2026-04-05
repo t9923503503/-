@@ -1,6 +1,62 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import {
+  THAI_ADMIN_COURTS,
+  THAI_ADMIN_FORMAT,
+  THAI_ADMIN_MIN_COURTS,
+  THAI_ADMIN_POINT_LIMIT_MAX,
+  THAI_ADMIN_POINT_LIMIT_MIN,
+  THAI_ADMIN_PLAYERS_PER_COURT,
+  THAI_ROSTER_MODES,
+  THAI_RULES_PRESETS,
+  type ThaiRosterMode,
+  type ThaiRulesPreset,
+  THAI_VARIANTS,
+  type ThaiTourCount,
+  type ThaiVariant,
+  getThaiDivisionLabel,
+  getThaiSeatCount,
+  isThaiAdminFormat,
+  normalizeThaiAdminSettings,
+  normalizeThaiRosterMode,
+  normalizeThaiRulesPreset,
+  normalizeThaiTourCount,
+  normalizeThaiVariant,
+  validateThaiRoster,
+} from '@/lib/admin-legacy-sync';
+import { buildSudyamLaunchUrl, getSudyamFormatForTournament } from '@/lib/sudyam-launch';
+import {
+  THAI_JUDGE_MODULE_LEGACY,
+  THAI_JUDGE_MODULE_NEXT,
+  THAI_NEXT_JUDGE_DEFAULT_TOUR_COUNT,
+  THAI_NEXT_JUDGE_MAX_COURTS,
+  type ThaiJudgeModule,
+  isExactThaiTournamentFormat,
+  normalizeThaiJudgeBootstrapSignature,
+  normalizeThaiJudgeModule,
+} from '@/lib/thai-judge-config';
+import { filterPlayersByGenderSelection, type ThaiGenderFilter } from '@/lib/thai-ui-helpers';
+type TournamentSettings = {
+  courts: number;
+  playersPerCourt: number;
+  timerCourts: number;
+  timerFinals: number;
+  pairsMode: 'rotation' | 'fixed';
+  draftSeed: string;
+  thaiVariant: ThaiVariant;
+  thaiRosterMode: ThaiRosterMode;
+  tourCount: ThaiTourCount;
+  thaiJudgeModule: ThaiJudgeModule;
+  thaiJudgeBootstrapSignature: string | null;
+  thaiPointLimit: number;
+  thaiPointLimitR1: number;
+  thaiPointLimitR2: number;
+  thaiRulesPreset: ThaiRulesPreset;
+  iptPointLimit: number;
+  iptFinishType: 'hard' | 'balance';
+};
 
 type Row = {
   id: string;
@@ -17,55 +73,187 @@ type Row = {
   settings?: TournamentSettings;
 };
 
-type TournamentSettings = {
-  courts: number;
-  playersPerCourt: number;
-  timerCourts: number;
-  timerFinals: number;
-  pairsMode: 'rotation' | 'fixed';
-  draftSeed: string;
+type Player = {
+  id: string;
+  name: string;
+  gender: 'M' | 'W';
+};
+
+type DraftPlayer = {
+  playerId: string;
+  playerName: string;
+  gender: 'M' | 'W';
+};
+
+type GenderFilter = ThaiGenderFilter;
+
+type RosterParticipant = {
+  playerId: string;
+  playerName: string;
+  gender: 'M' | 'W';
 };
 
 const defaultSettings: TournamentSettings = {
-  courts: 4,
+  courts: THAI_ADMIN_COURTS,
   playersPerCourt: 4,
   timerCourts: 10,
   timerFinals: 10,
   pairsMode: 'rotation',
   draftSeed: '',
+  thaiVariant: 'MF',
+  thaiRosterMode: 'manual',
+  tourCount: THAI_NEXT_JUDGE_DEFAULT_TOUR_COUNT,
+  thaiJudgeModule: THAI_JUDGE_MODULE_NEXT,
+  thaiJudgeBootstrapSignature: null,
+  thaiPointLimit: 15,
+  thaiPointLimitR1: 15,
+  thaiPointLimitR2: 15,
+  thaiRulesPreset: 'legacy',
+  iptPointLimit: 21,
+  iptFinishType: 'hard',
 };
 
-const emptyForm: Row = {
-  id: '',
-  name: '',
-  date: '',
-  time: '',
-  location: '',
-  format: 'Round Robin',
-  division: 'Микст',
-  level: 'medium',
-  capacity: 24,
-  status: 'open',
-  participantCount: 0,
-  settings: { ...defaultSettings },
-};
+function createEmptyForm(): Row {
+  return {
+    id: '',
+    name: '',
+    date: '',
+    time: '',
+    location: '',
+    format: 'Round Robin',
+    division: '',
+    level: 'medium',
+    capacity: 24,
+    status: 'open',
+    participantCount: 0,
+    settings: { ...defaultSettings },
+  };
+}
+
+function normalizeSettings(settings?: Partial<TournamentSettings>): TournamentSettings {
+  return { ...defaultSettings, ...(settings ?? {}) };
+}
+
+function normalizeGender(value: unknown): 'M' | 'W' {
+  return String(value || 'M').toUpperCase() === 'W' ? 'W' : 'M';
+}
+
+function clampThaiPointLimitValue(value: number): number {
+  return Math.max(THAI_ADMIN_POINT_LIMIT_MIN, Math.min(THAI_ADMIN_POINT_LIMIT_MAX, Math.trunc(value)));
+}
+
+function normalizeThaiSettings(
+  settings?: Partial<TournamentSettings>,
+  participantCount?: number,
+  fallbackModule: ThaiJudgeModule = THAI_JUDGE_MODULE_NEXT,
+): TournamentSettings {
+  const base = normalizeSettings(settings);
+  const thaiSettings = normalizeThaiAdminSettings(base as unknown as Record<string, unknown>, participantCount);
+  const judgeModule = normalizeThaiJudgeModule(base.thaiJudgeModule, fallbackModule);
+  const legacyPl = thaiSettings.pointLimit;
+  const r1 = clampThaiPointLimitValue(
+    Number(base.thaiPointLimitR1 ?? base.thaiPointLimit ?? legacyPl) || legacyPl,
+  );
+  const r2 = clampThaiPointLimitValue(
+    Number(base.thaiPointLimitR2 ?? base.thaiPointLimit ?? legacyPl) || legacyPl,
+  );
+  return {
+    ...base,
+    courts: thaiSettings.courts,
+    playersPerCourt: THAI_ADMIN_PLAYERS_PER_COURT,
+    pairsMode: 'rotation',
+    thaiVariant: thaiSettings.variant,
+    thaiRosterMode: normalizeThaiRosterMode(base.thaiRosterMode),
+    thaiRulesPreset: normalizeThaiRulesPreset(base.thaiRulesPreset),
+    tourCount: judgeModule === THAI_JUDGE_MODULE_NEXT ? THAI_NEXT_JUDGE_DEFAULT_TOUR_COUNT : thaiSettings.tourCount,
+    thaiPointLimit: r1,
+    thaiPointLimitR1: r1,
+    thaiPointLimitR2: r2,
+    thaiJudgeModule: judgeModule,
+    thaiJudgeBootstrapSignature: normalizeThaiJudgeBootstrapSignature(base.thaiJudgeBootstrapSignature),
+  };
+}
+
+function getThaiVariantLabel(variant: ThaiVariant): string {
+  switch (variant) {
+    case 'MN':
+      return 'М/Н';
+    case 'MM':
+      return 'Муж';
+    case 'WW':
+      return 'Жен';
+    default:
+      return 'Микст';
+  }
+}
+
+function getThaiCourtHint(variant: ThaiVariant): string {
+  switch (variant) {
+    case 'MN':
+      return '8 мест · 4 профи / 4 новичка';
+    case 'MM':
+      return '8 мест · только мужчины';
+    case 'WW':
+      return '8 мест · только женщины';
+    default:
+      return '8 мест · 4M / 4W';
+  }
+}
+
+function getThaiSlotHint(variant: ThaiVariant, slotIndex: number): string | null {
+  if (variant === 'MN') {
+    return slotIndex < 4 ? 'Профи' : 'Новичок';
+  }
+  if (variant === 'MM') return 'Мужчина';
+  if (variant === 'WW') return 'Женщина';
+  return null;
+}
+
+function buildJudgeLaunchUrl(row: Pick<Row, 'id' | 'format'>): string {
+  const format = getSudyamFormatForTournament(row.format);
+  if (!format) return '';
+  return buildSudyamLaunchUrl({
+    tournamentId: row.id,
+    format,
+  });
+}
+
+function getErrorText(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
 
 const formats = [
-  { key: 'Round Robin', label: '🏐 Round Robin', shortLabel: 'RR' },
-  { key: 'King of the Court', label: '👑 KOTC', shortLabel: 'KOTC' },
-  { key: 'IPT Mixed', label: '🌴 IPT Микст', shortLabel: 'IPT' },
+  { key: 'Round Robin', label: 'Round Robin' },
+  { key: 'King of the Court', label: 'KOTC' },
+  { key: THAI_ADMIN_FORMAT, label: 'Тайский' },
 ];
 
 const divisions = [
-  { key: 'Мужской', label: '♂ Муж' },
-  { key: 'Женский', label: '♀ Жен' },
-  { key: 'Микст', label: '⚡ Микст' },
+  { key: 'Мужской', label: 'Муж' },
+  { key: 'Женский', label: 'Жен' },
+  { key: 'Микст', label: 'Микст' },
 ];
 
 const levels = [
   { key: 'hard', label: 'HARD', color: 'border-red-500/60 text-red-300' },
   { key: 'medium', label: 'MEDIUM', color: 'border-amber-500/60 text-amber-300' },
   { key: 'easy', label: 'LITE', color: 'border-emerald-500/60 text-emerald-300' },
+];
+
+const thaiVariantOptions: { key: ThaiVariant; label: string }[] = THAI_VARIANTS.map((variant) => ({
+  key: variant,
+  label: getThaiVariantLabel(variant),
+}));
+
+const thaiRosterModeOptions: { key: ThaiRosterMode; label: string }[] = THAI_ROSTER_MODES.map((mode) => ({
+  key: mode,
+  label: mode === 'manual' ? 'Вручную' : 'Случайно',
+}));
+
+const thaiTourOptions: { key: ThaiTourCount; label: string }[] = [
+  { key: 1 as ThaiTourCount, label: '1 тур' },
+  { key: 2 as ThaiTourCount, label: '2 тура' },
 ];
 
 const statuses = [
@@ -75,27 +263,22 @@ const statuses = [
   { key: 'cancelled', label: 'Отменён', color: 'bg-red-500/20 text-red-300 border-red-500/40' },
 ];
 
-/* ─── Segment Button Component ─── */
-function normalizeJudgeFormat(format: string): 'ipt' | 'thai' | 'kotc' {
-  const normalized = String(format || '').trim().toLowerCase();
-  if (normalized.includes('ipt')) return 'ipt';
-  if (normalized.includes('thai')) return 'thai';
-  return 'kotc';
-}
-
-function buildSudyamHref(row: Pick<Row, 'id' | 'format'>): string {
-  const format = normalizeJudgeFormat(row.format);
-  return `/sudyam?tournamentId=${encodeURIComponent(row.id)}&format=${encodeURIComponent(format)}`;
-}
+const genderFilterOptions: { key: GenderFilter; label: string }[] = [
+  { key: 'all', label: 'Все' },
+  { key: 'M', label: 'M' },
+  { key: 'W', label: 'W' },
+];
 
 function Seg<T extends string | number>({
   options,
   value,
   onChange,
+  disabled,
 }: {
   options: { key: T; label: string; color?: string }[];
   value: T;
   onChange: (v: T) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex gap-1 flex-wrap">
@@ -103,11 +286,16 @@ function Seg<T extends string | number>({
         <button
           key={String(o.key)}
           type="button"
+          disabled={disabled}
           onClick={() => onChange(o.key)}
           className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-            value === o.key
-              ? o.color ?? 'bg-brand/20 text-brand border-brand/50'
-              : 'bg-white/5 text-text-primary/60 border-white/10 hover:border-white/30'
+            disabled
+              ? value === o.key
+                ? 'bg-brand/10 text-brand/50 border-brand/30 cursor-not-allowed'
+                : 'bg-white/5 text-text-primary/30 border-white/5 cursor-not-allowed'
+              : value === o.key
+                ? o.color ?? 'bg-brand/20 text-brand border-brand/50'
+                : 'bg-white/5 text-text-primary/60 border-white/10 hover:border-white/30'
           }`}
         >
           {o.label}
@@ -117,7 +305,6 @@ function Seg<T extends string | number>({
   );
 }
 
-/* ─── Number Stepper Component ─── */
 function Stepper({
   value,
   onChange,
@@ -138,10 +325,11 @@ function Stepper({
         onClick={() => onChange(Math.max(min, value - 1))}
         className="w-8 h-8 rounded-lg border border-white/20 hover:border-brand text-text-primary/80 flex items-center justify-center"
       >
-        −
+        -
       </button>
       <span className="w-16 text-center font-semibold text-brand">
-        {value}{suffix}
+        {value}
+        {suffix}
       </span>
       <button
         type="button"
@@ -156,63 +344,483 @@ function Stepper({
 
 export default function AdminTournamentsPage() {
   const [rows, setRows] = useState<Row[]>([]);
+  const [allPlayers, setAllPlayers] = useState<Player[]>([]);
   const [query, setQuery] = useState('');
-  const [form, setForm] = useState<Row>(emptyForm);
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [playerGenderFilter, setPlayerGenderFilter] = useState<GenderFilter>('all');
+  const [form, setForm] = useState<Row>(() => createEmptyForm());
+  const [draftPlayers, setDraftPlayers] = useState<DraftPlayer[]>([]);
+  const [selectedDraftIndex, setSelectedDraftIndex] = useState<number | null>(null);
+  const [confirmClearCourtIndex, setConfirmClearCourtIndex] = useState<number | null>(null);
   const [message, setMessage] = useState('');
+  const [judgeLaunchUrl, setJudgeLaunchUrl] = useState('');
   const [loading, setLoading] = useState(false);
-
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterError, setRosterError] = useState('');
   const isEdit = useMemo(() => Boolean(form.id), [form.id]);
-  const settings = form.settings ?? defaultSettings;
+  const isThaiFormat = useMemo(() => isThaiAdminFormat(form.format), [form.format]);
+  const isExactThaiFormat = useMemo(() => isExactThaiTournamentFormat(form.format), [form.format]);
+  const settings = useMemo(() => normalizeSettings(form.settings), [form.settings]);
+  const thaiSettings = useMemo(
+    () =>
+      isThaiFormat
+        ? normalizeThaiSettings(
+            form.settings,
+            draftPlayers.length,
+            isEdit ? THAI_JUDGE_MODULE_LEGACY : THAI_JUDGE_MODULE_NEXT,
+          )
+        : null,
+    [draftPlayers.length, form.settings, isEdit, isThaiFormat]
+  );
+  const seatCount = isThaiFormat ? getThaiSeatCount(thaiSettings?.courts ?? THAI_ADMIN_COURTS) : settings.courts * settings.playersPerCourt;
+  const autoCapacity = seatCount;
+  const participantLimit = isThaiFormat ? seatCount : Math.max(Number(form.capacity || 0), 0) || autoCapacity;
+  const reservePlayers = draftPlayers.slice(seatCount);
+  const rosterOverflow = draftPlayers.length > participantLimit;
+  const thaiMenCount = useMemo(() => draftPlayers.filter((player) => player && player.gender === 'M').length, [draftPlayers]);
+  const thaiWomenCount = draftPlayers.filter((player) => player != null).length - thaiMenCount;
+  const thaiRosterError = useMemo(() => {
+    if (!isThaiFormat || !thaiSettings) return '';
+    return (
+      validateThaiRoster(
+        draftPlayers.filter(Boolean).map((player) => ({
+          id: player.playerId,
+          gender: player.gender,
+        })),
+        {
+          courts: thaiSettings.courts,
+          thaiVariant: thaiSettings.thaiVariant,
+          tourCount: thaiSettings.tourCount,
+        }
+      ) ?? ''
+    );
+  }, [draftPlayers, isThaiFormat, thaiSettings]);
+  const registeredIds = useMemo(() => new Set(draftPlayers.filter(Boolean).map((player) => player.playerId)), [draftPlayers]);
+  const filteredPlayers = useMemo(() => {
+    const term = playerSearch.trim().toLowerCase();
+    return filterPlayersByGenderSelection(
+      allPlayers
+      .filter((player) => !registeredIds.has(player.id))
+      .filter((player) => {
+        if (!isThaiFormat || !thaiSettings) return true;
+        if (thaiSettings.thaiVariant === 'WW') return player.gender === 'W';
+        if (thaiSettings.thaiVariant === 'MM') return player.gender === 'M';
+        return true;
+      })
+      .filter((player) => !term || player.name.toLowerCase().includes(term))
+      , playerGenderFilter).slice(0, 40);
+  }, [allPlayers, isThaiFormat, playerGenderFilter, playerSearch, registeredIds, thaiSettings]);
 
-  function updateSettings(patch: Partial<TournamentSettings>) {
-    setForm((s) => ({ ...s, settings: { ...settings, ...patch } }));
+  function resetComposer() {
+    setForm(createEmptyForm());
+    setDraftPlayers([]);
+    setSelectedDraftIndex(null);
+    setPlayerSearch('');
+    setPlayerGenderFilter('all');
+    setRosterError('');
+    setJudgeLaunchUrl('');
+    setConfirmClearCourtIndex(null);
   }
 
-  // Auto-calculate capacity
-  const autoCapacity = settings.courts * settings.playersPerCourt;
+  function updateSettings(patch: Partial<TournamentSettings>) {
+    setForm((current) => {
+      const nextSettings = { ...normalizeSettings(current.settings), ...patch };
+      if (isThaiAdminFormat(current.format)) {
+        const nextThaiSettings = normalizeThaiSettings(nextSettings, draftPlayers.length);
+        return {
+          ...current,
+          format: THAI_ADMIN_FORMAT,
+          division: getThaiDivisionLabel(nextThaiSettings.thaiVariant),
+          capacity: getThaiSeatCount(nextThaiSettings.courts),
+          settings: {
+            ...nextSettings,
+            ...nextThaiSettings,
+          },
+        };
+      }
+      return {
+        ...current,
+        settings: nextSettings,
+      };
+    });
+  }
+
+  function applyFormat(format: string) {
+    setForm((current) => {
+      const nextSettings = normalizeSettings(current.settings);
+      if (isThaiAdminFormat(format)) {
+        const thaiSeedSettings: Partial<TournamentSettings> =
+          current.format === THAI_ADMIN_FORMAT
+            ? nextSettings
+            : {
+                ...nextSettings,
+                courts: THAI_ADMIN_COURTS,
+                tourCount: THAI_NEXT_JUDGE_DEFAULT_TOUR_COUNT,
+                thaiJudgeModule: THAI_JUDGE_MODULE_NEXT,
+                thaiJudgeBootstrapSignature: null,
+              };
+        const nextThaiSettings = normalizeThaiSettings(
+          thaiSeedSettings,
+          draftPlayers.length,
+          THAI_JUDGE_MODULE_NEXT,
+        );
+        return {
+          ...current,
+          format: THAI_ADMIN_FORMAT,
+          division: getThaiDivisionLabel(nextThaiSettings.thaiVariant),
+          capacity: getThaiSeatCount(nextThaiSettings.courts),
+          settings: {
+            ...nextSettings,
+            ...nextThaiSettings,
+          },
+        };
+      }
+      return {
+        ...current,
+        format,
+        settings: nextSettings,
+      };
+    });
+    setMessage('');
+  }
 
   async function load() {
     const res = await fetch(`/api/admin/tournaments?q=${encodeURIComponent(query)}`, { cache: 'no-store' });
-    const data = await res.json();
-    setRows(Array.isArray(data) ? data : []);
+    const data = await res.json().catch(() => []);
+    setRows(Array.isArray(data) ? (data as Row[]) : []);
+  }
+
+  async function loadPlayers() {
+    const res = await fetch('/api/admin/players', { cache: 'no-store' });
+    const data = await res.json().catch(() => []);
+    setAllPlayers(
+      Array.isArray(data)
+        ? data.map((player) => ({
+            id: String(player?.id ?? ''),
+            name: String(player?.name ?? ''),
+            gender: normalizeGender(player?.gender),
+          }))
+        : []
+    );
   }
 
   useEffect(() => {
-    void load();
+    void Promise.all([load(), loadPlayers()]);
   }, []);
+
+  useEffect(() => {
+    if (selectedDraftIndex != null && selectedDraftIndex >= draftPlayers.length) {
+      setSelectedDraftIndex(null);
+    }
+  }, [draftPlayers.length, selectedDraftIndex]);
+
+  useEffect(() => {
+    if (!isThaiFormat) return;
+    setForm((current) => {
+      const currentSettings = normalizeSettings(current.settings);
+      const nextSettings = normalizeThaiSettings(current.settings, draftPlayers.filter(Boolean).length);
+      const nextDivision = getThaiDivisionLabel(nextSettings.thaiVariant);
+      const nextCapacity = getThaiSeatCount(nextSettings.courts);
+
+      if (
+        current.format === THAI_ADMIN_FORMAT &&
+        current.capacity === nextCapacity &&
+        current.division === nextDivision &&
+        currentSettings.courts === nextSettings.courts &&
+        currentSettings.playersPerCourt === nextSettings.playersPerCourt &&
+        currentSettings.pairsMode === nextSettings.pairsMode &&
+        currentSettings.thaiVariant === nextSettings.thaiVariant &&
+        currentSettings.thaiRosterMode === nextSettings.thaiRosterMode &&
+        currentSettings.tourCount === nextSettings.tourCount &&
+        currentSettings.thaiPointLimit === nextSettings.thaiPointLimit &&
+        currentSettings.thaiPointLimitR1 === nextSettings.thaiPointLimitR1 &&
+        currentSettings.thaiPointLimitR2 === nextSettings.thaiPointLimitR2 &&
+        currentSettings.thaiJudgeModule === nextSettings.thaiJudgeModule &&
+        currentSettings.thaiJudgeBootstrapSignature === nextSettings.thaiJudgeBootstrapSignature &&
+        currentSettings.thaiRulesPreset === nextSettings.thaiRulesPreset
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        format: THAI_ADMIN_FORMAT,
+        division: nextDivision,
+        capacity: nextCapacity,
+        settings: nextSettings,
+      };
+    });
+  }, [draftPlayers.length, isThaiFormat]);
+
+  async function startEdit(row: Row) {
+    setMessage('');
+    setRosterError('');
+    setSelectedDraftIndex(null);
+    setPlayerGenderFilter('all');
+    setRosterLoading(true);
+    setJudgeLaunchUrl(buildJudgeLaunchUrl(row));
+    if (isThaiAdminFormat(row.format)) {
+      const nextSettings = normalizeThaiSettings(
+        row.settings,
+        row.participantCount || row.capacity,
+        isExactThaiTournamentFormat(row.format) ? THAI_JUDGE_MODULE_LEGACY : THAI_JUDGE_MODULE_NEXT,
+      );
+      setForm({
+        ...row,
+        format: THAI_ADMIN_FORMAT,
+        division: getThaiDivisionLabel(nextSettings.thaiVariant),
+        capacity: getThaiSeatCount(nextSettings.courts),
+        settings: nextSettings,
+      });
+    } else {
+      setForm({ ...row, settings: normalizeSettings(row.settings) });
+    }
+    try {
+      const res = await fetch(`/api/admin/roster?tournamentId=${encodeURIComponent(row.id)}`, { cache: 'no-store' });
+      const data = await res.json().catch(() => []);
+      if (!res.ok) {
+        const errorText =
+          typeof data === 'object' && data && 'error' in data ? String(data.error ?? '') : 'Не удалось загрузить состав';
+        throw new Error(errorText);
+      }
+      const participants = Array.isArray(data) ? (data as RosterParticipant[]) : [];
+      const playersSparse: DraftPlayer[] = [];
+      participants.forEach((participant, idx) => {
+        const rawPos = (participant as any).position;
+        const index = typeof rawPos === 'number' ? rawPos - 1 : playersSparse.length;
+        playersSparse[index] = {
+          playerId: String(participant.playerId ?? ''),
+          playerName: String(participant.playerName ?? ''),
+          gender: normalizeGender(participant.gender),
+        };
+      });
+      // Fill gaps up to the largest index with undefined to ensure holes are preserved
+      for (let i = 0; i < playersSparse.length; i++) {
+        if (!playersSparse[i]) {
+          playersSparse[i] = undefined as unknown as DraftPlayer;
+        }
+      }
+      setDraftPlayers(playersSparse);
+    } catch (error) {
+      const errorText = getErrorText(error, 'Не удалось загрузить состав');
+      setDraftPlayers([]);
+      setRosterError(errorText);
+      setMessage(errorText);
+    } finally {
+      setRosterLoading(false);
+    }
+  }
+
+  function addDraftPlayer(player: Player) {
+    if (registeredIds.has(player.id)) return;
+    if (draftPlayers.length >= participantLimit) {
+      setMessage(`Лимит участников достигнут: ${participantLimit}`);
+      return;
+    }
+    if (isThaiFormat && thaiSettings) {
+      if (thaiSettings.thaiVariant === 'MM' && player.gender !== 'M') {
+        setMessage('Thai Муж допускает только мужчин.');
+        return;
+      }
+      if (thaiSettings.thaiVariant === 'WW' && player.gender !== 'W') {
+        setMessage('Thai Жен допускает только женщин.');
+        return;
+      }
+      if (thaiSettings.thaiVariant === 'MF') {
+        const sameGenderCount = draftPlayers.filter((draftPlayer) => draftPlayer.gender === player.gender).length;
+        const sameGenderLimit = participantLimit / 2;
+        if (sameGenderCount >= sameGenderLimit) {
+          setMessage(
+            player.gender === 'W'
+              ? `Thai Микст уже собрал ${sameGenderLimit} женщин.`
+              : `Thai Микст уже собрал ${sameGenderLimit} мужчин.`
+          );
+          return;
+        }
+      }
+    }
+    setDraftPlayers((current) => {
+      const holeIndex = current.findIndex((p) => !p);
+      if (holeIndex !== -1 && holeIndex < participantLimit) {
+        const next = [...current];
+        next[holeIndex] = {
+          playerId: player.id,
+          playerName: player.name,
+          gender: player.gender,
+        };
+        return next;
+      }
+      return [
+        ...current,
+        {
+          playerId: player.id,
+          playerName: player.name,
+          gender: player.gender,
+        },
+      ];
+    });
+    setMessage('');
+  }
+
+  function removeDraftPlayer(index: number) {
+    setDraftPlayers((current) => {
+      const next = [...current];
+      next[index] = undefined as unknown as DraftPlayer;
+      // Trim empty tail
+      while (next.length > 0 && !next[next.length - 1]) {
+        next.pop();
+      }
+      return next;
+    });
+    if (selectedDraftIndex === index) {
+      setSelectedDraftIndex(null);
+    } else if (selectedDraftIndex != null && selectedDraftIndex > index) {
+      // Don't shift selection, position stays same!
+      // setSelectedDraftIndex(selectedDraftIndex - 1); // Removed to prevent selection shift
+    }
+    setMessage('');
+  }
+
+  function swapDraftPlayers(index1: number, index2?: number) {
+    const target1 = index1;
+    const target2 = index2 !== undefined ? index2 : selectedDraftIndex;
+    
+    // Bounds check
+    const maxAllowed = participantLimit + reservePlayers.length;
+    if (target1 < 0 || target1 > Math.max(maxAllowed, draftPlayers.length)) return;
+
+    if (target2 == null) {
+      setSelectedDraftIndex(target1);
+      return;
+    }
+    if (target2 === target1) {
+      setSelectedDraftIndex(null);
+      return;
+    }
+    setDraftPlayers((current) => {
+      const next = [...current];
+      // Extend array with dummy elements if dropped far beyond
+      const maxIndex = Math.max(target1, target2);
+      while (next.length <= maxIndex) next.push(undefined as unknown as DraftPlayer);
+      
+      [next[target2], next[target1]] = [next[target1], next[target2]];
+      
+      while (next.length > 0 && !next[next.length - 1]) {
+        next.pop();
+      }
+      return next;
+    });
+    setSelectedDraftIndex(null);
+    setMessage('');
+  }
+
+  function clearCourt(courtIndex: number) {
+    if (confirmClearCourtIndex !== courtIndex) {
+      setConfirmClearCourtIndex(courtIndex);
+      setTimeout(() => {
+        setConfirmClearCourtIndex((current) => (current === courtIndex ? null : current));
+      }, 3000);
+      return;
+    }
+    
+    setConfirmClearCourtIndex(null);
+    setDraftPlayers((current) => {
+      const next = [...current];
+      const start = courtIndex * settings.playersPerCourt;
+      for (let i = 0; i < settings.playersPerCourt; i++) {
+        next[start + i] = undefined as unknown as DraftPlayer;
+      }
+      while (next.length > 0 && !next[next.length - 1]) {
+        next.pop();
+      }
+      return next;
+    });
+    setMessage('');
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    const trimmedName = form.name.trim();
-    if (!trimmedName) {
-      setMessage('Укажите название турнира');
+    if (rosterLoading) {
+      setMessage('Состав ещё загружается');
       return;
     }
-    if (!form.date) {
-      setMessage('Укажите дату турнира');
+    if (rosterError) {
+      setMessage(rosterError);
       return;
     }
+    if (rosterOverflow) {
+      setMessage(`Игроков больше, чем capacity: ${draftPlayers.length} / ${participantLimit}`);
+      return;
+    }
+    if (thaiRosterError) {
+      setMessage(thaiRosterError);
+      return;
+    }
+
     setLoading(true);
     setMessage('');
     const method = isEdit ? 'PUT' : 'POST';
+    const mergedSettings =
+      isThaiFormat && thaiSettings
+        ? {
+            ...settings,
+            ...thaiSettings,
+          }
+        : settings;
+    const payloadSettings: Record<string, unknown> = { ...mergedSettings };
+    if (!isExactThaiFormat) {
+      delete payloadSettings.thaiJudgeModule;
+      delete payloadSettings.thaiJudgeBootstrapSignature;
+    }
     const payload = {
       ...form,
-      name: trimmedName,
-      capacity: form.capacity || autoCapacity,
-      settings,
+      format: isExactThaiFormat ? THAI_ADMIN_FORMAT : form.format,
+      division: isExactThaiFormat && thaiSettings ? getThaiDivisionLabel(thaiSettings.thaiVariant) : form.division,
+      capacity: participantLimit,
+      settings: payloadSettings,
+      participants: draftPlayers
+        .map((player, index) =>
+          player
+            ? {
+                playerId: player.playerId,
+                position: index + 1,
+                isWaitlist: false,
+              }
+            : null
+        )
+        .filter(Boolean),
     };
     const res = await fetch('/api/admin/tournaments', {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const errorText = typeof data === 'object' && data && 'error' in data ? String(data.error ?? '') : '';
+      setLoading(false);
+      setMessage(errorText || 'Save failed');
+      return;
+    }
     setLoading(false);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       setMessage(err?.error || 'Ошибка сохранения');
       return;
     }
-    setForm(emptyForm);
+    const savedId = typeof data === 'object' && data && 'id' in data ? String((data as Row).id || '') : '';
+    const savedFormat =
+      typeof data === 'object' && data && 'format' in data ? String((data as Row).format || '') : form.format;
+    const nextJudgeLaunchUrl = savedId
+      ? buildJudgeLaunchUrl({ id: savedId, format: savedFormat || form.format })
+      : '';
+    resetComposer();
+    if (nextJudgeLaunchUrl) {
+      setJudgeLaunchUrl(nextJudgeLaunchUrl);
+      setMessage('Сохранено');
+      await load();
+      return;
+    }
     setMessage('Сохранено');
     await load();
   }
@@ -228,12 +836,142 @@ export default function AdminTournamentsPage() {
       setMessage('Удаление запрещено или не удалось');
       return;
     }
+    if (form.id === id) resetComposer();
     await load();
   }
 
+  async function saveAdmin(e: React.FormEvent) {
+    e.preventDefault();
+    if (rosterLoading) {
+      setMessage('Состав ещё загружается');
+      return;
+    }
+    if (rosterError) {
+      setMessage(rosterError);
+      return;
+    }
+    if (rosterOverflow) {
+      setMessage(`Игроков больше, чем capacity: ${draftPlayers.length} / ${participantLimit}`);
+      return;
+    }
+    if (thaiRosterError) {
+      setMessage(thaiRosterError);
+      return;
+    }
+
+    setLoading(true);
+    setMessage('');
+    const method = isEdit ? 'PUT' : 'POST';
+    const mergedSettings =
+      isThaiFormat && thaiSettings
+        ? {
+            ...settings,
+            ...thaiSettings,
+          }
+        : settings;
+    const payloadSettings: Record<string, unknown> = { ...mergedSettings };
+    if (!isExactThaiFormat) {
+      delete payloadSettings.thaiJudgeModule;
+      delete payloadSettings.thaiJudgeBootstrapSignature;
+    }
+    const payload = {
+      ...form,
+      format: isExactThaiFormat ? THAI_ADMIN_FORMAT : form.format,
+      division: isExactThaiFormat && thaiSettings ? getThaiDivisionLabel(thaiSettings.thaiVariant) : form.division,
+      capacity: participantLimit,
+      settings: payloadSettings,
+      participants: draftPlayers
+        .map((player, index) =>
+          player
+            ? {
+                playerId: player.playerId,
+                position: index + 1,
+                isWaitlist: false,
+              }
+            : null
+        )
+        .filter(Boolean),
+    };
+
+    const response = await fetch('/api/admin/tournaments', {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const errorText =
+        typeof result === 'object' && result && 'error' in result ? String(result.error ?? '') : '';
+      setLoading(false);
+      setMessage(errorText || 'Save failed');
+      return;
+    }
+
+    setLoading(false);
+    const savedId =
+      typeof result === 'object' && result && 'id' in result ? String((result as Row).id || '') : '';
+    const savedFormat =
+      typeof result === 'object' && result && 'format' in result
+        ? String((result as Row).format || '')
+        : form.format;
+    const nextJudgeLaunchUrl = savedId
+      ? buildJudgeLaunchUrl({ id: savedId, format: savedFormat || form.format })
+      : '';
+
+    await load();
+
+    if (savedId) {
+      const nextRow: Row = {
+        id: savedId,
+        name:
+          typeof result === 'object' && result && 'name' in result ? String((result as Row).name || form.name) : form.name,
+        date:
+          typeof result === 'object' && result && 'date' in result ? String((result as Row).date || form.date) : form.date,
+        time:
+          typeof result === 'object' && result && 'time' in result ? String((result as Row).time || form.time) : form.time,
+        location:
+          typeof result === 'object' && result && 'location' in result
+            ? String((result as Row).location || form.location)
+            : form.location,
+        format: savedFormat || form.format,
+        division:
+          typeof result === 'object' && result && 'division' in result
+            ? String((result as Row).division || form.division)
+            : form.division,
+        level:
+          typeof result === 'object' && result && 'level' in result
+            ? String((result as Row).level || form.level)
+            : form.level,
+        status:
+          typeof result === 'object' && result && 'status' in result
+            ? String((result as Row).status || form.status)
+            : form.status,
+        capacity:
+          typeof result === 'object' && result && 'capacity' in result
+            ? Number((result as Row).capacity || participantLimit)
+            : participantLimit,
+        participantCount:
+          typeof result === 'object' && result && 'participantCount' in result
+            ? Number((result as Row).participantCount || draftPlayers.length)
+            : draftPlayers.length,
+        settings:
+          typeof result === 'object' && result && 'settings' in result
+            ? ((result as Row).settings ?? (mergedSettings as TournamentSettings))
+            : (mergedSettings as TournamentSettings),
+      };
+      setJudgeLaunchUrl(nextJudgeLaunchUrl);
+      await startEdit(nextRow);
+    } else {
+      setJudgeLaunchUrl('');
+    }
+
+    setMessage('Сохранено');
+  }
+
+  const saveDisabled = loading || rosterLoading || Boolean(rosterError) || rosterOverflow || Boolean(thaiRosterError);
+
   return (
     <div className="grid lg:grid-cols-[1.2fr_1fr] gap-4">
-      {/* ─── Table ─── */}
       <div className="rounded-xl border border-white/15 bg-white/5 p-4">
         <div className="flex gap-2">
           <input
@@ -263,34 +1001,39 @@ export default function AdminTournamentsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="border-b border-white/5">
+              {rows.map((row) => {
+                const judgeUrl = buildJudgeLaunchUrl(row);
+                return (
+                  <tr key={row.id} className="border-b border-white/5">
                   <td className="py-2 pr-3">{row.name}</td>
                   <td className="py-2 pr-3">{row.date}</td>
                   <td className="py-2 pr-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs border ${
-                      statuses.find(s => s.key === row.status)?.color ?? 'border-white/10'
-                    }`}>
-                      {statuses.find(s => s.key === row.status)?.label ?? row.status}
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs border ${
+                        statuses.find((status) => status.key === row.status)?.color ?? 'border-white/10'
+                      }`}
+                    >
+                      {statuses.find((status) => status.key === row.status)?.label ?? row.status}
                     </span>
                   </td>
                   <td className="py-2 pr-3">{row.participantCount}</td>
                   <td className="py-2 pr-3 flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setForm(row)}
+                      onClick={() => void startEdit(row)}
                       className="px-2 py-1 rounded border border-white/20 hover:border-brand text-xs"
                     >
                       Edit
                     </button>
-                    <a
-                      href={buildSudyamHref(row)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-2 py-1 rounded border border-brand/40 bg-brand/10 text-brand-light text-xs font-semibold"
-                    >
-                      Sudyam
-                    </a>
+                    {judgeUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => void startEdit(row)}
+                        className="px-2 py-1 rounded border border-brand/50 text-brand text-xs"
+                      >
+                        {isThaiAdminFormat(row.format) ? 'Управлять' : 'Sudyam'}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => void remove(row.id)}
@@ -299,27 +1042,31 @@ export default function AdminTournamentsPage() {
                       Delete
                     </button>
                   </td>
-                </tr>
-              ))}
+                  </tr>
+                );
+              })}
               {rows.length === 0 ? (
-                <tr><td className="py-3 text-text-secondary" colSpan={5}>Нет данных</td></tr>
+                <tr>
+                  <td className="py-3 text-text-secondary" colSpan={5}>
+                    Нет данных
+                  </td>
+                </tr>
               ) : null}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* ─── Form ─── */}
-      <form onSubmit={save} className="flex flex-col gap-4">
-        {/* Basic info card */}
+      <form onSubmit={saveAdmin} className="flex flex-col gap-4">
+
         <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
           <h2 className="font-heading text-3xl leading-none">
-            {isEdit ? 'Редактировать' : 'Новый турнир'}
+            {isEdit ? 'Редактировать турнир' : 'Новый турнир'}
           </h2>
 
           <input
             value={form.name}
-            onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
+            onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
             placeholder="Название"
             className="px-3 py-2 rounded-lg bg-surface border border-white/20"
             required
@@ -329,178 +1076,321 @@ export default function AdminTournamentsPage() {
             <input
               type="date"
               value={form.date}
-              onChange={(e) => setForm((s) => ({ ...s, date: e.target.value }))}
+              onChange={(e) => setForm((current) => ({ ...current, date: e.target.value }))}
               className="px-3 py-2 rounded-lg bg-surface border border-white/20"
-              required
             />
             <input
               type="time"
               value={form.time}
-              onChange={(e) => setForm((s) => ({ ...s, time: e.target.value }))}
+              onChange={(e) => setForm((current) => ({ ...current, time: e.target.value }))}
               className="px-3 py-2 rounded-lg bg-surface border border-white/20"
             />
           </div>
 
           <input
             value={form.location}
-            onChange={(e) => setForm((s) => ({ ...s, location: e.target.value }))}
-            placeholder="Локация (напр. МАЛИБУ)"
+            onChange={(e) => setForm((current) => ({ ...current, location: e.target.value }))}
+            placeholder="Локация"
             className="px-3 py-2 rounded-lg bg-surface border border-white/20"
           />
         </div>
 
-        {/* Format card */}
+        {isThaiFormat ? (
+          <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
+            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Thai формат</h3>
+
+            {isExactThaiFormat ? (
+              <div>
+                <label className="text-xs text-text-secondary">Judge module</label>
+                <Seg
+                  options={[
+                    { key: THAI_JUDGE_MODULE_NEXT, label: 'Next' },
+                    { key: THAI_JUDGE_MODULE_LEGACY, label: 'Legacy' },
+                  ]}
+                  value={thaiSettings?.thaiJudgeModule ?? settings.thaiJudgeModule}
+                  onChange={(value) => updateSettings({ thaiJudgeModule: value })}
+                />
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-xs text-text-secondary">Количество туров</label>
+              <Stepper
+                value={thaiSettings?.tourCount ?? normalizeThaiTourCount(settings.tourCount)}
+                onChange={(value) =>
+                  updateSettings({
+                    tourCount:
+                      thaiSettings?.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT
+                        ? THAI_NEXT_JUDGE_DEFAULT_TOUR_COUNT
+                        : (value as ThaiTourCount),
+                  })}
+                min={thaiSettings?.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT ? THAI_NEXT_JUDGE_DEFAULT_TOUR_COUNT : 1}
+                max={thaiSettings?.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT ? THAI_NEXT_JUDGE_DEFAULT_TOUR_COUNT : 12}
+              />
+            </div>
+
+            {thaiSettings?.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT ? (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-xs text-text-secondary">Лимит очков R1</label>
+                  <Stepper
+                    value={thaiSettings?.thaiPointLimitR1 ?? settings.thaiPointLimitR1 ?? settings.thaiPointLimit ?? 15}
+                    onChange={(value) =>
+                      updateSettings({
+                        thaiPointLimitR1: value,
+                        thaiPointLimit: value,
+                      })
+                    }
+                    min={THAI_ADMIN_POINT_LIMIT_MIN}
+                    max={THAI_ADMIN_POINT_LIMIT_MAX}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-xs text-text-secondary">Лимит очков R2</label>
+                  <Stepper
+                    value={thaiSettings?.thaiPointLimitR2 ?? settings.thaiPointLimitR2 ?? settings.thaiPointLimit ?? 15}
+                    onChange={(value) => updateSettings({ thaiPointLimitR2: value })}
+                    min={THAI_ADMIN_POINT_LIMIT_MIN}
+                    max={THAI_ADMIN_POINT_LIMIT_MAX}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-xs text-text-secondary">Point limit</label>
+                <Stepper
+                  value={thaiSettings?.thaiPointLimit ?? settings.thaiPointLimit ?? 15}
+                  onChange={(value) =>
+                    updateSettings({
+                      thaiPointLimit: value,
+                      thaiPointLimitR1: value,
+                      thaiPointLimitR2: value,
+                    })
+                  }
+                  min={THAI_ADMIN_POINT_LIMIT_MIN}
+                  max={THAI_ADMIN_POINT_LIMIT_MAX}
+                />
+              </div>
+            )}
+
+            <div className="rounded-lg border border-brand/20 bg-brand/5 px-3 py-2 text-xs text-text-secondary">
+              Thai Next: 2 раунда × 4 тура; R2 — зоны по числу кортов ({THAI_ADMIN_MIN_COURTS}–{THAI_NEXT_JUDGE_MAX_COURTS} кортов, по{' '}
+              {THAI_ADMIN_PLAYERS_PER_COURT} игроков на корте).
+              {thaiSettings?.thaiVariant === 'MN' ? ' М/Н: отдельные рейтинги профи и новичков.' : null}
+            </div>
+
+            {thaiSettings?.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT ? (
+              form.id ? (
+                <div className="flex flex-col gap-2 rounded-xl border border-brand/30 bg-brand/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-text-secondary">
+                    Живая игра Thai (жеребьёвка R1, завершение раундов, R2) — на отдельной странице.
+                  </p>
+                  <Link
+                    href={`/admin/tournaments/${encodeURIComponent(form.id)}/thai-live`}
+                    className="shrink-0 rounded-lg border border-brand bg-brand/20 px-4 py-2.5 text-center text-sm font-semibold text-brand hover:bg-brand/30"
+                  >
+                    Thai Tournament Control →
+                  </Link>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-text-secondary">
+                  Сохраните турнир — затем откроется ссылка на Thai Tournament Control.
+                </div>
+              )
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
-          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">
-            ⚙️ Формат турнира
-          </h3>
+          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Формат турнира</h3>
 
           <div className="flex gap-1 flex-wrap">
-            {formats.map((f) => (
+            {formats.map((format) => (
               <button
-                key={f.key}
+                key={format.key}
                 type="button"
-                onClick={() => setForm((s) => ({ ...s, format: f.key }))}
+                onClick={() => applyFormat(format.key)}
                 className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors ${
-                  form.format === f.key
+                  form.format === format.key
                     ? 'bg-brand/20 text-brand border-brand/50'
                     : 'bg-white/5 text-text-primary/60 border-white/10 hover:border-white/30'
                 }`}
               >
-                {f.label}
+                {format.label}
               </button>
             ))}
           </div>
 
           <div>
-            <label className="text-xs text-text-secondary">Дивизион</label>
-            <Seg
-              options={divisions.map((d) => ({ key: d.key, label: d.label }))}
-              value={form.division}
-              onChange={(v) => setForm((s) => ({ ...s, division: v }))}
-            />
+            <label className="text-xs text-text-secondary">{isThaiFormat ? 'Состав Thai' : 'Дивизион'}</label>
+            {isThaiFormat ? (
+              <Seg
+                options={thaiVariantOptions}
+                value={thaiSettings?.thaiVariant ?? normalizeThaiVariant(settings.thaiVariant)}
+                onChange={(value) => updateSettings({ thaiVariant: value })}
+              />
+            ) : (
+              <Seg
+                options={divisions.map((division) => ({ key: division.key, label: division.label }))}
+                value={form.division}
+                onChange={(value) => {
+                  setForm((current) => ({ ...current, division: value }));
+                }}
+              />
+            )}
           </div>
 
           <div>
             <label className="text-xs text-text-secondary">Уровень</label>
             <Seg
-              options={levels.map((l) => ({ key: l.key, label: l.label, color: l.color }))}
+              options={levels.map((level) => ({ key: level.key, label: level.label, color: level.color }))}
               value={form.level}
-              onChange={(v) => setForm((s) => ({ ...s, level: v }))}
+              onChange={(value) => setForm((current) => ({ ...current, level: value }))}
             />
           </div>
 
           <div>
             <label className="text-xs text-text-secondary">Статус</label>
             <Seg
-              options={statuses.map((st) => ({ key: st.key, label: st.label, color: st.color }))}
+              options={statuses.map((status) => ({ key: status.key, label: status.label, color: status.color }))}
               value={form.status}
-              onChange={(v) => setForm((s) => ({ ...s, status: v }))}
+              onChange={(value) => setForm((current) => ({ ...current, status: value }))}
             />
           </div>
         </div>
 
-        {/* Settings card */}
         <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
-          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">
-            🏐 Настройки корта
-          </h3>
+          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Настройки корта</h3>
 
           <div className="flex items-center justify-between">
             <span className="text-sm text-text-primary/80">Кортов:</span>
             <div className="flex gap-1">
-              {[1, 2, 3, 4].map((n) => (
+              {[1, 2, 3, 4].map((value) => (
                 <button
-                  key={n}
+                  key={value}
                   type="button"
-                  onClick={() => updateSettings({ courts: n })}
+                  onClick={() => updateSettings({ courts: value })}
                   className={`w-10 h-10 rounded-lg border text-sm font-semibold transition-colors ${
-                    settings.courts === n
+                    settings.courts === value
                       ? 'bg-brand/20 text-brand border-brand/50'
                       : 'bg-white/5 text-text-primary/60 border-white/10 hover:border-white/30'
                   }`}
                 >
-                  {n}
+                  {value}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-sm text-text-primary/80">Игроков на корт:</span>
+            <span className="text-sm text-text-primary/80">
+              {isThaiFormat ? 'Игроков на Thai-корт:' : 'Игроков на корт:'}
+            </span>
             <div className="flex gap-1">
-              {[4, 5, 6].map((n) => (
+              {(isThaiFormat ? [THAI_ADMIN_PLAYERS_PER_COURT] : [4, 5, 6]).map((value) => (
                 <button
-                  key={n}
+                  key={value}
                   type="button"
-                  onClick={() => updateSettings({ playersPerCourt: n })}
+                  onClick={() => {
+                    if (isThaiFormat) return;
+                    updateSettings({ playersPerCourt: value });
+                  }}
+                  disabled={isThaiFormat}
                   className={`w-10 h-10 rounded-lg border text-sm font-semibold transition-colors ${
-                    settings.playersPerCourt === n
+                    settings.playersPerCourt === value
                       ? 'bg-brand/20 text-brand border-brand/50'
                       : 'bg-white/5 text-text-primary/60 border-white/10 hover:border-white/30'
-                  }`}
+                  } ${isThaiFormat ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {n}
+                  {value}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-center">
-            {settings.courts} корт(а) × {settings.playersPerCourt} ={' '}
+            {settings.courts} {isThaiFormat ? 'Thai-корт(а)' : 'корт(а)'} x {settings.playersPerCourt} ={' '}
             <strong className="text-brand">{autoCapacity} игроков</strong>
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-sm text-text-primary/80">Capacity (итого):</span>
+            <span className="text-sm text-text-primary/80">Вместимость:</span>
             <input
               type="number"
+              min={isThaiFormat ? autoCapacity : 4}
               value={form.capacity || autoCapacity}
-              onChange={(e) => setForm((s) => ({ ...s, capacity: Number(e.target.value || 0) }))}
-              className="w-20 px-2 py-1 rounded-lg bg-surface border border-white/20 text-center text-sm"
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-text-primary/80">Пары:</span>
-            <button
-              type="button"
-              onClick={() => updateSettings({
-                pairsMode: settings.pairsMode === 'rotation' ? 'fixed' : 'rotation',
-              })}
-              className={`px-4 py-2 rounded-lg border text-sm font-semibold transition-colors ${
-                settings.pairsMode === 'rotation'
-                  ? 'bg-brand/20 text-brand border-brand/50'
-                  : 'bg-purple-500/20 text-purple-300 border-purple-500/50'
-              }`}
-            >
-              {settings.pairsMode === 'rotation' ? '🔄 Ротация' : '🔗 Фиксированные'}
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-text-primary/80">Draft seed:</span>
-            <input
-              type="number"
-              value={settings.draftSeed}
-              onChange={(e) => updateSettings({ draftSeed: e.target.value })}
-              placeholder="авто"
+              onChange={(e) => setForm((current) => ({ ...current, capacity: Number(e.target.value || 0) }))}
+              readOnly={isThaiFormat}
               className="w-24 px-2 py-1 rounded-lg bg-surface border border-white/20 text-center text-sm"
             />
           </div>
+
+          {isThaiFormat ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-text-primary/80">Состав R1:</span>
+              <Seg
+                options={thaiRosterModeOptions}
+                value={thaiSettings?.thaiRosterMode ?? 'manual'}
+                onChange={(value) => updateSettings({ thaiRosterMode: value })}
+              />
+            </div>
+          ) : null}
+
+          {isThaiFormat ? (
+            <div className="rounded-lg border border-brand/20 bg-brand/5 px-3 py-2 text-xs text-text-secondary">
+              {thaiSettings?.thaiVariant === 'MF'
+                ? 'Thai Микст требует по 4 мужчины и 4 женщины на каждом корте.'
+                : thaiSettings?.thaiVariant === 'MN'
+                  ? 'Thai Мужчины / Новички собирается только из мужчин. Админ делит роли порядком слотов: 1-4 на корте — основной пул, 5-8 — новички.'
+                : thaiSettings?.thaiVariant === 'MM'
+                  ? 'Thai Муж собирается только из мужчин.'
+                  : 'Thai Жен собирается только из женщин.'}
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-text-primary/80">Пары:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateSettings({
+                      pairsMode: settings.pairsMode === 'rotation' ? 'fixed' : 'rotation',
+                    });
+                  }}
+                  className={`px-4 py-2 rounded-lg border text-sm font-semibold transition-colors ${
+                    settings.pairsMode === 'rotation'
+                      ? 'bg-brand/20 text-brand border-brand/50'
+                      : 'bg-purple-500/20 text-purple-300 border-purple-500/50'
+                  }`}
+                >
+                  {settings.pairsMode === 'rotation' ? 'Ротация' : 'Фиксированные'}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-text-primary/80">Draft seed:</span>
+                <input
+                  type="number"
+                  value={settings.draftSeed}
+                  onChange={(e) => {
+                    updateSettings({ draftSeed: e.target.value });
+                  }}
+                  placeholder="авто"
+                  className="w-24 px-2 py-1 rounded-lg bg-surface border border-white/20 text-center text-sm"
+                />
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Timer card */}
         <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
-          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">
-            ⏱ Таймеры
-          </h3>
+          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Таймеры</h3>
 
           <div className="flex items-center justify-between">
-            <span className="text-sm text-text-primary/80">Корты (К1–К{settings.courts}):</span>
+            <span className="text-sm text-text-primary/80">Корты (К1-К{settings.courts}):</span>
             <Stepper
               value={settings.timerCourts}
-              onChange={(v) => updateSettings({ timerCourts: v })}
+              onChange={(value) => updateSettings({ timerCourts: value })}
               min={2}
               max={25}
               suffix=" мин"
@@ -511,39 +1401,287 @@ export default function AdminTournamentsPage() {
             <span className="text-sm text-text-primary/80">Финалы:</span>
             <Stepper
               value={settings.timerFinals}
-              onChange={(v) => updateSettings({ timerFinals: v })}
+              onChange={(value) => updateSettings({ timerFinals: value })}
               min={2}
               max={25}
               suffix=" мин"
             />
           </div>
 
-          <div className="text-xs text-text-secondary text-center">
-            Диапазон: 2–25 минут
-          </div>
+          <div className="text-xs text-text-secondary text-center">Диапазон: 2-25 минут</div>
         </div>
 
-        {/* Actions */}
+        <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Состав по кортам</h3>
+              <p className="text-xs text-text-secondary mt-1">
+                {isThaiFormat
+                  ? thaiSettings?.thaiRosterMode === 'manual'
+                    ? 'Thai: вручную расставьте игроков по слотам и кортам. Этот порядок будет использован для составов R1 без дополнительной перетасовки. Для M/N первые 4 слота на корте — Профи, следующие 4 — Новички.'
+                    : 'Thai: заполните состав, а перед стартом R1 Sudyam случайно распределит игроков по кортам по seed. Для M/N перемешивание идёт отдельно внутри слотов 1-4 и 5-8.'
+                  : 'Выберите игрока, затем нажмите на другого игрока, чтобы поменять их местами.'}
+              </p>
+            </div>
+            <div className="text-right text-xs text-text-secondary">
+              <div>
+                Старт: {Math.min(draftPlayers.slice(0, seatCount).filter(Boolean).length, seatCount)} / {seatCount}
+              </div>
+              <div>
+                Всего: {draftPlayers.filter(Boolean).length} / {participantLimit}
+              </div>
+            </div>
+          </div>
+
+          <input
+            value={playerSearch}
+            onChange={(e) => setPlayerSearch(e.target.value)}
+            placeholder="Добавить игрока в турнир"
+            className="px-3 py-2 rounded-lg bg-surface border border-white/20"
+          />
+
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-text-secondary">Фильтр пола</span>
+            <Seg
+              options={genderFilterOptions}
+              value={playerGenderFilter}
+              onChange={(value) => setPlayerGenderFilter(value)}
+            />
+          </div>
+
+          <div className="max-h-48 overflow-y-auto flex flex-col gap-1">
+            {filteredPlayers.map((player) => (
+              <button
+                key={player.id}
+                type="button"
+                onClick={() => addDraftPlayer(player)}
+                className="text-left px-3 py-2 rounded-lg border border-white/10 hover:border-brand transition-colors text-sm"
+              >
+                {player.name}
+                <span className="text-text-secondary ml-2">{player.gender === 'W' ? 'W' : 'M'}</span>
+              </button>
+            ))}
+            {filteredPlayers.length === 0 ? (
+              <p className="text-sm text-text-secondary">Нет доступных игроков</p>
+            ) : null}
+          </div>
+
+          <div className="grid xl:grid-cols-2 gap-3">
+            {Array.from({ length: settings.courts }, (_, courtIndex) => (
+              <div key={courtIndex} className="rounded-xl border border-white/10 bg-black/10 p-3">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold text-text-primary">Корт {courtIndex + 1}</h4>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-text-secondary">
+                      {isThaiFormat ? getThaiCourtHint(thaiSettings?.thaiVariant ?? 'MF') : `${settings.playersPerCourt} мест`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => clearCourt(courtIndex)}
+                      className={`text-[10px] uppercase font-semibold px-2 py-1 rounded transition-colors ${
+                        confirmClearCourtIndex === courtIndex
+                          ? 'bg-red-500/20 text-red-300 border border-red-500/50'
+                          : 'text-red-400 hover:text-red-300'
+                      }`}
+                    >
+                      {confirmClearCourtIndex === courtIndex ? 'Точно?' : 'Очистить'}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {Array.from({ length: settings.playersPerCourt }, (_, slotIndex) => {
+                    const draftIndex = courtIndex * settings.playersPerCourt + slotIndex;
+                    const player = draftPlayers[draftIndex];
+                    const selected = selectedDraftIndex === draftIndex;
+                    const expectedGender =
+                      isThaiFormat && thaiSettings ? getThaiSlotHint(thaiSettings.thaiVariant, slotIndex) : null;
+                    return (
+                      <div
+                        key={draftIndex}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', draftIndex.toString());
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                          if (!isNaN(fromIndex) && fromIndex !== draftIndex) {
+                            swapDraftPlayers(fromIndex, draftIndex);
+                          }
+                        }}
+                        className={`rounded-lg border transition-colors cursor-grab active:cursor-grabbing ${
+                          selected ? 'border-brand bg-brand/10' : 'border-white/10 bg-white/5 hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex items-stretch gap-2">
+                          <button
+                            type="button"
+                            onClick={() => swapDraftPlayers(draftIndex)}
+                            disabled={!player}
+                            className="flex-1 px-3 py-2 text-left disabled:cursor-default disabled:opacity-60"
+                          >
+                            <div className="text-[11px] uppercase tracking-wider text-text-secondary">
+                              Слот {slotIndex + 1}
+                              {expectedGender ? ` · ${expectedGender}` : ''}
+                            </div>
+                            <div className="font-medium text-sm mt-1">
+                              {player ? player.playerName : 'Пусто'}
+                            </div>
+                            <div className="text-xs text-text-secondary mt-1">
+                              {player
+                                ? `Игрок ${draftIndex + 1} · ${player.gender}`
+                                : expectedGender
+                                  ? `Ожидается ${expectedGender}`
+                                  : 'Свободное место'}
+                            </div>
+                          </button>
+                          {player ? (
+                            <button
+                              type="button"
+                              onClick={() => removeDraftPlayer(draftIndex)}
+                              className="px-3 text-xs text-red-300 border-l border-white/10"
+                            >
+                              Убрать
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {reservePlayers.length > 0 ? (
+            <div className="rounded-xl border border-white/10 bg-black/10 p-3">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-semibold text-text-primary">Резерв</h4>
+                <span className="text-xs text-text-secondary">{reservePlayers.length} игроков</span>
+              </div>
+              <div className="space-y-2">
+                {reservePlayers.map((player, reserveIndex) => {
+                  const draftIndex = seatCount + reserveIndex;
+                  const selected = selectedDraftIndex === draftIndex;
+                  return (
+                    <div
+                      key={player ? `${player.playerId}-${draftIndex}` : `empty-${draftIndex}`}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', draftIndex.toString());
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                        if (!isNaN(fromIndex) && fromIndex !== draftIndex) {
+                          swapDraftPlayers(fromIndex, draftIndex);
+                        }
+                      }}
+                      className={`rounded-lg border transition-colors cursor-grab active:cursor-grabbing ${
+                        selected ? 'border-brand bg-brand/10' : 'border-white/10 bg-white/5 hover:border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-stretch gap-2">
+                        <button
+                          type="button"
+                          onClick={() => swapDraftPlayers(draftIndex)}
+                          className="flex-1 px-3 py-2 text-left"
+                        >
+                          <div className="text-[11px] uppercase tracking-wider text-text-secondary">
+                            Позиция {draftIndex + 1}
+                          </div>
+                          <div className="font-medium text-sm mt-1">{player ? player.playerName : 'Пусто'}</div>
+                          <div className="text-xs text-text-secondary mt-1">{player ? player.gender : 'Ожидается резерв'}</div>
+                        </button>
+                        {player ? (
+                          <button
+                            type="button"
+                            onClick={() => removeDraftPlayer(draftIndex)}
+                            className="px-3 text-xs text-red-300 border-l border-white/10"
+                          >
+                            Убрать
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {selectedDraftIndex != null && draftPlayers[selectedDraftIndex] ? (
+            <div className="rounded-lg border border-brand/40 bg-brand/10 px-3 py-2 text-xs text-brand">
+              Выбран игрок: {draftPlayers[selectedDraftIndex].playerName}. Нажмите на другого игрока, чтобы поменять местами.
+            </div>
+          ) : null}
+
+          {rosterOverflow ? (
+            <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              Игроков больше, чем capacity. Увеличьте capacity или уберите лишних игроков.
+            </div>
+          ) : null}
+
+          {rosterError ? (
+            <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              {rosterError}
+            </div>
+          ) : null}
+
+          {thaiRosterError ? (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              {thaiRosterError}
+            </div>
+          ) : null}
+        </div>
+
         <div className="flex gap-2">
           <button
             type="submit"
-            disabled={loading}
+            disabled={saveDisabled}
             className="flex-1 px-4 py-3 rounded-xl bg-brand text-surface font-semibold disabled:opacity-60 text-sm"
           >
-            {loading ? 'Сохраняем...' : isEdit ? '✅ Сохранить изменения' : '✅ Создать турнир'}
+            {loading ? 'Сохраняем...' : isEdit ? 'Сохранить изменения' : 'Создать турнир'}
           </button>
           <button
             type="button"
-            onClick={() => setForm(emptyForm)}
+            onClick={resetComposer}
             className="px-4 py-3 rounded-xl border border-white/20 hover:border-brand text-sm"
           >
             Сброс
           </button>
         </div>
+
         {message ? (
           <p className={`text-sm text-center ${message === 'Сохранено' ? 'text-emerald-400' : 'text-red-400'}`}>
             {message}
           </p>
+        ) : null}
+        {judgeLaunchUrl &&
+        !(
+          isEdit &&
+          isThaiFormat &&
+          thaiSettings?.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT &&
+          Boolean(form.id)
+        ) ? (
+          <a
+            href={judgeLaunchUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-3 rounded-xl border border-brand/40 bg-brand/10 text-brand-light text-sm font-semibold"
+          >
+            Open in Sudyam
+          </a>
         ) : null}
       </form>
     </div>

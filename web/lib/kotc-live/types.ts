@@ -49,6 +49,10 @@ export interface LiveCourtState {
   rosterM: unknown[];
   rosterW: unknown[];
   scores: Record<string, unknown>;
+  activeSlotIdx: number;
+  activeServerPlayerIdx: number | null;
+  waitingServerPlayerIdx: number | null;
+  serverPlayerIdxBySlot: Array<number | null>;
   timerStatus: 'idle' | 'running' | 'paused';
   timerDurationMs: number;
   timerEndsAt: string | null;

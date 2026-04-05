@@ -835,7 +835,6 @@ async function sbPublicFetch(type = 'M') {
 
 // ── Render config card ────────────────────────────────────
 function renderCloudSyncCard() {
-  return ""; // cloud sync UI removed
   const live = sbStatus === 'live';
   const hasConfig = !!(sbConfig.url && sbConfig.anonKey);
   const ready = !!(sbNormalizeRoomCode(sbConfig.roomCode) && (sbConfig.roomSecret || '').trim());

@@ -42,9 +42,13 @@ export interface Tournament {
   capacity: number;
   status: 'open' | 'full' | 'finished' | 'cancelled';
   participantCount: number;
+  waitlistCount?: number;
+  partnerRequestCount?: number;
   prize: string;
   photoUrl: string;
   formatCode: string;
+  registrationClosed?: boolean;
+  spotsLeft?: number | null;
   description?: string;
   participantListText?: string;
 }

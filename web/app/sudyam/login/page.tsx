@@ -1,10 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+
+function normalizeReturnTo(value: string | null): string {
+  const next = String(value || '').trim();
+  if (!next.startsWith('/')) return '/sudyam';
+  if (next.startsWith('//')) return '/sudyam';
+  return next;
+}
 
 export default function SudyamLoginPage() {
-  const router = useRouter();
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,7 +26,10 @@ export default function SudyamLoginPage() {
     });
 
     if (res.ok) {
-      window.location.href = '/sudyam';
+      const returnTo = typeof window !== 'undefined'
+        ? normalizeReturnTo(new URL(window.location.href).searchParams.get('returnTo'))
+        : '/sudyam';
+      window.location.href = returnTo;
     } else {
       setError('Неверный PIN');
       setLoading(false);

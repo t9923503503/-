@@ -1,28 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { COOKIE_NAME } from '@/lib/auth';
 import { ADMIN_COOKIE_NAME } from '@/lib/admin-constants';
+import { getExpectedJudgePin } from '@/lib/judge-pin';
 
-const FALLBACK_SUDYAM_PIN = '7319';
-
-function getExpectedSudyamPin(): string {
-  const configuredPin = String(process.env.SUDYAM_PIN || '').trim();
-  if (configuredPin) return configuredPin;
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('SUDYAM_PIN env var is required in production');
-  }
-  return FALLBACK_SUDYAM_PIN;
+function getJudgePinOrThrow(): string {
+  return getExpectedJudgePin();
 }
 
-function buildRedirectUrl(request: NextRequest, targetPath: string): URL {
+function buildRedirectUrl(request: NextRequest, targetPath: string, options?: { returnTo?: boolean }): URL {
   const forwardedHost = request.headers.get('x-forwarded-host');
   const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+  const nextPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
   if (forwardedHost) {
     const hostname = forwardedHost.split(':')[0];
-    return new URL(targetPath, `${forwardedProto}://${hostname}`);
+    const url = new URL(targetPath, `${forwardedProto}://${hostname}`);
+    if (options?.returnTo && nextPath) {
+      url.searchParams.set('returnTo', nextPath);
+    }
+    return url;
   }
   const url = request.nextUrl.clone();
   url.pathname = targetPath;
   url.search = '';
+  if (options?.returnTo && nextPath) {
+    url.searchParams.set('returnTo', nextPath);
+  }
   return url;
 }
 
@@ -80,9 +82,14 @@ export async function middleware(request: NextRequest) {
   const isSudyamLogin = pathname.startsWith('/sudyam/login');
   if (isSudyam && !isSudyamLogin) {
     const token = request.cookies.get(COOKIE_NAME)?.value;
-    const expectedPin = getExpectedSudyamPin();
+    let expectedPin: string;
+    try {
+      expectedPin = getJudgePinOrThrow();
+    } catch {
+      return NextResponse.redirect(buildRedirectUrl(request, '/sudyam/login', { returnTo: true }));
+    }
     if (!token || token !== expectedPin) {
-      return NextResponse.redirect(buildRedirectUrl(request, '/sudyam/login'));
+      return NextResponse.redirect(buildRedirectUrl(request, '/sudyam/login', { returnTo: true }));
     }
   }
 
@@ -90,9 +97,31 @@ export async function middleware(request: NextRequest) {
   const isSudyam2 = pathname === '/sudyam2' || pathname.startsWith('/sudyam2/');
   if (isSudyam2) {
     const token = request.cookies.get(COOKIE_NAME)?.value;
-    const expectedPin = getExpectedSudyamPin();
+    let expectedPin: string;
+    try {
+      expectedPin = getJudgePinOrThrow();
+    } catch {
+      return NextResponse.redirect(buildRedirectUrl(request, '/sudyam/login', { returnTo: true }));
+    }
     if (!token || token !== expectedPin) {
-      return NextResponse.redirect(buildRedirectUrl(request, '/sudyam/login'));
+      return NextResponse.redirect(buildRedirectUrl(request, '/sudyam/login', { returnTo: true }));
+    }
+  }
+
+  const isCourtEntry =
+    pathname === '/court' ||
+    pathname === '/court/' ||
+    pathname.startsWith('/court/tournament');
+  if (isCourtEntry) {
+    const token = request.cookies.get(COOKIE_NAME)?.value;
+    let expectedPin: string;
+    try {
+      expectedPin = getJudgePinOrThrow();
+    } catch {
+      return NextResponse.redirect(buildRedirectUrl(request, '/sudyam/login', { returnTo: true }));
+    }
+    if (!token || token !== expectedPin) {
+      return NextResponse.redirect(buildRedirectUrl(request, '/sudyam/login', { returnTo: true }));
     }
   }
 
@@ -101,13 +130,29 @@ export async function middleware(request: NextRequest) {
   if (isAdmin && !isAdminLogin) {
     const token = request.cookies.get(ADMIN_COOKIE_NAME)?.value;
     if (!token || !(await isValidAdminSession(token))) {
-      return NextResponse.redirect(buildRedirectUrl(request, '/admin/login'));
+      const response = NextResponse.redirect(buildRedirectUrl(request, '/admin/login'));
+      response.headers.set('Cache-Control', 'private, no-cache, no-store, max-age=0, must-revalidate');
+      return response;
     }
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+  if (isAdmin) {
+    response.headers.set('Cache-Control', 'private, no-cache, no-store, max-age=0, must-revalidate');
+  }
+  return response;
 }
 
 export const config = {
-  matcher: ['/sudyam', '/sudyam/:path*', '/sudyam2', '/sudyam2/:path*', '/admin', '/admin/:path*'],
+  matcher: [
+    '/sudyam',
+    '/sudyam/:path*',
+    '/sudyam2',
+    '/sudyam2/:path*',
+    '/court',
+    '/court/tournament',
+    '/court/tournament/:path*',
+    '/admin',
+    '/admin/:path*',
+  ],
 };

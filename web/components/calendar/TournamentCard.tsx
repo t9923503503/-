@@ -1,33 +1,14 @@
 import Link from 'next/link';
 import type { Tournament } from '@/lib/types';
+import { isThaiAdminFormat } from '@/lib/admin-legacy-sync';
+import {
+  fallbackPosterForTournament,
+  isLikelyHostedPlayerOrVkPhoto,
+} from '@/lib/tournament-poster';
+import { buildThaiSpectatorBoardUrl } from '@/lib/tournament-links';
 
 interface TournamentCardProps {
   tournament: Tournament;
-}
-
-function isLikelyDirectImageUrl(url: string): boolean {
-  const value = String(url || '').trim();
-  if (!value) return false;
-  if (value.startsWith('/')) return true;
-  try {
-    const u = new URL(value);
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
-    // These are usually album/share links (HTML), not direct image assets.
-    if (u.hostname.includes('disk.yandex')) return false;
-    if (u.hostname === 'yadi.sk') return false;
-    if (u.hostname.includes('drive.google')) return false;
-    return /\.(png|jpe?g|webp|gif|svg)$/i.test(u.pathname);
-  } catch {
-    return false;
-  }
-}
-
-function fallbackPosterForTournament(t: Tournament): string {
-  const fmt = (t.format || '').toLowerCase();
-  if (fmt.includes('king')) return '/images/pravila/kotc.svg';
-  if (fmt.includes('round')) return '/images/pravila/mixup.svg';
-  if (fmt.includes('double')) return '/images/pravila/double.svg';
-  return '/images/pravila/kotc.svg';
 }
 
 const statusLabels: Record<Tournament['status'], string> = {
@@ -125,8 +106,10 @@ export default function TournamentCard({ tournament }: TournamentCardProps) {
   const division = tournament.division || '';
 
   const albumUrl = String(tournament.photoUrl || '').trim();
-  const posterSrc = isLikelyDirectImageUrl(albumUrl) ? albumUrl : fallbackPosterForTournament(tournament);
-  const showAlbumLink = Boolean(albumUrl) && !isLikelyDirectImageUrl(albumUrl);
+  const posterSrc = isLikelyHostedPlayerOrVkPhoto(albumUrl)
+    ? albumUrl
+    : fallbackPosterForTournament(tournament);
+  const showAlbumLink = Boolean(albumUrl) && !isLikelyHostedPlayerOrVkPhoto(albumUrl);
 
   return (
     <article className={`
@@ -306,6 +289,18 @@ export default function TournamentCard({ tournament }: TournamentCardProps) {
         >
           <span className="sr-only">Открыть турнир</span>
         </Link>
+
+        {isFinished && isThaiAdminFormat(tournament.format) ? (
+          <div className="relative z-20 border-t border-white/10 bg-surface px-6 py-3">
+            <Link
+              href={buildThaiSpectatorBoardUrl(tournament.id)}
+              className="inline-flex items-center gap-2 text-sm font-body font-semibold text-sky-300 transition-colors hover:text-sky-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Табло для зрителей (матчи и итоги)
+            </Link>
+          </div>
+        ) : null}
       </article>
   );
 }

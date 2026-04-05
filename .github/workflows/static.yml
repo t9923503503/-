@@ -1,25 +1,14 @@
-# Simple workflow for deploying static content to GitHub Pages
-name: Deploy static content to Pages
+name: Static CI and Pages
 
 on:
-  # Runs on pushes targeting the default branch
   push:
     branches: ["main"]
-
-  # Allows you to run this workflow manually from the Actions tab
+  pull_request:
+    branches: ["main"]
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
 
 jobs:
   validate:
@@ -31,9 +20,8 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: '22'
-          cache: 'npm'
       - name: Validate static app
-        run: node scripts/validate-static.mjs
+        run: npm run validate:static
 
   smoke:
     needs: validate
@@ -48,12 +36,15 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+      - name: Prepare Pages artifact
+        run: npm run prepare:pages
       - name: Install Chromium
         run: npx playwright install chromium --with-deps
       - name: Run smoke tests
         env:
           SMOKE_HOST: 127.0.0.1
           SMOKE_PORT: 9011
+          SMOKE_ROOT: _site
         run: npx playwright test tests/smoke.spec.ts tests/smoke --reporter=list
       - name: Upload test report
         if: failure()
@@ -64,6 +55,14 @@ jobs:
 
   deploy:
     needs: [validate, smoke]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -71,13 +70,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Prepare public files
-        run: |
-          mkdir -p _site
-          cp index.html manifest.webmanifest icon.svg sw.js config.example.js _site/
-          cp -r assets _site/assets
-          [ -d prototypes ] && cp -r prototypes _site/prototypes || true
-          touch _site/.nojekyll
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Prepare Pages artifact
+        run: npm run prepare:pages
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact

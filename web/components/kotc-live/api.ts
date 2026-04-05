@@ -50,6 +50,23 @@ function toTimestamp(value: unknown): number | null {
   return null;
 }
 
+function normalizeServerSlots(value: unknown, slotCount = 4): Array<number | null> {
+  const source = Array.isArray(value) ? value : [];
+  return Array.from({ length: slotCount }, (_, index) => {
+    const candidate = source[index];
+    const numeric = candidate == null ? null : Number(candidate);
+    return numeric === 0 || numeric === 1 ? numeric : null;
+  });
+}
+
+function normalizeSlotIdx(value: unknown, slotCount = 4): number {
+  const numeric = Number(value);
+  if (Number.isInteger(numeric) && numeric >= 0 && numeric < slotCount) {
+    return numeric;
+  }
+  return 0;
+}
+
 async function readJson<T>(res: Response): Promise<T | null> {
   try {
     const data = (await res.json()) as T;
@@ -110,12 +127,50 @@ function buildHeaders(seatToken?: string): HeadersInit {
 
 function normalizeCourt(raw: unknown, fallbackIdx: number): KotcCourtState {
   const obj = asObject(raw);
+  const serveObj = asObject(obj.serve);
+  const slotCount = 4;
+  const activeSlotIdx = normalizeSlotIdx(
+    serveObj.activeSlotIdx ?? obj.activeSlotIdx ?? obj.active_slot_idx,
+    slotCount,
+  );
+  const serverPlayerIdxBySlot = normalizeServerSlots(
+    serveObj.serverPlayerIdxBySlot ??
+      serveObj.server_player_idx_by_slot ??
+      obj.serverPlayerIdxBySlot ??
+      obj.server_player_idx_by_slot,
+    slotCount,
+  );
+  const waitingSlotIdx = slotCount > 1 ? (activeSlotIdx + 1) % slotCount : 0;
+  const activeServerPlayerIdx = (() => {
+    const numeric = Number(
+      serveObj.activeServerPlayerIdx ??
+        serveObj.active_server_player_idx ??
+        obj.activeServerPlayerIdx ??
+        obj.active_server_player_idx,
+    );
+    return numeric === 0 || numeric === 1 ? numeric : serverPlayerIdxBySlot[activeSlotIdx] ?? null;
+  })();
+  const waitingServerPlayerIdx = (() => {
+    const numeric = Number(
+      serveObj.waitingServerPlayerIdx ??
+        serveObj.waiting_server_player_idx ??
+        obj.waitingServerPlayerIdx ??
+        obj.waiting_server_player_idx,
+    );
+    return numeric === 0 || numeric === 1 ? numeric : serverPlayerIdxBySlot[waitingSlotIdx] ?? null;
+  })();
   return {
     courtIdx: asNumber(obj.courtIdx ?? obj.court_idx, fallbackIdx),
     courtVersion: asNumber(obj.courtVersion ?? obj.court_version, 0),
     roundIdx: asNumber(obj.roundIdx ?? obj.round_idx, 0),
-    scores: asObject(obj.scores),
-    timerStatus: asString(obj.timerStatus ?? obj.timer_status, ""),
+    rosterM: asArray(obj.rosterM ?? obj.roster_m ?? obj.roster_m_json),
+    rosterW: asArray(obj.rosterW ?? obj.roster_w ?? obj.roster_w_json),
+    scores: asObject(obj.scores ?? obj.scores_json),
+    activeSlotIdx,
+    activeServerPlayerIdx,
+    waitingServerPlayerIdx,
+    serverPlayerIdxBySlot,
+    timerStatus: asString(obj.timerStatus ?? obj.timer_status, "idle"),
     timerDurationMs: asNumber(obj.timerDurationMs ?? obj.timer_duration_ms, 0),
     timerEndsAt: toTimestamp(obj.timerEndsAt ?? obj.timer_ends_at),
     timerPausedAt: toTimestamp(obj.timerPausedAt ?? obj.timer_paused_at),
@@ -177,6 +232,7 @@ function normalizeSnapshot(raw: unknown, fallbackSessionId: string): KotcSnapsho
     structureEpoch: asNumber(snapshotObj.structureEpoch ?? snapshotObj.structure_epoch, 0),
     phase: asString(snapshotObj.phase, ""),
     nc: asNumber(snapshotObj.nc, Math.max(1, Object.keys(courts).length || 4)),
+    ppc: asNumber(snapshotObj.ppc, 4),
     courts,
     presence,
     global: asObject(obj.global ?? snapshotObj.state ?? snapshotObj.state_json),
@@ -192,6 +248,7 @@ function normalizeSessionSummary(raw: unknown): KotcSessionSummary {
     status: asString(obj.status),
     phase: asString(obj.phase),
     nc: asNumber(obj.nc, 4),
+    ppc: asNumber(obj.ppc, 4),
     updatedAt: asString(obj.updatedAt ?? obj.updated_at),
   };
 }
@@ -281,6 +338,35 @@ export async function listSessions(): Promise<KotcSessionSummary[]> {
     ? data
     : asArray(asObject(data).sessions ?? asObject(data).items ?? asObject(data).data);
   return rawList.map(normalizeSessionSummary).filter((item) => item.sessionId);
+}
+
+export async function createSession(input: {
+  tournamentId: string;
+  nc?: number;
+  phase?: string;
+  state?: Record<string, unknown>;
+}): Promise<KotcSnapshot> {
+  const res = await fetchWithTimeout(`${API_BASE}/sessions`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({
+      tournamentId: input.tournamentId,
+      nc: input.nc,
+      phase: input.phase,
+      state: input.state ?? {},
+    }),
+  }, "KOTC Live session create");
+  const data = await readJson<unknown>(res);
+  if (!res.ok) {
+    const message =
+      asString(asObject(data).error) ||
+      asString(asObject(data).message) ||
+      `Session create failed (${res.status})`;
+    const error = new Error(message);
+    (error as Error & { status?: number }).status = res.status;
+    throw error;
+  }
+  return normalizeSnapshot(data, "");
 }
 
 export async function joinSession(input: {

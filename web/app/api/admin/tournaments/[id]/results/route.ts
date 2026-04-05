@@ -20,13 +20,20 @@ export async function POST(
     const raw = Array.isArray(body.results) ? body.results : [];
     const results = raw
       .filter((r: unknown) => r && typeof r === 'object')
-      .map((r: Record<string, unknown>) => ({
-        playerName: String(r.playerName ?? r.player_name ?? '').trim(),
-        gender: String(r.gender ?? 'M') === 'W' ? ('W' as const) : ('M' as const),
-        placement: Number(r.placement ?? 0),
-        points: Number(r.points ?? 0),
-      }))
-      .filter((r: { playerName: string; gender: 'M' | 'W'; placement: number; points: number }) => r.playerName && r.placement > 0);
+      .map((r: Record<string, unknown>) => {
+        const poolRaw = String(r.ratingPool ?? r.rating_pool ?? '').trim().toLowerCase();
+        return {
+          playerName: String(r.playerName ?? r.player_name ?? '').trim(),
+          gender: String(r.gender ?? 'M') === 'W' ? ('W' as const) : ('M' as const),
+          placement: Number(r.placement ?? 0),
+          points: Number(r.points ?? 0),
+          ratingPool: poolRaw === 'novice' ? ('novice' as const) : ('pro' as const),
+        };
+      })
+      .filter(
+        (r: { playerName: string; gender: 'M' | 'W'; placement: number; points: number }) =>
+          r.playerName && r.placement > 0,
+      );
 
     const inserted = await upsertTournamentResults(id, results);
 

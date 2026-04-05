@@ -14,6 +14,7 @@ export interface KotcSessionSummary {
   status?: string;
   phase?: string;
   nc: number;
+  ppc?: number;
   updatedAt?: string;
 }
 
@@ -28,9 +29,13 @@ export interface KotcCourtState {
   courtIdx: number;
   courtVersion: number;
   roundIdx?: number;
-  rosterM?: string[];
-  rosterW?: string[];
+  rosterM?: unknown[];
+  rosterW?: unknown[];
   scores?: Record<string, unknown>;
+  activeSlotIdx?: number;
+  activeServerPlayerIdx?: number | null;
+  waitingServerPlayerIdx?: number | null;
+  serverPlayerIdxBySlot?: Array<number | null>;
   timerStatus?: string;
   timerDurationMs?: number;
   timerEndsAt?: number | null;
@@ -54,6 +59,7 @@ export interface KotcSnapshot {
   structureEpoch: number;
   phase?: string;
   nc: number;
+  ppc?: number;
   courts: Record<number, KotcCourtState>;
   presence: KotcPresenceItem[];
   global?: Record<string, unknown> | null;

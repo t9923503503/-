@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { resolvePgSsl } from '../../web/lib/resolve-pg-ssl.ts';
+
 const originalDatabaseSsl = process.env.DATABASE_SSL;
 const originalPgSslMode = process.env.PGSSLMODE;
 
@@ -16,27 +18,23 @@ describe('Postgres SSL resolution', () => {
     restoreEnv();
   });
 
-  it('disables ssl for localhost by default', async () => {
-    const { resolvePgSsl } = await import('../../web/lib/db.ts');
+  it('disables ssl for localhost by default', () => {
     expect(resolvePgSsl('postgresql://user:pass@localhost:5432/app')).toBe(false);
     expect(resolvePgSsl('postgresql://user:pass@127.0.0.1:5432/app')).toBe(false);
   });
 
-  it('keeps ssl for remote hosts by default', async () => {
-    const { resolvePgSsl } = await import('../../web/lib/db.ts');
+  it('keeps ssl for remote hosts by default', () => {
     expect(resolvePgSsl('postgresql://user:pass@db.example.com:5432/app')).toEqual({
       rejectUnauthorized: false,
     });
   });
 
-  it('honors explicit disable flags', async () => {
+  it('honors explicit disable flags', () => {
     process.env.PGSSLMODE = 'disable';
-    const { resolvePgSsl } = await import('../../web/lib/db.ts');
     expect(resolvePgSsl('postgresql://user:pass@db.example.com:5432/app')).toBe(false);
   });
 
-  it('honors sslmode query params that disable negotiation', async () => {
-    const { resolvePgSsl } = await import('../../web/lib/db.ts');
+  it('honors sslmode query params that disable negotiation', () => {
     expect(resolvePgSsl('postgresql://user:pass@db.example.com:5432/app?sslmode=disable')).toBe(
       false,
     );

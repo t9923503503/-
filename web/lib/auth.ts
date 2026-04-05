@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
+import { getExpectedJudgePin } from '@/lib/judge-pin';
 
 export const COOKIE_NAME = 'sudyam_session';
-const FALLBACK_SUDYAM_PIN = '7319';
 
 export type AuthStatus = 'unauthenticated' | 'approved';
 
@@ -10,5 +10,9 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
   if (!token) return 'unauthenticated';
-  return token === String(process.env.SUDYAM_PIN || FALLBACK_SUDYAM_PIN) ? 'approved' : 'unauthenticated';
+  try {
+    return token === getExpectedJudgePin() ? 'approved' : 'unauthenticated';
+  } catch {
+    return 'unauthenticated';
+  }
 }

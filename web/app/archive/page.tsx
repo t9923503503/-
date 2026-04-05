@@ -69,7 +69,9 @@ function TournamentCard({ t }: { t: ArchiveTournament }) {
                 <th className="px-4 py-2 text-left font-medium">#</th>
                 <th className="px-4 py-2 text-left font-medium">Игрок</th>
                 <th className="px-4 py-2 text-center font-medium">Пол</th>
-                <th className="px-4 py-2 text-right font-medium">Очки</th>
+                <th className="px-4 py-2 text-right font-medium">Игровые</th>
+                <th className="px-4 py-2 text-right font-medium">В рейтинг</th>
+                <th className="px-4 py-2 text-center font-medium">Пул</th>
               </tr>
             </thead>
             <tbody>
@@ -87,6 +89,12 @@ function TournamentCard({ t }: { t: ArchiveTournament }) {
                   </td>
                   <td className="px-4 py-2.5 text-right font-semibold text-brand">
                     {r.points > 0 ? r.points : '—'}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-emerald-300/90">
+                    {typeof r.ratingPts === 'number' ? r.ratingPts : '—'}
+                  </td>
+                  <td className="px-4 py-2.5 text-center text-xs text-text-secondary">
+                    {r.ratingPool === 'novice' ? '½' : '★'}
                   </td>
                 </tr>
               ))}

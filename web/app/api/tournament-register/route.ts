@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
 import { getPlayerTokenFromCookieHeader, verifyPlayerToken } from '@/lib/player-auth';
+import { notifyPlayerRequestSubmitted } from '@/lib/tournament-notifications';
+import { resolveTournamentStatus } from '@/lib/tournament-status';
 
 type Gender = 'M' | 'W';
 type RegistrationType = 'with_partner' | 'solo';
@@ -57,7 +59,17 @@ export async function POST(request: NextRequest) {
     const pool = getPool();
 
     const tournamentRes = await pool.query(
-      `SELECT id, status FROM tournaments WHERE id = $1 LIMIT 1`,
+      `SELECT t.id,
+              t.status,
+              t.date,
+              t.time,
+              t.capacity,
+              COUNT(tp.id) FILTER (WHERE COALESCE(tp.is_waitlist, false) = false)::int AS participant_count
+         FROM tournaments t
+         LEFT JOIN tournament_participants tp ON tp.tournament_id = t.id
+        WHERE t.id = $1
+        GROUP BY t.id
+        LIMIT 1`,
       [tId]
     );
     const tournament = tournamentRes.rows?.[0];
@@ -68,7 +80,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!['open', 'full'].includes(String(tournament.status || ''))) {
+    const effectiveStatus = resolveTournamentStatus({
+      status: String(tournament.status || 'open'),
+      date:
+        tournament.date instanceof Date
+          ? tournament.date.toISOString().slice(0, 10)
+          : String(tournament.date ?? ''),
+      time: String(tournament.time ?? ''),
+      capacity: Number(tournament.capacity ?? 0),
+      participantCount: Number(tournament.participant_count ?? 0),
+    });
+
+    if (!['open', 'full'].includes(effectiveStatus)) {
       return NextResponse.json(
         { error: 'Registration is closed for this tournament' },
         { status: 400 }
@@ -99,6 +122,8 @@ export async function POST(request: NextRequest) {
       } catch {
         // Keep registration working even when new columns are not present yet.
       }
+
+      await notifyPlayerRequestSubmitted(requestId);
     }
 
     return NextResponse.json(result, { status: 200 });
@@ -110,4 +135,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

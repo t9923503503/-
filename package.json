@@ -5,6 +5,7 @@
   "description": "Browser smoke-тесты для статического приложения King of the Court.",
   "scripts": {
     "validate:static": "node scripts/validate-static.mjs",
+    "prepare:pages": "node scripts/prepare-pages.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
@@ -13,6 +14,7 @@
     "test:smoke": "playwright test",
     "test:e2e:thai": "playwright test tests/e2e --reporter=list",
     "test:gate": "node scripts/release-gate.mjs",
+    "verify:release": "npm run test:unit && cd web && npm run build",
     "test:smoke:headed": "playwright test --headed",
     "test:smoke:debug": "playwright test --debug"
   },

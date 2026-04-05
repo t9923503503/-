@@ -7,6 +7,10 @@ type ResultRow = {
   gender: 'M' | 'W';
   placement: number;
   points: number;
+  /** Рейтинг: профи — полные очки за место; новичок — половина (округление). */
+  ratingPool: 'pro' | 'novice';
+  /** Заполняется с сервера после сохранения; для подсказки при редактировании. */
+  ratingPts?: number;
 };
 
 type Tournament = {
@@ -19,7 +23,7 @@ type Tournament = {
   results: ResultRow[];
 };
 
-const emptyResult: ResultRow = { playerName: '', gender: 'M', placement: 1, points: 0 };
+const emptyResult: ResultRow = { playerName: '', gender: 'M', placement: 1, points: 0, ratingPool: 'pro' };
 
 export default function AdminArchivePage() {
   const [rows, setRows] = useState<Tournament[]>([]);
@@ -42,7 +46,11 @@ export default function AdminArchivePage() {
     setExpanded(t.id);
     setResultsForm(
       t.results.length > 0
-        ? t.results.map((r) => ({ ...r }))
+        ? t.results.map((r) => ({
+            ...r,
+            ratingPool: r.ratingPool === 'novice' ? 'novice' : 'pro',
+            ratingPts: typeof r.ratingPts === 'number' ? r.ratingPts : undefined,
+          }))
         : [{ ...emptyResult }]
     );
     setMessage('');
@@ -56,7 +64,7 @@ export default function AdminArchivePage() {
   function addRow() {
     setResultsForm((prev) => [
       ...prev,
-      { playerName: '', gender: 'M', placement: prev.length + 1, points: 0 },
+      { playerName: '', gender: 'M', placement: prev.length + 1, points: 0, ratingPool: 'pro' },
     ]);
   }
 
@@ -64,7 +72,7 @@ export default function AdminArchivePage() {
     setResultsForm((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  function updateRow(idx: number, field: keyof ResultRow, value: string | number) {
+  function updateRow(idx: number, field: keyof ResultRow, value: string | number | 'pro' | 'novice') {
     setResultsForm((prev) =>
       prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r))
     );
@@ -219,6 +227,11 @@ export default function AdminArchivePage() {
 
               {expanded === t.id && (
                 <div className="flex flex-col gap-3 border-t border-white/10 pt-3">
+                  <p className="text-xs text-text-secondary leading-relaxed">
+                    Рейтинговые очки за место считаются автоматически: профи — полная таблица мест, новичок —{' '}
+                    <span className="text-text-primary/90">половина</span> (округление). Игровые очки в поле «Очки»
+                    — отдельно.
+                  </p>
                   <div className="flex flex-col gap-2">
                     {resultsForm.map((r, idx) => (
                       <div key={idx} className="flex gap-2 items-center flex-wrap">
@@ -238,6 +251,15 @@ export default function AdminArchivePage() {
                           <option value="M">М</option>
                           <option value="W">Ж</option>
                         </select>
+                        <select
+                          value={r.ratingPool}
+                          onChange={(e) => updateRow(idx, 'ratingPool', e.target.value as 'pro' | 'novice')}
+                          title="Пул для рейтинга"
+                          className="px-2 py-1 text-sm rounded bg-white/10 border border-white/20 max-w-[140px]"
+                        >
+                          <option value="pro">Рейтинг: профи</option>
+                          <option value="novice">Рейтинг: новичок (½)</option>
+                        </select>
                         <input
                           type="number"
                           value={r.placement}
@@ -254,6 +276,14 @@ export default function AdminArchivePage() {
                           min={0}
                           className="w-16 px-2 py-1 text-sm rounded bg-white/10 border border-white/20"
                         />
+                        <span
+                          className="text-xs text-text-secondary tabular-nums min-w-[3rem]"
+                          title="Очки в общий рейтинг (после сохранения)"
+                        >
+                          {typeof r.ratingPts === 'number' && r.ratingPts > 0
+                            ? `R:${r.ratingPts}`
+                            : ''}
+                        </span>
                         <button
                           type="button"
                           onClick={() => removeRow(idx)}

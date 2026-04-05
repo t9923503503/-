@@ -80,6 +80,52 @@ function parseCourtIdx(value: unknown): number | null {
   return n;
 }
 
+function parseSlotIdx(value: unknown, slotCount = 4): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0 || n >= slotCount) return null;
+  return n;
+}
+
+function parsePlayerIdx(value: unknown): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  if (n !== 0 && n !== 1) return null;
+  return n;
+}
+
+function normalizeServeSlots(value: unknown, slotCount = 4): Array<number | null> {
+  const source = Array.isArray(value) ? value : [];
+  return Array.from({ length: slotCount }, (_, index) => parsePlayerIdx(source[index]));
+}
+
+function getWaitingSlotIdx(activeSlotIdx: number, slotCount = 4): number | null {
+  if (slotCount <= 1) return null;
+  return (activeSlotIdx + 1) % slotCount;
+}
+
+function deriveServeState(
+  activeSlotIdxValue: unknown,
+  slotsValue: unknown,
+  slotCount = 4
+): {
+  activeSlotIdx: number;
+  activeServerPlayerIdx: number | null;
+  waitingServerPlayerIdx: number | null;
+  serverPlayerIdxBySlot: Array<number | null>;
+} {
+  const serverPlayerIdxBySlot = normalizeServeSlots(slotsValue, slotCount);
+  const activeSlotIdx = parseSlotIdx(activeSlotIdxValue, slotCount) ?? 0;
+  const waitingSlotIdx = getWaitingSlotIdx(activeSlotIdx, slotCount);
+  return {
+    activeSlotIdx,
+    activeServerPlayerIdx: serverPlayerIdxBySlot[activeSlotIdx] ?? null,
+    waitingServerPlayerIdx:
+      waitingSlotIdx == null ? null : (serverPlayerIdxBySlot[waitingSlotIdx] ?? null),
+    serverPlayerIdxBySlot,
+  };
+}
+
 function mapSeatRow(row: QueryResultRow): LiveSeat {
   return {
     seatId: Number(row.seat_id),
@@ -111,6 +157,7 @@ function mapSessionSummaryRow(row: QueryResultRow): LiveSessionSummary {
 }
 
 function mapCourtRow(row: QueryResultRow): LiveCourtState {
+  const serveState = deriveServeState(row.active_slot_idx, row.server_slots_json);
   return {
     sessionId: String(row.session_id),
     courtIdx: asNum(row.court_idx),
@@ -119,6 +166,10 @@ function mapCourtRow(row: QueryResultRow): LiveCourtState {
     rosterM: asArray(row.roster_m_json),
     rosterW: asArray(row.roster_w_json),
     scores: asRecord(row.scores_json),
+    activeSlotIdx: serveState.activeSlotIdx,
+    activeServerPlayerIdx: serveState.activeServerPlayerIdx,
+    waitingServerPlayerIdx: serveState.waitingServerPlayerIdx,
+    serverPlayerIdxBySlot: serveState.serverPlayerIdxBySlot,
     timerStatus: (['idle', 'running', 'paused'].includes(String(row.timer_status))
       ? String(row.timer_status)
       : 'idle') as LiveCourtState['timerStatus'],
@@ -218,6 +269,7 @@ async function loadSnapshotTx(
   const courtsRes = await client.query(
     `
     SELECT session_id, court_idx, court_version, round_idx, roster_m_json, roster_w_json, scores_json,
+           active_slot_idx, server_slots_json,
            timer_status, timer_duration_ms, timer_ends_at, timer_paused_at, last_command_id, last_updated_at, last_updated_by
     FROM live_kotc_court_state
     WHERE session_id = $1
@@ -398,6 +450,16 @@ function mergeScores(
   return next;
 }
 
+function getScoreUpdatedSlotIdx(payload: Record<string, unknown>, slotCount = 4): number | null {
+  const direct = parseSlotIdx(payload.slotIdx, slotCount);
+  if (direct != null) return direct;
+  const updatedFor = asRecord(payload.updatedFor);
+  const nested = parseSlotIdx(updatedFor.slotIdx, slotCount);
+  if (nested != null) return nested;
+  const scoresPatch = asRecord(payload.scores);
+  return parseSlotIdx(asRecord(scoresPatch.updatedFor).slotIdx, slotCount);
+}
+
 export async function listActiveSessions(): Promise<LiveSessionSummary[]> {
   const pool = getPool();
   const { rows } = await pool.query(
@@ -476,6 +538,7 @@ export async function getCourtSnapshot(sessionId: string, courtIdx: number): Pro
   const { rows } = await pool.query(
     `
     SELECT session_id, court_idx, court_version, round_idx, roster_m_json, roster_w_json, scores_json,
+           active_slot_idx, server_slots_json,
            timer_status, timer_duration_ms, timer_ends_at, timer_paused_at, last_command_id, last_updated_at, last_updated_by
     FROM live_kotc_court_state
     WHERE session_id = $1 AND court_idx = $2
@@ -786,6 +849,8 @@ async function applyCommandTx(
         : `${actor.token.role}:${actor.token.device_id}`;
     let nextRound = asNum(court.round_idx, 0);
     let nextScores = asRecord(court.scores_json);
+    let nextActiveSlotIdx = parseSlotIdx(court.active_slot_idx, 4) ?? 0;
+    let nextServerSlots = normalizeServeSlots(court.server_slots_json, 4);
     let nextTimerStatus = String(court.timer_status || 'idle');
     let nextTimerDuration = asNum(court.timer_duration_ms, 0);
     let nextTimerEndsAt: Date | null = court.timer_ends_at ? new Date(court.timer_ends_at) : null;
@@ -793,6 +858,28 @@ async function applyCommandTx(
 
     if (command.commandType === 'court.score_set') {
       nextScores = mergeScores(nextScores, payload);
+      const updatedSlotIdx = getScoreUpdatedSlotIdx(payload, 4);
+      if (updatedSlotIdx != null) {
+        nextActiveSlotIdx = updatedSlotIdx;
+      }
+    } else if (command.commandType === 'court.server_select') {
+      const slotIdx = parseSlotIdx(payload.slotIdx, 4);
+      const playerIdx = parsePlayerIdx(payload.playerIdx);
+      if (slotIdx == null) throw new LiveApiError(400, 'slotIdx is required for court.server_select');
+      if (playerIdx == null) throw new LiveApiError(400, 'playerIdx must be 0 or 1 for court.server_select');
+      const waitingSlotIdx = getWaitingSlotIdx(nextActiveSlotIdx, 4);
+      nextServerSlots[slotIdx] = playerIdx;
+      if (slotIdx !== waitingSlotIdx) {
+        nextActiveSlotIdx = slotIdx;
+      }
+    } else if (command.commandType === 'court.server_swap') {
+      const waitingSlotIdx = getWaitingSlotIdx(nextActiveSlotIdx, 4);
+      const slotIdx = parseSlotIdx(payload.slotIdx, 4) ?? nextActiveSlotIdx;
+      const currentPlayerIdx = parsePlayerIdx(nextServerSlots[slotIdx]);
+      nextServerSlots[slotIdx] = currentPlayerIdx === 1 ? 0 : 1;
+      if (slotIdx !== waitingSlotIdx) {
+        nextActiveSlotIdx = slotIdx;
+      }
     } else if (command.commandType === 'court.round_set') {
       nextRound = Math.max(0, Math.trunc(asNum(payload.roundIdx, nextRound)));
     } else if (command.commandType === 'court.timer_start') {
@@ -831,13 +918,15 @@ async function applyCommandTx(
       UPDATE live_kotc_court_state
       SET round_idx = $3,
           scores_json = $4::jsonb,
-          timer_status = $5,
-          timer_duration_ms = $6,
-          timer_ends_at = $7,
-          timer_paused_at = $8,
-          last_command_id = $9,
+          active_slot_idx = $5,
+          server_slots_json = $6::jsonb,
+          timer_status = $7,
+          timer_duration_ms = $8,
+          timer_ends_at = $9,
+          timer_paused_at = $10,
+          last_command_id = $11,
           last_updated_at = now(),
-          last_updated_by = $10,
+          last_updated_by = $12,
           court_version = court_version + 1
       WHERE session_id = $1 AND court_idx = $2
       RETURNING court_version
@@ -847,6 +936,8 @@ async function applyCommandTx(
         courtIdx,
         nextRound,
         nextScores,
+        nextActiveSlotIdx,
+        nextServerSlots,
         nextTimerStatus,
         nextTimerDuration,
         nextTimerEndsAt,
@@ -868,6 +959,7 @@ async function applyCommandTx(
     );
     const nextSessionVersion = asNum(sessionUpd.rows[0]?.session_version, asNum(session.session_version, 0) + 1);
     const structureEpoch = asNum(sessionUpd.rows[0]?.structure_epoch, asNum(session.structure_epoch, 0));
+    const serveState = deriveServeState(nextActiveSlotIdx, nextServerSlots, 4);
     return {
       beforeVersion: asNum(session.session_version, 0),
       sessionVersion: nextSessionVersion,
@@ -879,6 +971,16 @@ async function applyCommandTx(
         court_idx: courtIdx,
         round_idx: nextRound,
         scores: nextScores,
+        active_slot_idx: serveState.activeSlotIdx,
+        active_server_player_idx: serveState.activeServerPlayerIdx,
+        waiting_server_player_idx: serveState.waitingServerPlayerIdx,
+        server_player_idx_by_slot: serveState.serverPlayerIdxBySlot,
+        serve: {
+          activeSlotIdx: serveState.activeSlotIdx,
+          activeServerPlayerIdx: serveState.activeServerPlayerIdx,
+          waitingServerPlayerIdx: serveState.waitingServerPlayerIdx,
+          serverPlayerIdxBySlot: serveState.serverPlayerIdxBySlot,
+        },
         timer: {
           status: nextTimerStatus,
           durationMs: nextTimerDuration,

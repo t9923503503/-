@@ -153,6 +153,7 @@ test.describe('Browser smoke', () => {
     const errors = await collectErrors(page);
     await page.addInitScript(() => {
       localStorage.setItem('kotc3_thai_sel', '{broken');
+      localStorage.setItem('kotc3_thai_sel_secondary', '{broken');
       localStorage.setItem('kotc3_ipt_sel', '{broken');
     });
 

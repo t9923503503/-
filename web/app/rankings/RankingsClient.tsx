@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import type { LeaderboardEntry, RatingType } from '@/lib/types';
+import PlayerPhoto from '@/components/ui/PlayerPhoto';
 import type { RankingCounts } from '@/lib/queries';
 
 /* ── helpers ───────────────────────────────────── */
@@ -103,6 +104,15 @@ function PlayerItem({ entry, sort }: { entry: LeaderboardEntry; sort: SortMode }
       className="flex items-center gap-3 px-3 py-3 bg-[#16162a] border border-[#2a2a40] rounded-xl transition-all hover:border-[#3a3a5e] hover:bg-[#1a1a30] group"
       style={{ borderLeftWidth: '3px', borderLeftColor: zn.color }}
     >
+      {entry.photoUrl ? (
+        <div className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-[#2a2a44]">
+          <PlayerPhoto photoUrl={entry.photoUrl} alt={entry.name} width={40} height={40} />
+        </div>
+      ) : (
+        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-brand/40 to-[#6366F1]/40 border border-[#2a2a44] flex items-center justify-center text-xs font-bold text-white/90">
+          {entry.name.charAt(0).toUpperCase()}
+        </div>
+      )}
       {/* Rank */}
       <div className={`flex-shrink-0 w-7 text-center font-heading text-base ${rankColorClass}`}>
         {rankDisplay}

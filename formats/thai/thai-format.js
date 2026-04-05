@@ -15,6 +15,14 @@
  * - thaiValidateSchedule(schedule, players) -> { valid, errors[] }
  * - thaiSeedR2(r1Groups, gender) -> R2Group[]
  * - thaiCalcNominations(r1Stats, r2Stats) -> Nomination[]
+ *
+ * R1 ranking priority for seeding:
+ * 1. winPercentage
+ * 2. tournament points (2 for win, 1 for non-win)
+ * 3. point difference
+ * 4. point ratio
+ * 5. head-to-head / mini-league inside tied subgroup
+ * 6. persisted draw order
  */
 
 const EPS = 1e-9;
@@ -64,6 +72,418 @@ export function thaiZeroSumTour(allDiffs) {
   return Math.abs(sum) < EPS;
 }
 
+function _toFiniteNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function _stableKey(value) {
+  if (value === null || value === undefined) return '';
+  return String(value);
+}
+
+function _stableCompare(a, b) {
+  const aNum = Number(a);
+  const bNum = Number(b);
+  if (Number.isFinite(aNum) && Number.isFinite(bNum) && aNum !== bNum) {
+    return aNum - bNum;
+  }
+  return _stableKey(a).localeCompare(_stableKey(b), 'ru');
+}
+
+function _safeRatio(forPoints, againstPoints) {
+  const against = _toFiniteNumber(againstPoints, 0);
+  if (against === 0) return Infinity;
+  return _toFiniteNumber(forPoints, 0) / against;
+}
+
+function _numbersEqual(a, b) {
+  if (a === b) return true;
+  if (Number.isFinite(a) && Number.isFinite(b)) return Math.abs(a - b) < EPS;
+  return false;
+}
+
+function _compareMetricDesc(a, b) {
+  if (_numbersEqual(a, b)) return 0;
+  if (a === Infinity) return -1;
+  if (b === Infinity) return 1;
+  return a > b ? -1 : 1;
+}
+
+function _playerStableIdx(stat, fallback = 0) {
+  const raw = stat?.stableIdx ?? stat?.idx ?? stat?.id ?? fallback;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function _playerKey(stat, fallback = '') {
+  return _stableKey(
+    stat?.playerKey ?? stat?.playerId ?? stat?.id ?? stat?.idx ?? fallback
+  );
+}
+
+function _groupSignature(playerKeys) {
+  return [...(playerKeys || [])].map(_stableKey).sort((a, b) => a.localeCompare(b, 'ru')).join('||');
+}
+
+function _hashString(value) {
+  let hash = 2166136261;
+  const text = _stableKey(value);
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function _generateDrawOrders(playerKeys, seed) {
+  const ordered = [...(playerKeys || [])]
+    .map((key) => ({
+      key: _stableKey(key),
+      hash: _hashString(`${seed}:${_stableKey(key)}`),
+    }))
+    .sort((a, b) => {
+      if (a.hash !== b.hash) return a.hash - b.hash;
+      return a.key.localeCompare(b.key, 'ru');
+    });
+
+  const orders = {};
+  ordered.forEach((entry, index) => {
+    orders[entry.key] = index + 1;
+  });
+  return orders;
+}
+
+function _normalizedDrawOrders(existingOrders, playerKeys, seed) {
+  const requiredKeys = [...(playerKeys || [])].map(_stableKey);
+  if (
+    existingOrders &&
+    typeof existingOrders === 'object' &&
+    requiredKeys.every((key) => Number.isFinite(Number(existingOrders[key])))
+  ) {
+    return existingOrders;
+  }
+  return _generateDrawOrders(requiredKeys, seed);
+}
+
+function _getWins(stat) {
+  return _toFiniteNumber(stat?.wins, 0);
+}
+
+function _getMatches(stat) {
+  const direct = stat?.matches ?? stat?.rPlayed;
+  if (Number.isFinite(Number(direct))) return Number(direct);
+  const wins = _getWins(stat);
+  const losses = _toFiniteNumber(stat?.losses, 0);
+  return wins + losses;
+}
+
+function _getTournamentPoints(stat) {
+  if (!stat) return 0;
+  if (Number.isFinite(Number(stat.points))) return Number(stat.points);
+  if (Number.isFinite(Number(stat.tournamentPoints))) return Number(stat.tournamentPoints);
+  if (Number.isFinite(Number(stat.pts))) return Number(stat.pts);
+  const matches = _getMatches(stat);
+  if (matches > 0) {
+    const wins = _getWins(stat);
+    const nonWins = Math.max(matches - wins, 0);
+    return (wins * 2) + nonWins;
+  }
+  return 0;
+}
+
+function _getWinPercentage(stat) {
+  if (!stat) return 0;
+  if (Number.isFinite(Number(stat.winPercentage))) return Number(stat.winPercentage);
+  const matches = _getMatches(stat);
+  return matches > 0 ? (_getWins(stat) / matches) : 0;
+}
+
+function _getPointDiff(stat) {
+  return _toFiniteNumber(stat?.diff, 0);
+}
+
+function _getBallsFor(stat) {
+  return _toFiniteNumber(stat?.balls ?? stat?.pointsFor, 0);
+}
+
+function _getBallsAgainst(stat) {
+  if (!stat) return 0;
+  if (Number.isFinite(Number(stat.ballsAgainst))) return Number(stat.ballsAgainst);
+  if (Number.isFinite(Number(stat.pointsAgainst))) return Number(stat.pointsAgainst);
+  if (Number.isFinite(Number(stat.oppBalls))) return Number(stat.oppBalls);
+  if (Number.isFinite(Number(stat.against))) return Number(stat.against);
+  return _getBallsFor(stat) - _getPointDiff(stat);
+}
+
+function _getPointRatio(stat) {
+  if (!stat) return 0;
+  if (Number.isFinite(Number(stat.pointRatio)) || stat?.pointRatio === Infinity) {
+    return stat.pointRatio;
+  }
+  return _safeRatio(_getBallsFor(stat), _getBallsAgainst(stat));
+}
+
+function _comparePrimaryRanking(a, b) {
+  const winPctCmp = _compareMetricDesc(_getWinPercentage(a), _getWinPercentage(b));
+  if (winPctCmp) return winPctCmp;
+
+  const pointsCmp = _compareMetricDesc(_getTournamentPoints(a), _getTournamentPoints(b));
+  if (pointsCmp) return pointsCmp;
+
+  const diffCmp = _compareMetricDesc(_getPointDiff(a), _getPointDiff(b));
+  if (diffCmp) return diffCmp;
+
+  const ratioCmp = _compareMetricDesc(_getPointRatio(a), _getPointRatio(b));
+  if (ratioCmp) return ratioCmp;
+
+  return 0;
+}
+
+function _samePrimaryRanking(a, b) {
+  return _comparePrimaryRanking(a, b) === 0;
+}
+
+function _compareMiniRanking(a, b) {
+  const winPctCmp = _compareMetricDesc(a?.miniWinPercentage ?? 0, b?.miniWinPercentage ?? 0);
+  if (winPctCmp) return winPctCmp;
+
+  const diffCmp = _compareMetricDesc(a?.miniPointDiff ?? 0, b?.miniPointDiff ?? 0);
+  if (diffCmp) return diffCmp;
+
+  const ratioCmp = _compareMetricDesc(a?.miniPointRatio ?? 0, b?.miniPointRatio ?? 0);
+  if (ratioCmp) return ratioCmp;
+
+  return 0;
+}
+
+function _sameMiniRanking(a, b) {
+  return _compareMiniRanking(a, b) === 0;
+}
+
+function _compareStablePlayers(a, b) {
+  const stableCmp = _playerStableIdx(a) - _playerStableIdx(b);
+  if (stableCmp) return stableCmp;
+  return _stableCompare(_playerKey(a), _playerKey(b));
+}
+
+function _buildMatchRows(player, ownArr, oppArr, opponentArr, toursCount) {
+  const rows = [];
+  for (let roundIdx = 0; roundIdx < toursCount; roundIdx++) {
+    const ownVal = ownArr?.[roundIdx];
+    const oppVal = oppArr?.[roundIdx];
+    const ownNum = ownVal === null || ownVal === undefined ? null : Number(ownVal);
+    const oppNum = oppVal === null || oppVal === undefined ? null : Number(oppVal);
+    if (ownNum === null || oppNum === null || !Number.isFinite(ownNum) || !Number.isFinite(oppNum)) continue;
+
+    const opponentKey = _stableKey(opponentArr?.[roundIdx]);
+    rows.push({
+      roundIdx,
+      opponentKey,
+      own: ownNum,
+      opp: oppNum,
+      diff: ownNum - oppNum,
+    });
+  }
+  return rows;
+}
+
+function _normalizeScorePlayer(player, index, group) {
+  const players = Array.isArray(group?.players) ? group.players : null;
+  const ownScores = Array.isArray(group?.ownScores) ? group.ownScores : null;
+  const oppScores = Array.isArray(group?.oppScores) ? group.oppScores : null;
+  const opponents = Array.isArray(group?.opponents) ? group.opponents : null;
+  const playerKeys = Array.isArray(group?.playerKeys) ? group.playerKeys : null;
+
+  const source = player ?? { idx: index, own: ownScores?.[index], opp: oppScores?.[index] };
+  const ownArr = source.own ?? ownScores?.[index] ?? [];
+  const oppArr = source.opp ?? oppScores?.[index] ?? [];
+  const opponentArr = source.opponents ?? opponents?.[index] ?? [];
+  const toursCount = Math.max(ownArr?.length ?? 0, oppArr?.length ?? 0, opponentArr?.length ?? 0);
+
+  let wins = 0;
+  let losses = 0;
+  let thaiPts = 0;
+  let balls = 0;
+  let ballsAgainst = 0;
+  let bestRound = 0;
+  let rPlayed = 0;
+
+  const matchRows = _buildMatchRows(source, ownArr, oppArr, opponentArr, toursCount);
+  for (const row of matchRows) {
+    if (row.own > bestRound) bestRound = row.own;
+    balls += row.own;
+    ballsAgainst += row.opp;
+    thaiPts += thaiCalcPoints(row.diff);
+    if (row.diff > 0) wins++;
+    else losses++;
+    rPlayed++;
+  }
+
+  const diff = balls - ballsAgainst;
+  const points = (wins * 2) + losses;
+  return {
+    idx: source.idx ?? source.id ?? index,
+    stableIdx: _playerStableIdx(source, index),
+    playerKey: _stableKey(playerKeys?.[index] ?? source.playerKey ?? source.playerId ?? source.id ?? source.idx ?? index),
+    points,
+    pts: points,
+    thaiPts,
+    diff,
+    wins,
+    losses,
+    balls,
+    ballsAgainst,
+    bestRound,
+    rPlayed,
+    matches: rPlayed,
+    winPercentage: rPlayed > 0 ? (wins / rPlayed) : 0,
+    pointRatio: _safeRatio(balls, ballsAgainst),
+    K: thaiCalcK(diff),
+    _matches: matchRows,
+  };
+}
+
+function _normalizeAggregatePlayer(player, index) {
+  const wins = _getWins(player);
+  const matches = _getMatches(player);
+  const losses = Number.isFinite(Number(player?.losses)) ? Number(player.losses) : Math.max(matches - wins, 0);
+  const balls = _getBallsFor(player);
+  const diff = _getPointDiff(player);
+  const ballsAgainst = _getBallsAgainst(player);
+  const points = _getTournamentPoints(player);
+
+  return {
+    ...player,
+    idx: player?.idx ?? player?.id ?? index,
+    stableIdx: _playerStableIdx(player, index),
+    playerKey: _stableKey(player?.playerKey ?? player?.playerId ?? player?.id ?? player?.idx ?? index),
+    points,
+    pts: points,
+    thaiPts: Number.isFinite(Number(player?.thaiPts ?? player?.matchPts)) ? Number(player?.thaiPts ?? player?.matchPts) : points,
+    diff,
+    wins,
+    losses,
+    balls,
+    ballsAgainst,
+    bestRound: _toFiniteNumber(player?.bestRound, 0),
+    rPlayed: matches,
+    matches,
+    winPercentage: _getWinPercentage(player),
+    pointRatio: _getPointRatio(player),
+    K: Number.isFinite(Number(player?.K ?? player?.coef)) ? Number(player?.K ?? player?.coef) : thaiCalcK(diff),
+    _matches: Array.isArray(player?._matches) ? player._matches : [],
+  };
+}
+
+function _buildMiniStats(player, groupKeySet) {
+  const rows = Array.isArray(player?._matches) ? player._matches : [];
+  let wins = 0;
+  let matches = 0;
+  let ballsFor = 0;
+  let ballsAgainst = 0;
+
+  for (const row of rows) {
+    if (!groupKeySet.has(_stableKey(row.opponentKey))) continue;
+    ballsFor += _toFiniteNumber(row.own, 0);
+    ballsAgainst += _toFiniteNumber(row.opp, 0);
+    if (_toFiniteNumber(row.diff, 0) > 0) wins++;
+    matches++;
+  }
+
+  return {
+    miniMatches: matches,
+    miniWins: wins,
+    miniBallsFor: ballsFor,
+    miniBallsAgainst: ballsAgainst,
+    miniPointDiff: ballsFor - ballsAgainst,
+    miniPointRatio: _safeRatio(ballsFor, ballsAgainst),
+    miniWinPercentage: matches > 0 ? (wins / matches) : 0,
+  };
+}
+
+function _resolveDraw(players, group, stage, logs, generatedDrawGroups) {
+  const keys = players.map((player) => _playerKey(player));
+  const signature = _groupSignature(keys);
+  const drawGroupKey = `${stage}:${signature}`;
+  const drawGroups = group?.drawGroups && typeof group.drawGroups === 'object' ? group.drawGroups : {};
+  const drawSeed = _stableKey(group?.drawSeed || 'thai-r1-draw');
+  const drawOrders = _normalizedDrawOrders(drawGroups[drawGroupKey], keys, `${drawSeed}:${drawGroupKey}`);
+
+  generatedDrawGroups[drawGroupKey] = drawOrders;
+  logs.push({
+    type: 'draw',
+    groupKey: drawGroupKey,
+    players: [...keys],
+  });
+
+  return [...players]
+    .map((player) => ({
+      ...player,
+      tiebreakerOrder: _toFiniteNumber(drawOrders[_playerKey(player)], Number.MAX_SAFE_INTEGER),
+      tieResolvedBy: 'draw',
+    }))
+    .sort((a, b) => {
+      const orderCmp = _toFiniteNumber(a.tiebreakerOrder, Number.MAX_SAFE_INTEGER) - _toFiniteNumber(b.tiebreakerOrder, Number.MAX_SAFE_INTEGER);
+      if (orderCmp) return orderCmp;
+      return _compareStablePlayers(a, b);
+    });
+}
+
+function _resolvePrimaryTieGroup(players, group, logs, generatedDrawGroups) {
+  if (players.length <= 1) return players;
+
+  const tiedKeys = new Set(players.map((player) => _playerKey(player)));
+  const withMini = players.map((player) => ({
+    ...player,
+    ..._buildMiniStats(player, tiedKeys),
+  }));
+
+  if (withMini.length >= 3) {
+    logs.push({
+      type: 'mini_league',
+      groupKey: `mini:${_groupSignature([...tiedKeys])}`,
+      players: [...tiedKeys],
+    });
+
+    const miniSorted = [...withMini].sort((a, b) => {
+      const miniCmp = _compareMiniRanking(a, b);
+      if (miniCmp) return miniCmp;
+      return _compareStablePlayers(a, b);
+    });
+
+    const resolved = [];
+    for (let start = 0; start < miniSorted.length; ) {
+      let end = start + 1;
+      while (end < miniSorted.length && _sameMiniRanking(miniSorted[start], miniSorted[end])) end++;
+      const slice = miniSorted.slice(start, end);
+      if (slice.length === 1) {
+        resolved.push(slice[0]);
+      } else {
+        resolved.push(..._resolveDraw(slice, group, 'mini-draw', logs, generatedDrawGroups));
+      }
+      start = end;
+    }
+    return resolved;
+  }
+
+  const directCmp = _compareMiniRanking(withMini[0], withMini[1]);
+  if (directCmp) {
+    logs.push({
+      type: 'head_to_head',
+      groupKey: `h2h:${_groupSignature([...tiedKeys])}`,
+      players: [...tiedKeys],
+    });
+    return [...withMini].sort((a, b) => {
+      const cmp = _compareMiniRanking(a, b);
+      if (cmp) return cmp;
+      return _compareStablePlayers(a, b);
+    });
+  }
+
+  return _resolveDraw(withMini, group, 'head-to-head-draw', logs, generatedDrawGroups);
+}
+
 function _getPts(stat) {
   if (!stat) return 0;
   const v =
@@ -97,44 +517,36 @@ export function thaiCalcProgress(r1Stat, r2Stat) {
 }
 
 /**
- * Comparator for ThaiVolley32 R1 standings.
- * Higher wins/diff/pts/K/balls are better; idx is stable tie-breaker (ascending).
+ * Comparator for precomputed Thai R1 standings.
+ * Uses primary ranking criteria only; subgroup H2H requires full standings context.
  */
 export function thaiTiebreak(a, b) {
-  const winsA = a?.wins ?? 0;
-  const winsB = b?.wins ?? 0;
-  if (winsB !== winsA) return winsB - winsA;
+  const primaryCmp = _comparePrimaryRanking(a, b);
+  if (primaryCmp) return primaryCmp;
 
-  const diffA = a?.diff ?? 0;
-  const diffB = b?.diff ?? 0;
-  if (diffB !== diffA) return diffB - diffA;
+  const drawA = Number(a?.tiebreakerOrder);
+  const drawB = Number(b?.tiebreakerOrder);
+  if (Number.isFinite(drawA) && Number.isFinite(drawB) && drawA !== drawB) {
+    return drawA - drawB;
+  }
 
-  const ptsA = a?.pts ?? a?.points ?? 0;
-  const ptsB = b?.pts ?? b?.points ?? 0;
-  if (ptsB !== ptsA) return ptsB - ptsA;
-
-  const kA = a?.K ?? a?.coef ?? 0;
-  const kB = b?.K ?? b?.coef ?? 0;
-  if (kB !== kA) return kB - kA;
-
-  const ballsA = a?.balls ?? 0;
-  const ballsB = b?.balls ?? 0;
-  if (ballsB !== ballsA) return ballsB - ballsA;
-
-  const idxA = a?.idx ?? a?.id ?? 0;
-  const idxB = b?.idx ?? b?.id ?? 0;
-  if (idxA === idxB) return 0;
-  if (typeof idxA === 'number' && typeof idxB === 'number') return idxA - idxB;
-  return String(idxA).localeCompare(String(idxB), 'ru');
+  return _compareStablePlayers(a, b);
 }
 
 /**
  * Compute ThaiVolley32 standings for a group.
  *
  * Supported group shapes:
- * 1) { players: [{ idx, own: number[], opp: number[] }, ...] }
- * 2) { ownScores: (number|null)[][], oppScores: (number|null)[][] } // [playerIdx][tourIdx]
- * 3) Legacy/aggregates: group.players as array of { wins,diff,pts,K,balls } (no recompute)
+ * 1) { players: [{ idx, own:number[], opp:number[], opponents?:string[] }, ...] }
+ * 2) {
+ *      ownScores:(number|null)[][],
+ *      oppScores:(number|null)[][],
+ *      opponents?: (string|number|null)[][],
+ *      playerKeys?: (string|number)[],
+ *      drawGroups?: Record<string, Record<string, number>>,
+ *      drawSeed?: string
+ *    }
+ * 3) Legacy/aggregates: group.players as array of ranking rows (best effort normalize)
  */
 export function thaiCalcStandings(group) {
   const g = group || {};
@@ -144,85 +556,56 @@ export function thaiCalcStandings(group) {
 
   if (!players && !ownScores) return [];
 
-  // If caller passed aggregated stats, normalize + recompute coef if missing.
-  if (players && players.length && (players[0]?.own === undefined && players[0]?.opp === undefined)) {
-    const arr = players.map((p, i) => {
-      const wins = Number.isFinite(Number(p.wins)) ? Number(p.wins) : 0;
-      const diff = Number.isFinite(Number(p.diff)) ? Number(p.diff) : 0;
-      const pts = Number.isFinite(Number(p.pts ?? p.points)) ? Number(p.pts ?? p.points) : 0;
-      const balls = Number.isFinite(Number(p.balls)) ? Number(p.balls) : 0;
-      const K = Number.isFinite(Number(p.K ?? p.coef)) ? Number(p.K ?? p.coef) : thaiCalcK(diff);
-      return { idx: p.idx ?? p.id ?? i, wins, diff, pts, K, balls, bestRound: p.bestRound ?? 0, rPlayed: p.rPlayed ?? 0 };
-    });
-    arr.sort(thaiTiebreak);
-    // Assign place/tied with same criteria as UI.
-    arr.forEach((x, i, s) => {
-      const prev = s[i - 1];
-      const tied = !!prev &&
-        prev.wins === x.wins &&
-        prev.diff === x.diff &&
-        prev.pts === x.pts &&
-        Math.abs(prev.K - x.K) < EPS &&
-        prev.balls === x.balls;
-      x.place = tied ? prev.place : i + 1;
-      x.tied = tied;
-    });
-    return arr;
-  }
+  const isAggregatePlayers =
+    !!players?.length &&
+    players[0]?.own === undefined &&
+    players[0]?.opp === undefined;
 
-  // Own/opp scores per tour.
-  const pCount = players ? players.length : (ownScores ? ownScores.length : 0);
-  const toursCount = players
-    ? (players[0]?.own?.length ?? players[0]?.opp?.length ?? 0)
-    : (ownScores?.[0]?.length ?? 0);
+  const basePlayers = isAggregatePlayers
+    ? players.map((player, index) => _normalizeAggregatePlayer(player, index))
+    : (() => {
+        const pCount = players ? players.length : (ownScores ? ownScores.length : 0);
+        const normalized = [];
+        for (let index = 0; index < pCount; index++) {
+          normalized.push(_normalizeScorePlayer(players ? players[index] : null, index, g));
+        }
+        return normalized;
+      })();
 
-  const arr = [];
-  for (let i = 0; i < pCount; i++) {
-    const p = players ? players[i] : { idx: i, own: ownScores[i], opp: oppScores[i] };
-    const own = p.own ?? ownScores?.[i] ?? [];
-    const opp = p.opp ?? oppScores?.[i] ?? [];
-
-    let wins = 0;
-    let diff = 0;
-    let pts = 0;
-    let balls = 0;
-    let bestRound = 0;
-    let rPlayed = 0;
-
-    for (let ri = 0; ri < toursCount; ri++) {
-      const ownVal = own?.[ri];
-      const oppVal = opp?.[ri];
-      const ownNum = ownVal === null || ownVal === undefined ? null : Number(ownVal);
-      const oppNum = oppVal === null || oppVal === undefined ? null : Number(oppVal);
-      if (ownNum === null || oppNum === null || !Number.isFinite(ownNum) || !Number.isFinite(oppNum)) continue;
-
-      const d = ownNum - oppNum;
-      if (ownNum > bestRound) bestRound = ownNum;
-      balls += ownNum;
-      diff += d;
-      pts += thaiCalcPoints(d);
-      if (d > 0) wins++;
-      rPlayed++;
-    }
-
-    const K = thaiCalcK(diff);
-    arr.push({ idx: p.idx ?? p.id ?? i, pts, diff, wins, K, balls, bestRound, rPlayed });
-  }
-
-  arr.sort(thaiTiebreak);
-  arr.forEach((x, i, s) => {
-    const prev = s[i - 1];
-    const tied = !!prev &&
-      prev.wins === x.wins &&
-      prev.diff === x.diff &&
-      prev.pts === x.pts &&
-      Math.abs(prev.K - x.K) < EPS &&
-      prev.balls === x.balls;
-    x.place = tied ? prev.place : i + 1;
-    x.tied = tied;
+  const primarySorted = [...basePlayers].sort((a, b) => {
+    const primaryCmp = _comparePrimaryRanking(a, b);
+    if (primaryCmp) return primaryCmp;
+    return _compareStablePlayers(a, b);
   });
 
-  return arr;
+  const logs = [];
+  const generatedDrawGroups = {};
+  const resolved = [];
+
+  for (let start = 0; start < primarySorted.length; ) {
+    let end = start + 1;
+    while (end < primarySorted.length && _samePrimaryRanking(primarySorted[start], primarySorted[end])) end++;
+
+    const tieGroup = primarySorted.slice(start, end);
+    if (tieGroup.length === 1) {
+      resolved.push(tieGroup[0]);
+    } else {
+      resolved.push(..._resolvePrimaryTieGroup(tieGroup, g, logs, generatedDrawGroups));
+    }
+    start = end;
+  }
+
+  resolved.forEach((player, index) => {
+    player.place = index + 1;
+    player.tied = false;
+    delete player._matches;
+  });
+
+  resolved.meta = {
+    logs,
+    drawGroups: generatedDrawGroups,
+  };
+  return resolved;
 }
 
 // -------------------- Schedule generator --------------------
@@ -251,20 +634,34 @@ function pairKey(a, b) {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-function perfectMatchingOn8(indices, roundNo, opponentCounts) {
-  // Deterministic "better than random" matching for 8 players.
+function perfectMatchingOnK(indices, roundNo, opponentCounts, pairsCount) {
+  // Deterministic "better than random" matching for an even-length set of players.
   // Try different rotations of the index order and pick the first with 0 repeats;
   // otherwise pick the rotation that minimizes total repeat edge counts.
   const base = [...indices];
+  const len = base.length;
+  const halfLen = Math.floor(len / 2);
+  const maxPairs = pairsCount != null ? pairsCount : halfLen;
   let bestPairs = null;
   let bestScore = Infinity;
-  for (let rot = 0; rot < indices.length; rot++) {
+  for (let rot = 0; rot < len; rot++) {
     const order = base.slice(rot).concat(base.slice(0, rot));
-    const pairs = [];
-    for (let i = 0; i < 4; i++) {
-      const a = order[i];
-      const b = order[7 - i];
-      pairs.push([a, b]);
+    const allPairs = [];
+    for (let i = 0; i < halfLen; i++) {
+      allPairs.push([order[i], order[len - 1 - i]]);
+    }
+
+    let pairs;
+    if (maxPairs < halfLen) {
+      // Score each pair individually and pick the best maxPairs
+      const scored = allPairs.map(([a, b]) => ({
+        pair: [a, b],
+        score: opponentCounts[pairKey(a, b)] || 0,
+      }));
+      scored.sort((x, y) => x.score - y.score);
+      pairs = scored.slice(0, maxPairs).map(s => s.pair);
+    } else {
+      pairs = allPairs;
     }
 
     let repeatScore = 0;
@@ -279,6 +676,10 @@ function perfectMatchingOn8(indices, roundNo, opponentCounts) {
     }
   }
   return bestPairs || [];
+}
+
+function perfectMatchingOn8(indices, roundNo, opponentCounts) {
+  return perfectMatchingOnK(indices, roundNo, opponentCounts, 4);
 }
 
 function roundRobinPerfectMatchingPairs(players) {
@@ -300,7 +701,7 @@ function roundRobinPerfectMatchingPairs(players) {
   return rounds;
 }
 
-export function thaiGenerateSchedule({ men, women, mode, seed } = {}) {
+export function thaiGenerateSchedule({ men, women, mode, seed, courts, tours } = {}) {
   const m = Number(men);
   const w = Number(women);
   const sd = seed ?? 1;
@@ -309,101 +710,227 @@ export function thaiGenerateSchedule({ men, women, mode, seed } = {}) {
   if (!mode) throw new Error('thaiGenerateSchedule: mode is required');
 
   const normalizedMode = String(mode).toUpperCase();
+  const isDualPoolMode = normalizedMode === 'MF' || normalizedMode === 'MN';
+
+  // Determine whether custom courts/tours were explicitly provided
+  const customCT = courts != null && tours != null;
+
   if (normalizedMode === 'MM' || normalizedMode === 'WM' || normalizedMode === 'WW') {
     const n = normalizedMode === 'MM' ? m : w;
-    if (![8, 10].includes(n)) throw new Error('thaiGenerateSchedule: only 8 or 10 supported for now');
 
-    if (n === 8) {
-      const players = Array.from({ length: 8 }, (_, i) => i);
-      const rounds = roundRobinPerfectMatchingPairs(players).slice(0, 4);
-      const res = rounds.map((pairs, ri) => ({ round: ri, pairs }));
-      res.meta = { mode: normalizedMode, n };
-      return res;
+    // --- Legacy code path (exact output preservation) ---
+    if (!customCT) {
+      if (![8, 10].includes(n)) throw new Error('thaiGenerateSchedule: only 8 or 10 supported for now');
+
+      if (n === 8) {
+        const players = Array.from({ length: 8 }, (_, i) => i);
+        const rounds = roundRobinPerfectMatchingPairs(players).slice(0, 4);
+        const res = rounds.map((pairs, ri) => ({ round: ri, pairs }));
+        res.meta = { mode: normalizedMode, n, courts: 4, tours: 4 };
+        return res;
+      }
+
+      // n === 10: we want each player to have exactly 4 matches, rest 1.
+      const all = Array.from({ length: 10 }, (_, i) => i);
+      const shuffled = shuffleDet(all, rand);
+      const restPairs = [];
+      for (let i = 0; i < 10; i += 2) restPairs.push([shuffled[i], shuffled[i + 1]]);
+
+      const opponentCounts = {};
+      const schedule = [];
+      for (let ri = 0; ri < 5; ri++) {
+        const rests = new Set(restPairs[ri]);
+        const active = all.filter(x => !rests.has(x));
+        const pairs = perfectMatchingOn8(active, ri, opponentCounts);
+        for (const [a, b] of pairs) {
+          const k = pairKey(a, b);
+          opponentCounts[k] = (opponentCounts[k] || 0) + 1;
+        }
+        schedule.push({ round: ri, pairs });
+      }
+      schedule.meta = { mode: normalizedMode, n, courts: 4, tours: 5 };
+      return schedule;
     }
 
-    // n === 10: we want each player to have exactly 4 matches, rest 1.
-    // Implement by selecting active set of 8 players per tour (2 rests per tour),
-    // with rest partition deterministic by seed.
-    const all = Array.from({ length: 10 }, (_, i) => i);
-    const shuffled = shuffleDet(all, rand);
-    const restPairs = [];
-    for (let i = 0; i < 10; i += 2) restPairs.push([shuffled[i], shuffled[i + 1]]);
+    // --- Generalized code path (custom courts/tours) ---
+    const ct = Number(courts);
+    const tr = Number(tours);
+    if (n < ct * 2) throw new Error(`thaiGenerateSchedule: n=${n} must be >= courts*2=${ct * 2}`);
+    if (n < 2 || n % 2 !== 0) throw new Error(`thaiGenerateSchedule: n=${n} must be even and >= 2`);
+
+    const active = ct * 2; // players active per tour
+    const all = Array.from({ length: n }, (_, i) => i);
+
+    if (active === n) {
+      // No rest needed — everyone plays every tour
+      const opponentCounts = {};
+      const schedule = [];
+      if (ct === n / 2) {
+        // Full perfect matching (all players paired)
+        const rrRounds = roundRobinPerfectMatchingPairs(all).slice(0, tr);
+        for (let ri = 0; ri < tr; ri++) {
+          const pairs = rrRounds[ri] || [];
+          schedule.push({ round: ri, pairs });
+          for (const [a, b] of pairs) {
+            const k = pairKey(a, b);
+            opponentCounts[k] = (opponentCounts[k] || 0) + 1;
+          }
+        }
+      } else {
+        // active === n but courts < n/2: pick subset of pairs from full matching
+        for (let ri = 0; ri < tr; ri++) {
+          const pairs = perfectMatchingOnK(all, ri, opponentCounts, ct);
+          for (const [a, b] of pairs) {
+            const k = pairKey(a, b);
+            opponentCounts[k] = (opponentCounts[k] || 0) + 1;
+          }
+          schedule.push({ round: ri, pairs });
+        }
+      }
+      schedule.meta = { mode: normalizedMode, n, courts: ct, tours: tr };
+      return schedule;
+    }
+
+    // Rest partition: distribute rests balanced across tours
+    const restPerTour = n - active;
+    const restSchedule = _buildRestPartition(n, tr, restPerTour, rand);
 
     const opponentCounts = {};
     const schedule = [];
-    for (let ri = 0; ri < 5; ri++) {
-      const rests = new Set(restPairs[ri]);
-      const active = all.filter(x => !rests.has(x));
-      const pairs = perfectMatchingOn8(active, ri, opponentCounts);
+    for (let ri = 0; ri < tr; ri++) {
+      const rests = new Set(restSchedule[ri]);
+      const activePlayers = all.filter(x => !rests.has(x));
+      const pairs = perfectMatchingOnK(activePlayers, ri, opponentCounts, ct);
       for (const [a, b] of pairs) {
         const k = pairKey(a, b);
         opponentCounts[k] = (opponentCounts[k] || 0) + 1;
       }
       schedule.push({ round: ri, pairs });
     }
-    schedule.meta = { mode: normalizedMode, n };
+    schedule.meta = { mode: normalizedMode, n, courts: ct, tours: tr };
     return schedule;
   }
 
-  if (normalizedMode === 'MF') {
-    if (m !== w) throw new Error('thaiGenerateSchedule: for MF mode men and women must be equal');
+  if (isDualPoolMode) {
+    if (m !== w) throw new Error(`thaiGenerateSchedule: for ${normalizedMode} mode both pools must be equal`);
     const n = m;
-    if (![8, 10].includes(n)) throw new Error('thaiGenerateSchedule: only 8 or 10 supported for now');
 
-    if (n === 8) {
-      // Perfect matchings between men and women: (i -> (i+ri) mod 8) for ri=0..3
-      const menIdx = Array.from({ length: 8 }, (_, i) => i);
-      const womenIdx = Array.from({ length: 8 }, (_, i) => i);
-      const rounds = 4;
+    // --- Legacy code path (exact output preservation) ---
+    if (!customCT) {
+      if (![8, 10].includes(n)) throw new Error('thaiGenerateSchedule: only 8 or 10 supported for now');
+
+      if (n === 8) {
+        const menIdx = Array.from({ length: 8 }, (_, i) => i);
+        const rounds = 4;
+        const schedule = [];
+        for (let ri = 0; ri < rounds; ri++) {
+          const pairs = menIdx.map(i => [i, (i + ri) % 8]);
+          schedule.push({ round: ri, pairs });
+        }
+        schedule.meta = { mode: normalizedMode, n, courts: 8, tours: 4 };
+        return schedule;
+      }
+
+      // n === 10
+      const allMen = Array.from({ length: 10 }, (_, i) => i);
+      const allWomen = Array.from({ length: 10 }, (_, i) => i);
+      const shuffledMen = shuffleDet(allMen, rand);
+      const shuffledWomen = shuffleDet(allWomen, rand);
+
+      const restPairsMen = [];
+      for (let i = 0; i < 10; i += 2) restPairsMen.push([shuffledMen[i], shuffledMen[i + 1]]);
+      const restPairsWomen = [];
+      for (let i = 0; i < 10; i += 2) restPairsWomen.push([shuffledWomen[i], shuffledWomen[i + 1]]);
+
       const schedule = [];
-      for (let ri = 0; ri < rounds; ri++) {
-        const pairs = menIdx.map(i => [i, (i + ri) % 8]);
+      for (let ri = 0; ri < 5; ri++) {
+        const restMen = new Set(restPairsMen[ri]);
+        const restWomen = new Set(restPairsWomen[ri]);
+        const activeMen = allMen.filter(x => !restMen.has(x));
+        const activeWomen = allWomen.filter(x => !restWomen.has(x));
+        const pairs = activeMen.map((mi, k) => [mi, activeWomen[(k + ri) % 8]]);
         schedule.push({ round: ri, pairs });
       }
-      schedule.meta = { mode: normalizedMode, n };
+      schedule.meta = { mode: normalizedMode, n, courts: 8, tours: 5 };
       return schedule;
     }
 
-    // n === 10: active 8 men + 8 women each tour, rest partition deterministic by seed
-    const allMen = Array.from({ length: 10 }, (_, i) => i);
-    const allWomen = Array.from({ length: 10 }, (_, i) => i);
-    const shuffledMen = shuffleDet(allMen, rand);
-    const shuffledWomen = shuffleDet(allWomen, rand);
+    // --- Generalized code path (custom courts/tours) ---
+    const ct = Number(courts);
+    const tr = Number(tours);
+    if (n < ct) throw new Error(`thaiGenerateSchedule: n=${n} must be >= courts=${ct} for ${normalizedMode}`);
 
-    const restPairsMen = [];
-    for (let i = 0; i < 10; i += 2) restPairsMen.push([shuffledMen[i], shuffledMen[i + 1]]);
-    const restPairsWomen = [];
-    for (let i = 0; i < 10; i += 2) restPairsWomen.push([shuffledWomen[i], shuffledWomen[i + 1]]);
+    const allMen = Array.from({ length: n }, (_, i) => i);
+    const allWomen = Array.from({ length: n }, (_, i) => i);
+
+    if (ct === n) {
+      // No rest — all play every tour
+      const schedule = [];
+      for (let ri = 0; ri < tr; ri++) {
+        const pairs = allMen.map(i => [i, (i + ri) % n]);
+        schedule.push({ round: ri, pairs });
+      }
+      schedule.meta = { mode: normalizedMode, n, courts: ct, tours: tr };
+      return schedule;
+    }
+
+    // Rest partition for men and women separately
+    const restPerTour = n - ct;
+    const restScheduleMen = _buildRestPartition(n, tr, restPerTour, rand);
+    const restScheduleWomen = _buildRestPartition(n, tr, restPerTour, rand);
 
     const schedule = [];
-    for (let ri = 0; ri < 5; ri++) {
-      const restMen = new Set(restPairsMen[ri]);
-      const restWomen = new Set(restPairsWomen[ri]);
+    for (let ri = 0; ri < tr; ri++) {
+      const restMen = new Set(restScheduleMen[ri]);
+      const restWomen = new Set(restScheduleWomen[ri]);
       const activeMen = allMen.filter(x => !restMen.has(x));
       const activeWomen = allWomen.filter(x => !restWomen.has(x));
-      // deterministic cyclic shift pairing
-      const pairs = activeMen.map((mi, k) => [mi, activeWomen[(k + ri) % 8]]);
+      const pairs = activeMen.map((mi, k) => [mi, activeWomen[(k + ri) % ct]]);
       schedule.push({ round: ri, pairs });
     }
-    schedule.meta = { mode: normalizedMode, n };
+    schedule.meta = { mode: normalizedMode, n, courts: ct, tours: tr };
     return schedule;
   }
 
   throw new Error(`thaiGenerateSchedule: unknown mode=${mode}`);
 }
 
+/**
+ * Build a balanced rest partition: for each of `tours` rounds, select `restPerTour` players
+ * to rest, ensuring each player rests roughly the same number of times (balanced ±1).
+ * Returns array of arrays, each inner array has the indices resting that tour.
+ */
+function _buildRestPartition(n, tours, restPerTour, rand) {
+  const all = Array.from({ length: n }, (_, i) => i);
+  const shuffled = shuffleDet(all, rand);
+
+  // Total rest slots = tours * restPerTour; each player should rest floor or ceil of that / n
+  const restCounts = new Array(n).fill(0);
+  const result = [];
+
+  for (let ri = 0; ri < tours; ri++) {
+    // Pick restPerTour players with lowest rest count, breaking ties by shuffled order
+    const candidates = all.slice().sort((a, b) => {
+      const cntDiff = restCounts[a] - restCounts[b];
+      if (cntDiff !== 0) return cntDiff;
+      return shuffled.indexOf(a) - shuffled.indexOf(b);
+    });
+    const resting = candidates.slice(0, restPerTour);
+    for (const idx of resting) restCounts[idx]++;
+    result.push(resting);
+  }
+  return result;
+}
+
 export function thaiValidateSchedule(schedule, allPlayers) {
   const sch = schedule || [];
   if (!Array.isArray(sch)) return { valid: false, errors: ['schedule must be an array'] };
 
-  // Detect mode from shape (pairs size / tuple structure).
-  // If each pair is [manIdx, womanIdx] and mode MF is implied by bipartite sizes.
   const firstRound = sch[0];
   const pairs = firstRound?.pairs;
   if (!Array.isArray(pairs)) return { valid: false, errors: ['schedule.round.pairs missing'] };
 
-  // We validate degree/rest invariants from roadmap.
-  // Determine expected N by scanning indices.
+  // Scan all indices
   const idsA = new Set();
   const idsB = new Set();
   for (const tour of sch) {
@@ -414,16 +941,104 @@ export function thaiValidateSchedule(schedule, allPlayers) {
     }
   }
 
+  const meta = sch.meta;
+  const hasMeta = meta && meta.courts != null && meta.tours != null;
+
+  // --- New meta-based validation path ---
+  if (hasMeta) {
+    const errors = [];
+    const metaCourts = Number(meta.courts);
+    const metaTours = Number(meta.tours);
+    const metaN = Number(meta.n);
+    const metaMode = String(meta.mode || '').toUpperCase();
+    const isBipartite = metaMode === 'MF' || metaMode === 'MN';
+    const expectedIds = Number.isInteger(metaN) && metaN > 0
+      ? Array.from({ length: metaN }, (_, i) => i)
+      : [];
+    const isValidPlayerId = (id) => Number.isInteger(id) && id >= 0 && id < metaN;
+
+    if (sch.length !== metaTours) {
+      errors.push(`expected ${metaTours} rounds, got ${sch.length}`);
+    }
+
+    // Validate each tour has exactly meta.courts pairs and no player appears twice
+    for (const tour of sch) {
+      const tourPairs = tour.pairs || [];
+      if (tourPairs.length !== metaCourts) {
+        errors.push(`round ${tour.round} expected ${metaCourts} pairs, got ${tourPairs.length}`);
+      }
+      // No duplicate players within a tour
+      if (isBipartite) {
+        const seenMen = new Set();
+        const seenWomen = new Set();
+        for (const [mi, wi] of tourPairs) {
+          if (!isValidPlayerId(mi)) errors.push(`round ${tour.round}: man ${mi} out of range 0..${metaN - 1}`);
+          if (!isValidPlayerId(wi)) errors.push(`round ${tour.round}: woman ${wi} out of range 0..${metaN - 1}`);
+          if (seenMen.has(mi)) errors.push(`round ${tour.round}: man ${mi} appears in 2+ pairs`);
+          if (seenWomen.has(wi)) errors.push(`round ${tour.round}: woman ${wi} appears in 2+ pairs`);
+          seenMen.add(mi);
+          seenWomen.add(wi);
+        }
+      } else {
+        const seen = new Set();
+        for (const [a, b] of tourPairs) {
+          if (!isValidPlayerId(a)) errors.push(`round ${tour.round}: player ${a} out of range 0..${metaN - 1}`);
+          if (!isValidPlayerId(b)) errors.push(`round ${tour.round}: player ${b} out of range 0..${metaN - 1}`);
+          if (seen.has(a)) errors.push(`round ${tour.round}: player ${a} appears in 2+ pairs`);
+          if (seen.has(b)) errors.push(`round ${tour.round}: player ${b} appears in 2+ pairs`);
+          seen.add(a);
+          seen.add(b);
+        }
+      }
+    }
+
+    // Validate rest balance
+    if (isBipartite) {
+      const menAppear = {};
+      const womenAppear = {};
+      for (const tour of sch) {
+        for (const [mi, wi] of tour.pairs || []) {
+          menAppear[mi] = (menAppear[mi] || 0) + 1;
+          womenAppear[wi] = (womenAppear[wi] || 0) + 1;
+        }
+      }
+      const totalRestSlots = metaTours * (metaN - metaCourts);
+      const maxRest = Math.ceil(totalRestSlots / metaN);
+      for (const id of expectedIds) {
+        const rest = metaTours - (menAppear[id] || 0);
+        if (rest > maxRest) errors.push(`men player ${id} rest=${rest}, max allowed=${maxRest}`);
+      }
+      for (const id of expectedIds) {
+        const rest = metaTours - (womenAppear[id] || 0);
+        if (rest > maxRest) errors.push(`women player ${id} rest=${rest}, max allowed=${maxRest}`);
+      }
+    } else {
+      const appear = {};
+      for (const tour of sch) {
+        for (const [a, b] of tour.pairs || []) {
+          appear[a] = (appear[a] || 0) + 1;
+          appear[b] = (appear[b] || 0) + 1;
+        }
+      }
+      const active = metaCourts * 2;
+      const totalRestSlots = metaTours * (metaN - active);
+      const maxRest = metaN > 0 ? Math.ceil(totalRestSlots / metaN) : 0;
+      for (const id of expectedIds) {
+        const rest = metaTours - (appear[id] || 0);
+        if (rest > maxRest) errors.push(`player ${id} rest=${rest}, max allowed=${maxRest}`);
+      }
+    }
+
+    if (errors.length) return { valid: false, errors };
+    return { valid: true, errors: [] };
+  }
+
+  // --- Backward compat: legacy validation (no meta.courts/tours) ---
   const aCount = idsA.size;
   const bCount = idsB.size;
-
   const pairsPerRound = Array.isArray(pairs) ? pairs.length : 0;
-  // In our generator:
-  // - pairwise modes (MM/WW): 4 pairs per round (N=8/10 always yields 8 active players -> 4 matches)
-  // - MF mode (bipartite): 8 pairs per round (active 8 men -> 8 bipartite matches)
   const isBipartite = pairsPerRound === 8;
 
-  // Determine target N and expected rounds based on invariant: N=8 -> 4 rounds, N=10 -> 5 rounds.
   const n = isBipartite ? Math.max(aCount, bCount) : new Set([...idsA, ...idsB]).size;
   const expectedRounds = n === 8 ? 4 : n === 10 ? 5 : null;
   const expectedRest = n === 8 ? 0 : n === 10 ? 1 : null;
@@ -433,7 +1048,6 @@ export function thaiValidateSchedule(schedule, allPlayers) {
   if (expectedRounds == null) errors.push('unsupported participant count (expected 8 or 10)');
   if (sch.length !== expectedRounds) errors.push(`expected ${expectedRounds} rounds, got ${sch.length}`);
 
-  // Count appearances
   if (isBipartite) {
     const menAppear = {};
     const womenAppear = {};
@@ -443,7 +1057,6 @@ export function thaiValidateSchedule(schedule, allPlayers) {
         womenAppear[wi] = (womenAppear[wi] || 0) + 1;
       }
     }
-    // Degree checks: each player appears exactly 4 times.
     for (const id of idsA) {
       const cnt = menAppear[id] || 0;
       if (cnt !== expectedMatchesPerPlayer) errors.push(`men player ${id} matches=${cnt}, expected=4`);
@@ -452,8 +1065,6 @@ export function thaiValidateSchedule(schedule, allPlayers) {
       const cnt = womenAppear[id] || 0;
       if (cnt !== expectedMatchesPerPlayer) errors.push(`women player ${id} matches=${cnt}, expected=4`);
     }
-
-    // Rest checks: rest = expectedRounds - matches.
     for (const id of idsA) {
       const rest = expectedRounds - (menAppear[id] || 0);
       if (rest !== expectedRest) errors.push(`men player ${id} rest=${rest}, expected=${expectedRest}`);
@@ -462,14 +1073,11 @@ export function thaiValidateSchedule(schedule, allPlayers) {
       const rest = expectedRounds - (womenAppear[id] || 0);
       if (rest !== expectedRest) errors.push(`women player ${id} rest=${rest}, expected=${expectedRest}`);
     }
-
-    // Validate tour sizes: for N=8 should have 8 pairs per round, for N=10 should have 8 pairs per round
     for (const tour of sch) {
       const len = (tour.pairs || []).length;
       if (len !== 8) errors.push(`round ${tour.round} expected 8 bipartite pairs, got ${len}`);
     }
   } else {
-    // Pairwise: players are both sides, edges are between indices in the same pool.
     const appear = {};
     for (const tour of sch) {
       for (const [a, b] of tour.pairs || []) {
@@ -484,15 +1092,12 @@ export function thaiValidateSchedule(schedule, allPlayers) {
       const rest = expectedRounds - cnt;
       if (rest !== expectedRest) errors.push(`player ${id} rest=${rest}, expected=${expectedRest}`);
     }
-
     for (const tour of sch) {
       const len = (tour.pairs || []).length;
-      // N=8 or N=10 both use 4 pairs per tour in our generator
       if (len !== 4) errors.push(`round ${tour.round} expected 4 pairwise matches, got ${len}`);
     }
   }
 
-  // Validate "exact 4 matches per player" implies all players must appear.
   if (errors.length) return { valid: false, errors };
   return { valid: true, errors: [] };
 }
@@ -501,13 +1106,20 @@ export function thaiValidateSchedule(schedule, allPlayers) {
 
 export function thaiSeedR2(r1Groups, gender) {
   const players = Array.isArray(r1Groups) ? r1Groups : (r1Groups?.players || []);
-  const ppc = r1Groups?.ppc ?? Math.max(1, Math.floor(players.length / 4));
-  const zones = [
-    { key: 'hard', from: 0, count: ppc },
-    { key: 'advance', from: ppc, count: ppc },
-    { key: 'medium', from: ppc * 2, count: ppc },
-    { key: 'lite', from: ppc * 3, count: players.length - ppc * 3 },
-  ];
+  const zoneCount = Math.min(4, Math.max(1, Math.floor(players.length / 2)));
+  const ZONE_KEYS_BY_COUNT = {
+    4: ['hard', 'advance', 'medium', 'lite'],
+    3: ['hard', 'medium', 'lite'],
+    2: ['top', 'bottom'],
+    1: ['all'],
+  };
+  const zoneKeys = ZONE_KEYS_BY_COUNT[zoneCount] || ['all'];
+  const ppc = r1Groups?.ppc ?? Math.max(1, Math.ceil(players.length / zoneCount));
+  const zones = zoneKeys.map((key, i) => {
+    const from = i * ppc;
+    const count = i === zoneKeys.length - 1 ? players.length - from : ppc;
+    return { key, from, count };
+  });
   return zones
     .filter(z => z.count > 0)
     .map(z => ({ key: z.key, gender: gender || '', players: players.slice(z.from, z.from + z.count) }));
@@ -622,4 +1234,3 @@ try {
 } catch (_) {}
 
 export default api;
-
