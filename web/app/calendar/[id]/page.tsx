@@ -9,12 +9,23 @@ import {
   fetchTournaments,
 } from '@/lib/queries';
 import { isThaiAdminFormat } from '@/lib/admin-legacy-sync';
+import { getThaiSpectatorBoardPayload } from '@/lib/thai-spectator';
 import { buildThaiSpectatorBoardUrl, buildTournamentMapsUrl } from '@/lib/tournament-links';
 
 export const dynamic = 'force-dynamic';
 
 interface PageProps {
   params: Promise<{ id: string }>;
+}
+
+const FINISHED_TOURNAMENT_HERO_FALLBACKS: Record<string, string> = {
+  'a19522bb-864e-4520-8182-61e035c27894':
+    'https://lpvolley.ru/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/hero.jpg',
+};
+
+function resolveFinishedHeroPhoto(id: string, photoUrl?: string | null): string | null {
+  const normalized = String(photoUrl || '').trim();
+  return normalized || FINISHED_TOURNAMENT_HERO_FALLBACKS[id] || null;
 }
 
 function statusLabel(status: string): string {
@@ -66,6 +77,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   if (tournament.status === 'finished') {
     const dateLabel = formatDateLabel(tournament.date, tournament.time);
+    const heroPhotoUrl = resolveFinishedHeroPhoto(tournament.id, tournament.photoUrl);
     const description = `Итоги турнира · ${dateLabel}${tournament.location ? ` · ${tournament.location}` : ''}`;
     return {
       title: `Результаты: ${tournament.name} | Лютые Пляжники`,
@@ -75,12 +87,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         description,
         type: 'website',
         locale: 'ru_RU',
-        ...(tournament.photoUrl
-          ? { images: [{ url: tournament.photoUrl, width: 1200, height: 630 }] }
+        ...(heroPhotoUrl
+          ? { images: [{ url: heroPhotoUrl, width: 1200, height: 630 }] }
           : {}),
       },
-      ...(tournament.photoUrl
-        ? { twitter: { card: 'summary_large_image' as const, images: [tournament.photoUrl] } }
+      ...(heroPhotoUrl
+        ? { twitter: { card: 'summary_large_image' as const, images: [heroPhotoUrl] } }
         : {}),
     };
   }
@@ -99,16 +111,29 @@ export default async function TournamentPage({ params }: PageProps) {
 
   if (!tournament) notFound();
 
-  const [tournaments, results] = await Promise.all([
+  const [tournaments, results, thaiBoard] = await Promise.all([
     fetchTournaments(8),
     tournament.status === 'finished' ? fetchTournamentResults(id) : Promise.resolve([]),
+    tournament.status === 'finished' && isThaiAdminFormat(tournament.format)
+      ? getThaiSpectatorBoardPayload(id).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   const related = tournaments.filter((item) => item.id !== tournament.id).slice(0, 4);
 
   // Finished tournament gets its own rich landing page
   if (tournament.status === 'finished') {
-    return <FinishedTournamentPage tournament={tournament} results={results} related={related} />;
+    return (
+      <FinishedTournamentPage
+        tournament={{
+          ...tournament,
+          photoUrl: resolveFinishedHeroPhoto(tournament.id, tournament.photoUrl) ?? '',
+        }}
+        results={results}
+        related={related}
+        thaiBoard={thaiBoard}
+      />
+    );
   }
 
   const mapsUrl = buildTournamentMapsUrl(tournament.location);

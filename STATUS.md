@@ -14,6 +14,7 @@
 Вход в проект: [`README.md`](README.md), для агентов — [`docs/AGENTS.md`](docs/AGENTS.md), деплой — [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ### Новые задачи
+- [x] Calendar finished Thai: hero-фото турнира сверху + блок статистики из Thai-табло на странице завершённого турнира ✅ (2026-04-06, `web/app/calendar/[id]/page.tsx`, `web/components/calendar/FinishedTournamentPage.tsx`, `web/public/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/hero.jpg`, `STATUS.md`)
 - [x] Rankings medals: медали в карточках рейтинга, отдельный таб «Медали» с разбивкой по уровням/форматам + фильтры истории в профиле игрока ✅ (2026-04-06, `web/lib/types.ts`, `web/lib/queries.ts`, `web/app/api/leaderboard-medals/route.ts`, `web/app/rankings/RankingsClient.tsx`, `web/components/players/EpicProfile.tsx`, `tests/unit/rankings-medals-source-contract.test.js`, `STATUS.md`)
 - [x] Admin archive results: нормализация дробного места (`32.5` → `32`) перед записью в `tournament_results.place integer`, чтобы `/api/admin/tournaments/[id]/results` не падал 500 ✅ (2026-04-06, `web/app/api/admin/tournaments/[id]/results/route.ts`, `web/lib/admin-queries-pg.ts`, `web/lib/admin-postgrest.ts`, `STATUS.md`)
 - [x] Профиль игрока: призы по уровням (Hard/Advanced/Medium/Light) + рейтинг по форматам (KOTC/Double Trouble/Thai) ✅ (2026-04-06, `web/lib/queries.ts`, `web/components/players/EpicProfile.tsx`, `web/app/profile/page.tsx`, `STATUS.md`)

@@ -2,12 +2,15 @@ import Link from 'next/link';
 import type { Tournament } from '@/lib/types';
 import type { TournamentResultRow } from '@/lib/queries';
 import { isThaiAdminFormat } from '@/lib/admin-legacy-sync';
+import { ThaiSpectatorFunStats } from '@/components/thai-live/ThaiSpectatorFunStats';
+import type { ThaiSpectatorBoardPayload } from '@/lib/thai-spectator';
 import { buildThaiSpectatorBoardUrl } from '@/lib/tournament-links';
 
 interface Props {
   tournament: Tournament;
   results: TournamentResultRow[];
   related: Tournament[];
+  thaiBoard?: ThaiSpectatorBoardPayload | null;
 }
 
 // ── Fire keywords: heading gets neon-fire glow if matched ──────────────────
@@ -108,7 +111,12 @@ function Avatar({ photoUrl, name, size }: { photoUrl: string; name: string; size
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function FinishedTournamentPage({ tournament, results, related }: Props) {
+export default function FinishedTournamentPage({
+  tournament,
+  results,
+  related,
+  thaiBoard = null,
+}: Props) {
   const { id, name, date, time, location, format, division, level, participantCount, photoUrl } =
     tournament;
 
@@ -130,6 +138,10 @@ export default function FinishedTournamentPage({ tournament, results, related }:
   const totalWins = results.reduce((s, r) => s + (r.wins ?? 0), 0);
   const totalBalls = results.reduce((s, r) => s + (r.balls ?? 0), 0);
   const topRating = results.length > 0 ? Math.max(...results.map((r) => r.ratingPts)) : 0;
+  const thaiStatsSourceText =
+    thaiBoard?.viewSource === 'snapshot'
+      ? 'Номинации и финальные показатели из архивного снимка Thai-табло.'
+      : 'Номинации и финальные показатели из финального Thai-табло.';
 
   // Next upcoming tournament
   const nextTournament = related.find((t) => t.status === 'open' || t.status === 'full') ?? null;
@@ -154,13 +166,14 @@ export default function FinishedTournamentPage({ tournament, results, related }:
             src={photoUrl}
             alt=""
             aria-hidden="true"
-            className="absolute inset-0 w-full h-full object-cover opacity-20 blur-sm"
+            className="absolute inset-0 h-full w-full scale-[1.03] object-cover opacity-45 md:opacity-50 blur-[1px]"
+            fetchPriority="high"
             loading="lazy"
           />
         ) : null}
 
         {/* Sunset overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/40 to-[#FF5A00]/25 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/35 to-[#FF5A00]/20 pointer-events-none" />
 
         {/* Content */}
         <div className="relative z-10 flex flex-col gap-4">
@@ -341,6 +354,21 @@ export default function FinishedTournamentPage({ tournament, results, related }:
       ) : null}
 
       {/* ── Results table ────────────────────────────────────────────── */}
+      {thaiBoard?.funStats ? (
+        <section className="mt-10 anim-fade-up anim-delay-4" aria-label="Статистика Thai табло">
+          <div className="mb-4 rounded-2xl border border-[#00E5FF]/20 bg-[rgba(0,229,255,0.06)] px-5 py-4">
+            <div className="text-[10px] font-body uppercase tracking-[0.24em] text-[#00E5FF]">
+              Thai табло
+            </div>
+            <h2 className="mt-1 font-heading text-3xl uppercase tracking-wide text-text-primary">
+              Статистика с табло
+            </h2>
+            <p className="mt-2 text-sm font-body text-text-secondary">{thaiStatsSourceText}</p>
+          </div>
+          <ThaiSpectatorFunStats stats={thaiBoard.funStats} />
+        </section>
+      ) : null}
+
       {results.length > 0 ? (
         <div id="results" className="mt-10 anim-fade-up anim-delay-4">
           <div className="flex items-center justify-between gap-3 mb-4">
