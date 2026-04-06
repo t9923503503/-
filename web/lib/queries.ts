@@ -174,7 +174,14 @@ export async function fetchLeaderboard(
        COUNT(CASE WHEN tr.place = 1 THEN 1 END)::int AS gold,
        COUNT(CASE WHEN tr.place = 2 THEN 1 END)::int AS silver,
        COUNT(CASE WHEN tr.place = 3 THEN 1 END)::int AS bronze,
-       MAX(t.date) AS last_seen
+       MAX(t.date) AS last_seen,
+       CASE
+         WHEN bool_or(LOWER(COALESCE(t.level,'')) = 'hard') THEN 'hard'
+         WHEN bool_or(LOWER(COALESCE(t.level,'')) IN ('advanced','advance')) THEN 'advanced'
+         WHEN bool_or(LOWER(COALESCE(t.level,'')) = 'medium') THEN 'medium'
+         WHEN bool_or(LOWER(COALESCE(t.level,'')) = 'light') THEN 'light'
+         ELSE 'light'
+       END AS top_level
      FROM tournament_results tr
      JOIN players p ON p.id = tr.player_id AND p.status = 'active'
      LEFT JOIN tournaments t ON t.id = tr.tournament_id
@@ -200,6 +207,7 @@ export async function fetchLeaderboard(
     bronze: Number(row.bronze ?? 0),
     lastSeen: toIsoDate(row.last_seen),
     photoUrl: row.photo_url ?? '',
+    topLevel: row.top_level ?? 'light',
   }));
 }
 

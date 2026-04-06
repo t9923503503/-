@@ -14,6 +14,7 @@ describe('rankings medals source contract', () => {
     expect(types).toContain('gold: number;');
     expect(types).toContain('silver: number;');
     expect(types).toContain('bronze: number;');
+    expect(types).toContain('topLevel: string;');
     expect(types).toContain('export interface MedalEntry');
     expect(types).toContain('hardWins: number;');
     expect(types).toContain('advancedWins: number;');
@@ -37,6 +38,7 @@ describe('rankings medals source contract', () => {
     expect(queries).toContain('thai_wins');
     expect(queries).toContain('ipt_wins');
     expect(queries).toContain("JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'");
+    expect(queries).toContain('END AS top_level');
   });
 
   it('exposes a validated leaderboard medals API route', () => {
@@ -57,6 +59,7 @@ describe('rankings medals source contract', () => {
     expect(client).toContain('function MedalItem');
     expect(client).toContain('href={`/players/${entry.playerId}`}');
     expect(client).toContain('filteredMedals');
+    expect(client).toContain('zoneMeta(entry.topLevel)');
     expect(client).toContain('🥇{entry.gold}');
   });
 });

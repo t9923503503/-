@@ -14,6 +14,7 @@
 Вход в проект: [`README.md`](README.md), для агентов — [`docs/AGENTS.md`](docs/AGENTS.md), деплой — [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ### Новые задачи
+- [x] Rankings top-level zone fix: карточки `/rankings` снова определяют цветовую зону игрока по лучшему уровню турниров (`hard/advanced/medium/light`), а не по текущему номеру места в общем списке ✅ (2026-04-06, `web/lib/types.ts`, `web/lib/queries.ts`, `web/app/rankings/RankingsClient.tsx`, `tests/unit/rankings-medals-source-contract.test.js`, `STATUS.md`)
 - [x] Finished tournament player links: фамилии в editorial-таблице, подиуме и таблице результатов ведут на публичные карточки игроков `/players/[id]` ✅ (2026-04-06, `web/components/calendar/FinishedTournamentPage.tsx`, `tests/unit/finished-tournament-source-contract.test.js`, `STATUS.md`)
 - [x] Calendar UX: карточка завершённого Double Trouble на `/calendar` использует общее фото турнира как постер, получила мягкий фото-акцент, а отдельная кнопка `Табло для зрителей` убрана из списка календаря ✅ (2026-04-06, `web/components/calendar/EventCard.tsx`, `web/lib/tournament-poster.ts`, `tests/unit/calendar-utils.test.js`, `STATUS.md`)
 - [x] Finished tournament Thai CTA: внутри editorial-блока завершённого Thai-турнира добавлена кнопка `Результаты игр турнира` на архивное зрительское табло `/live/thai/[id]` ✅ (2026-04-06, `web/components/calendar/FinishedTournamentPage.tsx`, `STATUS.md`)

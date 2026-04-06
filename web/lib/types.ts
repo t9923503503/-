@@ -31,6 +31,7 @@ export interface LeaderboardEntry {
   bronze: number;
   lastSeen: string;
   photoUrl: string;
+  topLevel: string;
 }
 
 export interface MedalEntry {

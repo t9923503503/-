@@ -10,10 +10,12 @@ import type { RankingCounts } from '@/lib/queries';
 
 type SortMode = 'pts' | 'avg' | 'trn' | 'medals';
 
-function zoneMeta(rank: number) {
-  if (rank <= 10) return { cls: 'zone-hard', label: 'HARD', color: '#e94560', bg: 'rgba(233,69,96,.12)', border: 'rgba(233,69,96,.3)' };
-  if (rank <= 20) return { cls: 'zone-medium', label: 'MEDIUM', color: '#4DA8DA', bg: 'rgba(77,168,218,.12)', border: 'rgba(77,168,218,.3)' };
-  return { cls: 'zone-lite', label: 'LITE', color: '#6ABF69', bg: 'rgba(106,191,105,.12)', border: 'rgba(106,191,105,.3)' };
+function zoneMeta(level: string) {
+  const l = level.toLowerCase();
+  if (l === 'hard') return { cls: 'zone-hard', label: 'HARD', color: '#e94560', bg: 'rgba(233,69,96,.12)', border: 'rgba(233,69,96,.3)' };
+  if (l === 'advanced' || l === 'advance') return { cls: 'zone-advanced', label: 'ADVANCED', color: '#4DA8DA', bg: 'rgba(77,168,218,.12)', border: 'rgba(77,168,218,.3)' };
+  if (l === 'medium') return { cls: 'zone-medium', label: 'MEDIUM', color: '#FFD700', bg: 'rgba(255,215,0,.10)', border: 'rgba(255,215,0,.3)' };
+  return { cls: 'zone-lite', label: 'LIGHT', color: '#6ABF69', bg: 'rgba(106,191,105,.12)', border: 'rgba(106,191,105,.3)' };
 }
 
 function sortEntries(entries: LeaderboardEntry[], mode: SortMode): LeaderboardEntry[] {
@@ -97,7 +99,7 @@ function Podium({ entries, sort }: { entries: LeaderboardEntry[]; sort: SortMode
 }
 
 function PlayerItem({ entry, sort }: { entry: LeaderboardEntry; sort: SortMode }) {
-  const zn = zoneMeta(entry.rank);
+  const zn = zoneMeta(entry.topLevel);
   const avg = entry.tournaments > 0 ? (entry.rating / entry.tournaments).toFixed(1) : '0';
 
   const medalMap: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
