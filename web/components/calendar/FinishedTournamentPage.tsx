@@ -17,6 +17,8 @@ interface FinishedPoolRow {
   place: string;
   left: string;
   right: string;
+  leftRatingPts: number;
+  rightRatingPts: number;
 }
 
 interface FinishedPoolSummary {
@@ -29,6 +31,7 @@ interface FinishedTournamentEditorial {
   eyebrow: string;
   title: string;
   subtitle: string;
+  ratingIntro: string;
   pools: FinishedPoolSummary[];
   footer: string[];
   factTitle: string;
@@ -45,45 +48,46 @@ const FINISHED_EDITORIALS: Record<string, FinishedTournamentEditorial> = {
     eyebrow: '🔥 РЕЗУЛЬТАТЫ ТУРНИРА 04.04.2026',
     title: 'ЛЮТЫЕ ПЛЯЖНИКИ × DOUBLE TROUBLE',
     subtitle: '8 туров • разные напарники • каждый сам за себя',
+    ratingIntro: 'Ниже сразу видно, кто занял место в своей группе и сколько очков это дало в рейтинг.',
     pools: [
       {
         title: '🏆 HARD',
         note: '👉 Тут не играют. Тут выживают.',
         rows: [
-          { place: '🥇', left: 'Рогожкин А (МОНСТРЫ)', right: 'Никифоров (ЛЮТЫЕ)' },
-          { place: '🥈', left: 'Соболев (МОНСТРЫ)', right: 'Килатов (ЛЮТЫЕ)' },
-          { place: '🥉', left: 'Рукавишников (МОНСТРЫ)', right: 'Шперлинг (ЛЮТЫЕ)' },
-          { place: '4️⃣', left: 'Жидков (МОНСТРЫ)', right: 'Терехов (ЛЮТЫЕ)' },
+          { place: '🥇', left: 'Рогожкин А (МОНСТРЫ)', right: 'Никифоров (ЛЮТЫЕ)', leftRatingPts: 100, rightRatingPts: 50 },
+          { place: '🥈', left: 'Соболев (МОНСТРЫ)', right: 'Килатов (ЛЮТЫЕ)', leftRatingPts: 90, rightRatingPts: 45 },
+          { place: '🥉', left: 'Рукавишников (МОНСТРЫ)', right: 'Шперлинг (ЛЮТЫЕ)', leftRatingPts: 82, rightRatingPts: 41 },
+          { place: '4️⃣', left: 'Жидков (МОНСТРЫ)', right: 'Терехов (ЛЮТЫЕ)', leftRatingPts: 76, rightRatingPts: 38 },
         ],
       },
       {
         title: '🏆 ADVANCE',
         note: '👉 Ошибка = минус 1 место. Всё честно.',
         rows: [
-          { place: '🥇', left: 'Лебедев (МОНСТРЫ)', right: 'Пивин (ЛЮТЫЕ)' },
-          { place: '🥈', left: 'Салим (МОНСТРЫ)', right: 'Камалов (ЛЮТЫЕ)' },
-          { place: '🥉', left: 'Паничкин (МОНСТРЫ)', right: 'Александр (ЛЮТЫЕ)' },
-          { place: '4️⃣', left: 'Фатин (МОНСТРЫ)', right: 'Грузин (ЛЮТЫЕ)' },
+          { place: '🥇', left: 'Лебедев (МОНСТРЫ)', right: 'Пивин (ЛЮТЫЕ)', leftRatingPts: 70, rightRatingPts: 35 },
+          { place: '🥈', left: 'Салим (МОНСТРЫ)', right: 'Камалов (ЛЮТЫЕ)', leftRatingPts: 65, rightRatingPts: 33 },
+          { place: '🥉', left: 'Паничкин (МОНСТРЫ)', right: 'Александр (ЛЮТЫЕ)', leftRatingPts: 60, rightRatingPts: 30 },
+          { place: '4️⃣', left: 'Фатин (МОНСТРЫ)', right: 'Грузин (ЛЮТЫЕ)', leftRatingPts: 56, rightRatingPts: 28 },
         ],
       },
       {
         title: '🏆 MEDIUM',
         note: '👉 Тут ломались те, кто думал что готов.',
         rows: [
-          { place: '🥇', left: 'Шелгачев А (МОНСТРЫ)', right: 'Привет (ЛЮТЫЕ)' },
-          { place: '🥈', left: 'Салмин М (МОНСТРЫ)', right: 'Микуляк (ЛЮТЫЕ)' },
-          { place: '🥉', left: 'Яковлев (МОНСТРЫ)', right: 'Обухов (ЛЮТЫЕ)' },
-          { place: '4️⃣', left: 'Гадаборшев (МОНСТРЫ)', right: 'Шерметов (ЛЮТЫЕ)' },
+          { place: '🥇', left: 'Шелгачев А (МОНСТРЫ)', right: 'Привет (ЛЮТЫЕ)', leftRatingPts: 52, rightRatingPts: 26 },
+          { place: '🥈', left: 'Салмин М (МОНСТРЫ)', right: 'Микуляк (ЛЮТЫЕ)', leftRatingPts: 48, rightRatingPts: 24 },
+          { place: '🥉', left: 'Яковлев (МОНСТРЫ)', right: 'Обухов (ЛЮТЫЕ)', leftRatingPts: 44, rightRatingPts: 22 },
+          { place: '4️⃣', left: 'Гадаборшев (МОНСТРЫ)', right: 'Шерметов (ЛЮТЫЕ)', leftRatingPts: 42, rightRatingPts: 21 },
         ],
       },
       {
         title: '🏆 LITE',
         note: '👉 Лёгкий? Только на бумаге.',
         rows: [
-          { place: '🥇', left: 'Пекшев (МОНСТРЫ)', right: 'Андрей (ЛЮТЫЕ)' },
-          { place: '🥈', left: 'Надымов Н (МОНСТРЫ)', right: 'Степанян (ЛЮТЫЕ)' },
-          { place: '🥉', left: 'Артиков (МОНСТРЫ)', right: 'Мамедов (ЛЮТЫЕ)' },
-          { place: '4️⃣', left: 'Смирнов (МОНСТРЫ)', right: 'Володя (ЛЮТЫЕ)' },
+          { place: '🥇', left: 'Пекшев (МОНСТРЫ)', right: 'Андрей (ЛЮТЫЕ)', leftRatingPts: 38, rightRatingPts: 19 },
+          { place: '🥈', left: 'Надымов Н (МОНСТРЫ)', right: 'Степанян (ЛЮТЫЕ)', leftRatingPts: 36, rightRatingPts: 18 },
+          { place: '🥉', left: 'Артиков (МОНСТРЫ)', right: 'Мамедов (ЛЮТЫЕ)', leftRatingPts: 34, rightRatingPts: 17 },
+          { place: '4️⃣', left: 'Смирнов (МОНСТРЫ)', right: 'Володя (ЛЮТЫЕ)', leftRatingPts: 32, rightRatingPts: 16 },
         ],
       },
     ],
@@ -209,16 +213,6 @@ function getFinishedTournamentEditorial(tournamentId: string): FinishedTournamen
   return FINISHED_EDITORIALS[tournamentId] ?? null;
 }
 
-function getEditorialPlayerName(label: string): string {
-  return label.replace(/\s*\([^)]*\)\s*$/, '').trim();
-}
-
-function getEditorialRatingPts(results: TournamentResultRow[], label: string): number | null {
-  const playerName = getEditorialPlayerName(label).toLowerCase();
-  const match = results.find((row) => row.playerName.trim().toLowerCase() === playerName);
-  return match ? match.ratingPts : null;
-}
-
 function VkIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -277,7 +271,7 @@ export default function FinishedTournamentPage({
     photoUrl && heroPhotoUrl && photoUrl !== heroPhotoUrl ? 'Открыть фотоотчёт' : 'Открыть фото';
   const primaryAnchor = editorial ? '#editorial' : '#results';
   const resultsActionLabel = editorial
-    ? 'Таблица начисления рейтинга'
+    ? 'Места и рейтинг'
     : '🏆 Результаты турнира';
   const resultsSectionTitle = editorial
     ? 'Таблица начисления рейтинга'
@@ -453,6 +447,9 @@ export default function FinishedTournamentPage({
             <p className="mt-2 text-sm font-body text-text-secondary md:text-base">
               {editorial.subtitle}
             </p>
+            <p className="mt-4 max-w-3xl text-sm font-body text-text-primary/85 md:text-base">
+              {editorial.ratingIntro}
+            </p>
 
             <div className="mt-6 grid gap-4 xl:grid-cols-2">
               {editorial.pools.map((pool) => (
@@ -460,42 +457,57 @@ export default function FinishedTournamentPage({
                   key={pool.title}
                   className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
                 >
-                  <h3 className="font-heading text-2xl uppercase tracking-wide text-text-primary">
-                    {pool.title}
-                  </h3>
-                  <div className="mt-3 hidden grid-cols-[64px,1fr,1fr] gap-2 px-1 text-[11px] uppercase tracking-[0.18em] text-text-secondary sm:grid">
-                    <span>Место</span>
-                    <span>Монстры</span>
-                    <span>Лютые</span>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-heading text-2xl uppercase tracking-wide text-text-primary">
+                      {pool.title}
+                    </h3>
+                    <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-text-secondary">
+                      2 группы × 4 места
+                    </span>
                   </div>
-                  <div className="mt-3 space-y-2">
-                    {pool.rows.map((row) => {
-                      const leftRating = getEditorialRatingPts(results, row.left);
-                      const rightRating = getEditorialRatingPts(results, row.right);
-
-                      return (
-                      <div
-                        key={`${pool.title}-${row.place}-${row.left}`}
-                        className="rounded-xl border border-white/8 bg-black/20 px-3 py-3"
-                      >
-                        <div className="flex items-center gap-2 text-base font-semibold text-text-primary">
-                          <span className="text-xl leading-none">{row.place}</span>
-                          <span className="font-body sm:hidden">Место</span>
+                  <div className="mt-4 overflow-hidden rounded-xl border border-white/10 bg-black/20">
+                    <div className="hidden grid-cols-[76px,minmax(0,1fr),minmax(0,1fr)] gap-0 border-b border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-text-secondary sm:grid">
+                      <span>Место</span>
+                      <span>Монстры</span>
+                      <span>Лютые</span>
+                    </div>
+                    <div className="divide-y divide-white/8">
+                      {pool.rows.map((row) => (
+                        <div
+                          key={`${pool.title}-${row.place}-${row.left}`}
+                          className="grid gap-2 px-3 py-3 sm:grid-cols-[76px,minmax(0,1fr),minmax(0,1fr)] sm:items-stretch"
+                        >
+                          <div className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-3 py-2 sm:justify-center">
+                            <span className="text-xl leading-none">{row.place}</span>
+                            <span className="text-[11px] uppercase tracking-[0.16em] text-text-secondary sm:hidden">
+                              место
+                            </span>
+                          </div>
+                          <EditorialRatingCell
+                            groupLabel="Монстры"
+                            label={row.left}
+                            ratingPts={row.leftRatingPts}
+                          />
+                          <EditorialRatingCell
+                            groupLabel="Лютые"
+                            label={row.right}
+                            ratingPts={row.rightRatingPts}
+                          />
                         </div>
-                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                          <EditorialRatingCell label={row.left} ratingPts={leftRating} />
-                          <EditorialRatingCell label={row.right} ratingPts={rightRating} />
-                        </div>
-                      </div>
-                      );
-                    })}
+                      ))}
+                    </div>
                   </div>
                   <p className="mt-4 text-sm font-body text-brand/90">{pool.note}</p>
                 </section>
               ))}
             </div>
 
-            <EditorialRatingInfoGrid />
+            <div className="mt-6">
+              <div className="text-[11px] font-body uppercase tracking-[0.24em] text-brand/90">
+                Как читать рейтинг
+              </div>
+              <EditorialRatingInfoGrid />
+            </div>
 
             <div className="mt-6 rounded-2xl border border-brand/20 bg-brand/10 px-4 py-4">
               {editorial.footer.map((line) => (
@@ -613,67 +625,15 @@ export default function FinishedTournamentPage({
 
       {!editorial && results.length > 0 ? (
         <div id="results" className="mt-10 anim-fade-up anim-delay-4">
-          {editorial ? (
-            <details className="group rounded-2xl border border-white/10 bg-black/20 open:bg-black/25">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4">
-                <div>
-                  <h2 className="font-heading text-2xl md:text-3xl tracking-wide text-text-primary">
-                    {resultsSectionTitle}
-                  </h2>
-                  <p className="mt-1 text-sm font-body text-text-secondary">
-                    Почему такие цифры в колонке «В рейтинг» и откуда здесь по два призёра на каждом уровне.
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-body text-text-secondary border border-white/10 rounded-full px-3 py-1">
-                    {results.length} игроков
-                  </span>
-                  <span className="text-sm font-body font-semibold text-brand transition-transform group-open:rotate-180">
-                    ↓
-                  </span>
-                </div>
-              </summary>
-
-              <div className="border-t border-white/10 px-4 py-4 md:px-5">
-                <div className="mb-4 grid gap-3 md:grid-cols-3">
-                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-brand/90">1. За что очки</div>
-                    <p className="mt-2 text-sm font-body text-text-primary/90">
-                      Рейтинг здесь начисляется за итоговое место игрока в своей группе, а не за промежуточные победы,
-                      diff или мячи.
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-brand/90">2. Почему два золота</div>
-                    <p className="mt-2 text-sm font-body text-text-primary/90">
-                      В этом Double Trouble было две параллельные сетки: «Монстры» и «Лютые». Поэтому у каждого уровня
-                      есть свой победитель и призёры в обеих группах.
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-brand/90">3. Почему нули в статах</div>
-                    <p className="mt-2 text-sm font-body text-text-primary/90">
-                      Колонки «Победы / Diff / Мячи» в этой архивной выгрузке не определяют итоговый рейтинг. Ключевые
-                      поля здесь: место и начисленные очки.
-                    </p>
-                  </div>
-                </div>
-                <ResultsTable results={results} />
-              </div>
-            </details>
-          ) : (
-            <>
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 className="font-heading text-3xl md:text-4xl tracking-wide text-text-primary">
-                  {resultsSectionTitle}
-                </h2>
-                <span className="text-xs font-body text-text-secondary border border-white/10 rounded-full px-3 py-1">
-                  {results.length} игроков
-                </span>
-              </div>
-              <ResultsTable results={results} />
-            </>
-          )}
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="font-heading text-3xl md:text-4xl tracking-wide text-text-primary">
+              {resultsSectionTitle}
+            </h2>
+            <span className="text-xs font-body text-text-secondary border border-white/10 rounded-full px-3 py-1">
+              {results.length} игроков
+            </span>
+          </div>
+          <ResultsTable results={results} />
         </div>
       ) : null}
 
@@ -758,18 +718,26 @@ function StatCard({ icon, label, value }: { icon: string; label: string; value: 
 }
 
 function EditorialRatingCell({
+  groupLabel,
   label,
   ratingPts,
 }: {
+  groupLabel: string;
   label: string;
-  ratingPts: number | null;
+  ratingPts: number;
 }) {
   return (
-    <div className="rounded-lg bg-white/[0.04] px-3 py-2">
-      <div className="text-sm font-body text-text-primary">{label}</div>
-      {ratingPts !== null ? (
-        <div className="mt-1 text-xs font-body font-semibold text-brand">В рейтинг: {ratingPts} pts</div>
-      ) : null}
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/8 bg-white/[0.04] px-3 py-3">
+      <div className="min-w-0">
+        <div className="text-[10px] uppercase tracking-[0.16em] text-text-secondary sm:hidden">
+          {groupLabel}
+        </div>
+        <div className="truncate text-sm font-body text-text-primary">{label}</div>
+      </div>
+      <div className="shrink-0 rounded-full border border-brand/30 bg-brand/12 px-3 py-1 text-right">
+        <div className="text-[10px] uppercase tracking-[0.16em] text-text-secondary">в рейтинг</div>
+        <div className="text-sm font-body font-semibold text-brand">{ratingPts} pts</div>
+      </div>
     </div>
   );
 }
