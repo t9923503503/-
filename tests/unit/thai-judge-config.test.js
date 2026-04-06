@@ -7,6 +7,7 @@ import {
   buildThaiJudgeStructuralSignature,
   normalizeThaiJudgeBootstrapSignature,
   normalizeThaiJudgeModule,
+  thaiJudgeBootstrapSignaturesMatch,
   validateThaiNextStructuralLock,
   validateThaiNextTournamentSetup,
 } from '../../web/lib/thai-judge-config.ts';
@@ -43,6 +44,21 @@ describe('thai judge config helpers', () => {
         ],
       }),
     ).toBe('variant=MF;courts=1;tours=4;rules=legacy;players=p1,p2');
+  });
+
+  it('keeps pre-rules Thai Next bootstrap signatures compatible', () => {
+    expect(
+      thaiJudgeBootstrapSignaturesMatch(
+        'variant=MF;courts=1;tours=4;players=p1,p2',
+        'variant=MF;courts=1;tours=4;rules=legacy;players=p1,p2',
+      ),
+    ).toBe(true);
+    expect(
+      thaiJudgeBootstrapSignaturesMatch(
+        'variant=MF;courts=1;tours=4;players=p1,p2',
+        'variant=MF;courts=1;tours=4;rules=legacy;players=p2,p1',
+      ),
+    ).toBe(false);
   });
 
   it('locks initialized Thai Next tournaments against format/module/signature drift and unlocks after reset', () => {
@@ -120,6 +136,24 @@ describe('thai judge config helpers', () => {
       code: THAI_STRUCTURAL_DRIFT_LOCKED_CODE,
       message: 'structural Thai Next state already initialized; reset/recreate flow required',
     });
+
+    expect(
+      validateThaiNextStructuralLock({
+        currentTournament: {
+          ...currentTournament,
+          settings: {
+            ...currentTournament.settings,
+            thaiJudgeBootstrapSignature:
+              'variant=MF;courts=1;tours=4;players=p1,p2,p3,p4,p5,p6,p7,p8',
+          },
+        },
+        nextTournament: {
+          format: 'Thai',
+          settings: { thaiJudgeModule: 'next', thaiVariant: 'MF', courts: 1, tourCount: 4 },
+          participants,
+        },
+      }),
+    ).toBeNull();
 
     expect(
       validateThaiNextStructuralLock({

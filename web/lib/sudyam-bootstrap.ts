@@ -27,6 +27,7 @@ import {
   isExactThaiTournamentFormat,
   normalizeThaiJudgeBootstrapSignature,
   normalizeThaiJudgeModule,
+  thaiJudgeBootstrapSignaturesMatch,
   type ThaiJudgeModule,
   validateThaiNextTournamentSetup,
 } from "./thai-judge-config";
@@ -177,7 +178,7 @@ export async function resolveSudyamBootstrap(
       !isFinishedTournament &&
       !thaiJudgeBlockedReason &&
       storedSignature &&
-      storedSignature !== currentSignature
+      !thaiJudgeBootstrapSignaturesMatch(storedSignature, currentSignature)
     ) {
       thaiJudgeBlockedReason = "Thai Next bootstrap blocked: roster/settings drifted after initialization";
     }

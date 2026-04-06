@@ -75,6 +75,24 @@ export function normalizeThaiJudgeBootstrapSignature(value: unknown): string | n
   return normalized || null;
 }
 
+function stripRulesFromThaiJudgeSignature(signature: string): string {
+  return signature.replace(/;rules=[^;]*/, '');
+}
+
+export function thaiJudgeBootstrapSignaturesMatch(
+  left: unknown,
+  right: unknown,
+): boolean {
+  const normalizedLeft = normalizeThaiJudgeBootstrapSignature(left);
+  const normalizedRight = normalizeThaiJudgeBootstrapSignature(right);
+  if (!normalizedLeft || !normalizedRight) return normalizedLeft === normalizedRight;
+  if (normalizedLeft === normalizedRight) return true;
+
+  // Older initialized tournaments persisted signatures before rules preset
+  // became part of the structural lock. Keep those signatures compatible.
+  return stripRulesFromThaiJudgeSignature(normalizedLeft) === stripRulesFromThaiJudgeSignature(normalizedRight);
+}
+
 export function buildThaiJudgeStructuralSignature(input: {
   settings?: Record<string, unknown>;
   participants: Array<Pick<ThaiJudgeStructureParticipant, 'playerId' | 'position' | 'isWaitlist'>>;
@@ -133,7 +151,7 @@ export function validateThaiNextStructuralLock(input: {
     settings: input.nextTournament.settings,
     participants: input.nextTournament.participants,
   });
-  if (storedSignature !== nextSignature) {
+  if (!thaiJudgeBootstrapSignaturesMatch(storedSignature, nextSignature)) {
     return {
       code: THAI_STRUCTURAL_DRIFT_LOCKED_CODE,
       message: 'structural Thai Next state already initialized; reset/recreate flow required',

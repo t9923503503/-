@@ -13,6 +13,7 @@ import {
   buildThaiJudgeStructuralSignature,
   normalizeThaiJudgeBootstrapSignature,
   normalizeThaiJudgeModule,
+  thaiJudgeBootstrapSignaturesMatch,
   validateThaiNextTournamentSetup,
 } from '@/lib/thai-judge-config';
 import {
@@ -1454,7 +1455,7 @@ function validateThaiBootstrapPreflight(
   const storedSignature = normalizeThaiJudgeBootstrapSignature(
     tournament.settings.thaiJudgeBootstrapSignature,
   );
-  if (storedSignature && storedSignature !== signature) {
+  if (storedSignature && !thaiJudgeBootstrapSignaturesMatch(storedSignature, signature)) {
     throw new ThaiJudgeError(
       409,
       'structural Thai Next state already initialized; reset/recreate flow required',
