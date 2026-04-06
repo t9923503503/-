@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  normalizeBulkPlayerInput,
+  normalizeFilterPresetInput,
   normalizeOverrideInput,
   normalizePlayerInput,
   normalizeTournamentInput,
+  validateBulkPlayerInput,
+  validateFilterPresetInput,
   validateOverrideInput,
   validatePlayerInput,
   validateTournamentInput,
@@ -168,15 +172,49 @@ describe('admin validators', () => {
     const normalized = normalizePlayerInput({
       name: ' Alex ',
       gender: 'x',
-      status: 'zzz',
+      status: 'injured',
+      skillLevel: 'advanced',
+      preferredPosition: 'defender',
+      mixReady: true,
+      heightCm: 188,
+      weightKg: 82,
+      birthDate: '1999-04-01',
       wins: -2,
     });
     expect(normalized.name).toBe('Alex');
     expect(normalized.gender).toBe('M');
-    expect(normalized.status).toBe('active');
+    expect(normalized.status).toBe('injured');
+    expect(normalized.skillLevel).toBe('advanced');
+    expect(normalized.preferredPosition).toBe('defender');
+    expect(normalized.mixReady).toBe(true);
+    expect(normalized.heightCm).toBe(188);
+    expect(normalized.weightKg).toBe(82);
     expect(normalized.wins).toBe(0);
     expect(validatePlayerInput(normalized)).toBeNull();
     expect(validatePlayerInput(normalizePlayerInput({}))).toBe('Player name is required');
+    expect(validatePlayerInput(normalizePlayerInput({ name: 'Tall', heightCm: 149 }))).toBe('Height must be 150-220 cm');
+    expect(validatePlayerInput(normalizePlayerInput({ name: 'Heavy', weightKg: 141 }))).toBe('Weight must be 40-140 kg');
+  });
+
+  it('normalizes filter presets and bulk player actions', () => {
+    const preset = normalizeFilterPresetInput({
+      name: ' Women Advanced ',
+      scope: 'admin.players',
+      filters: { levels: ['advanced'], genders: ['W'] },
+    });
+    expect(preset.name).toBe('Women Advanced');
+    expect(validateFilterPresetInput(preset)).toBeNull();
+    expect(validateFilterPresetInput(normalizeFilterPresetInput({ name: '', scope: 'admin.players' }))).toBe('Preset name is required');
+
+    const bulk = normalizeBulkPlayerInput({
+      ids: ['p1', 'p2', 'p1'],
+      action: 'level',
+      skillLevel: 'pro',
+    });
+    expect(bulk.ids).toEqual(['p1', 'p2']);
+    expect(bulk.skillLevel).toBe('pro');
+    expect(validateBulkPlayerInput(bulk)).toBeNull();
+    expect(validateBulkPlayerInput(normalizeBulkPlayerInput({ ids: [], action: 'status', status: 'active' }))).toBe('Select at least one player');
   });
 
   it('validates override type-specific constraints', () => {

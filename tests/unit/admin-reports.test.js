@@ -39,6 +39,17 @@ describe('admin reports helpers', () => {
         ratingMix: 15,
         wins: 3,
         totalPts: 18,
+        tournamentsPlayed: 2,
+        photoUrl: '/images/players/p1.jpg',
+        birthDate: '1999-01-01',
+        heightCm: 188,
+        weightKg: 82,
+        skillLevel: 'advanced',
+        preferredPosition: 'defender',
+        mixReady: true,
+        phone: '+70000000000',
+        telegram: '@alex',
+        adminComment: 'captain',
       },
       {
         id: 'p2',
@@ -50,6 +61,17 @@ describe('admin reports helpers', () => {
         ratingMix: 21,
         wins: 4,
         totalPts: 24,
+        tournamentsPlayed: 3,
+        photoUrl: '',
+        birthDate: '',
+        heightCm: null,
+        weightKg: null,
+        skillLevel: 'pro',
+        preferredPosition: 'universal',
+        mixReady: true,
+        phone: '',
+        telegram: '@nina',
+        adminComment: '',
       },
     ];
 
@@ -73,6 +95,8 @@ describe('admin reports helpers', () => {
     const tg = buildTelegramReport({ players, tournaments });
 
     expect(csv).toContain('"p1","Alex","M","active"');
+    expect(csv).toContain('tournamentsPlayed,photoUrl,birthDate,heightCm,weightKg,skillLevel,preferredPosition,mixReady,phone,telegram,adminComment');
+    expect(csv).toContain('"advanced","defender","true"');
     expect(tg).toContain('ТОП-5 Mix рейтинга:');
     expect(tg).toContain('1. Nina');
   });

@@ -6,6 +6,12 @@ function csvEscape(value: string | number): string {
   return `"${escaped}"`;
 }
 
+function csvEscapeAny(value: unknown): string {
+  if (typeof value === 'boolean') return csvEscape(value ? 'true' : 'false');
+  if (value == null) return csvEscape('');
+  return csvEscape(String(value));
+}
+
 export function buildTournamentsCsv(rows: AdminTournament[]): string {
   const header = [
     'id',
@@ -54,6 +60,17 @@ export function buildPlayersCsv(rows: AdminPlayer[]): string {
     'ratingMix',
     'wins',
     'totalPts',
+    'tournamentsPlayed',
+    'photoUrl',
+    'birthDate',
+    'heightCm',
+    'weightKg',
+    'skillLevel',
+    'preferredPosition',
+    'mixReady',
+    'phone',
+    'telegram',
+    'adminComment',
   ];
   const lines = [header.join(',')];
   for (const row of rows) {
@@ -68,8 +85,19 @@ export function buildPlayersCsv(rows: AdminPlayer[]): string {
         row.ratingMix,
         row.wins,
         row.totalPts,
+        row.tournamentsPlayed,
+        row.photoUrl,
+        row.birthDate,
+        row.heightCm,
+        row.weightKg,
+        row.skillLevel,
+        row.preferredPosition,
+        row.mixReady,
+        row.phone,
+        row.telegram,
+        row.adminComment,
       ]
-        .map(csvEscape)
+        .map(csvEscapeAny)
         .join(',')
     );
   }

@@ -8,6 +8,7 @@ export type {
   ArchiveResult,
   ArchiveTournament,
   AdminPlayer,
+  AdminFilterPreset,
   RosterParticipant,
   PlayerRequest,
   TempPlayer,
@@ -68,6 +69,24 @@ export async function updatePlayer(id: string, input: Parameters<typeof pgQuerie
 
 export async function deletePlayer(id: string) {
   return useRemote() ? remoteQueries.deletePlayer(id) : pgQueries.deletePlayer(id);
+}
+
+export async function listFilterPresets(actorId: string, scope: string) {
+  return useRemote()
+    ? remoteQueries.listFilterPresets(actorId, scope)
+    : pgQueries.listFilterPresets(actorId, scope);
+}
+
+export async function upsertFilterPreset(input: Parameters<typeof pgQueries.upsertFilterPreset>[0]) {
+  return useRemote()
+    ? remoteQueries.upsertFilterPreset(input)
+    : pgQueries.upsertFilterPreset(input);
+}
+
+export async function deleteFilterPreset(input: Parameters<typeof pgQueries.deleteFilterPreset>[0]) {
+  return useRemote()
+    ? remoteQueries.deleteFilterPreset(input)
+    : pgQueries.deleteFilterPreset(input);
 }
 
 export async function applyTournamentStatusOverride(

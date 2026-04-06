@@ -70,6 +70,8 @@ export interface TournamentResult {
   diff?: number;
   coef?: number | string;
   balls?: number;
+  /** Thai Next: ссылка на зрительское табло (архивный снимок на той же странице). */
+  thaiSpectatorBoardUrl?: string | null;
 }
 
 export type RatingType = 'M' | 'W' | 'Mix';

@@ -11,16 +11,16 @@ interface AdminShellProps {
 }
 
 const links = [
-  { href: '/admin', label: 'Dashboard' },
-  { href: '/admin/tournaments', label: 'Турниры' },
-  { href: '/admin/players', label: 'Игроки' },
-  { href: '/admin/roster', label: 'Ростер' },
-  { href: '/admin/requests', label: 'Заявки' },
-  { href: '/admin/merge', label: 'Склейка' },
-  { href: '/admin/overrides', label: 'Overrides' },
-  { href: '/admin/audit', label: 'Audit' },
-  { href: '/admin/reports', label: 'Отчеты' },
-  { href: '/admin/archive', label: '📚 Архив' },
+  { href: '/admin', label: 'Dashboard', icon: '📊' },
+  { href: '/admin/players', label: 'Игроки', icon: '🏐' },
+  { href: '/admin/tournaments', label: 'Турниры', icon: '📅' },
+  { href: '/admin/archive', label: 'Архив / рейтинги', icon: '🏆' },
+  { href: '/admin/roster', label: 'Ростер', icon: '👥' },
+  { href: '/admin/requests', label: 'Заявки', icon: '✉️' },
+  { href: '/admin/merge', label: 'Склейка', icon: '👥' },
+  { href: '/admin/overrides', label: 'Overrides', icon: '🛠' },
+  { href: '/admin/audit', label: 'Audit', icon: '🧾' },
+  { href: '/admin/reports', label: 'Отчёты', icon: '📤' },
 ];
 
 export default function AdminShell({ role, actorId, children }: AdminShellProps) {
@@ -36,21 +36,27 @@ export default function AdminShell({ role, actorId, children }: AdminShellProps)
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 md:py-8 flex flex-col gap-6">
-      <div className="rounded-2xl border border-white/15 bg-white/5 p-4 md:p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="font-heading text-4xl leading-none tracking-wide">Admin Panel</h1>
-          <p className="text-sm text-text-secondary mt-2">Роль: <span className="text-text-primary font-semibold">{role}</span></p>
-          <p className="text-sm text-text-secondary mt-1">Actor: <span className="text-text-primary font-semibold">{actorId}</span></p>
+    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 md:py-8">
+      <div className="rounded-2xl border border-white/15 bg-gradient-to-br from-white/10 to-orange-500/10 p-4 md:p-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="font-heading text-4xl leading-none tracking-wide">Admin Panel</h1>
+            <p className="mt-2 text-sm text-text-secondary">
+              Роль: <span className="font-semibold text-text-primary">{role}</span>
+            </p>
+            <p className="mt-1 text-sm text-text-secondary">
+              Actor: <span className="font-semibold text-text-primary">{actorId}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={logout}
+            disabled={loggingOut}
+            className="rounded-xl border border-white/20 px-4 py-2 transition-colors hover:border-brand disabled:opacity-60"
+          >
+            {loggingOut ? 'Выход...' : 'Выйти'}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={logout}
-          disabled={loggingOut}
-          className="px-4 py-2 rounded-lg border border-white/20 hover:border-brand transition-colors disabled:opacity-60"
-        >
-          {loggingOut ? 'Выход...' : 'Выйти'}
-        </button>
       </div>
 
       <nav className="flex flex-wrap gap-2">
@@ -60,13 +66,14 @@ export default function AdminShell({ role, actorId, children }: AdminShellProps)
             <Link
               key={item.href}
               href={item.href}
-              className={`px-3 py-2 rounded-lg text-sm border transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-all ${
                 active
-                  ? 'bg-brand text-surface border-brand'
-                  : 'border-white/20 hover:border-brand'
+                  ? 'border-brand bg-brand text-surface shadow-lg shadow-orange-500/25'
+                  : 'border-white/20 bg-white/5 hover:border-brand hover:bg-orange-500/10'
               }`}
             >
-              {item.label}
+              <span aria-hidden="true">{item.icon}</span>
+              <span>{item.label}</span>
             </Link>
           );
         })}

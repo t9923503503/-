@@ -40,7 +40,25 @@ type PlayerCapabilities = {
   wins: boolean;
   totalPts: boolean;
   tournamentsPlayed: boolean;
+  photoUrl: boolean;
+  birthDate: boolean;
+  heightCm: boolean;
+  weightKg: boolean;
+  skillLevel: boolean;
+  preferredPosition: boolean;
+  mixReady: boolean;
+  phone: boolean;
+  telegram: boolean;
+  adminComment: boolean;
 };
+
+type PlayerStatus = AdminPlayer['status'];
+type PlayerSkillLevel = NonNullable<AdminPlayer['skillLevel']>;
+type PlayerPreferredPosition = NonNullable<AdminPlayer['preferredPosition']>;
+
+const PLAYER_STATUSES = new Set<PlayerStatus>(['active', 'temporary', 'inactive', 'injured', 'vacation']);
+const PLAYER_SKILL_LEVELS = new Set<PlayerSkillLevel>(['light', 'medium', 'advanced', 'pro']);
+const PLAYER_POSITIONS = new Set<PlayerPreferredPosition>(['attacker', 'defender', 'universal', 'setter', 'blocker']);
 
 const PLAYER_DB_EXTERNAL_ID = '__playerdb__';
 const capabilityCache = new Map<string, Promise<boolean>>();
@@ -259,16 +277,46 @@ function mapTournament(row: JsonObject | null, participantCount = 0): AdminTourn
 
 function mapPlayer(row: JsonObject | null): AdminPlayer {
   const source = row ?? {};
+  const status = String(source.status ?? 'active') as PlayerStatus;
+  const skillLevel = String(source.skill_level ?? '') as PlayerSkillLevel;
+  const preferredPosition = String(source.preferred_position ?? '') as PlayerPreferredPosition;
   return {
     id: String(source.id ?? ''),
     name: String(source.name ?? ''),
     gender: String(source.gender ?? 'M') === 'W' ? 'W' : 'M',
-    status: String(source.status ?? 'active') === 'temporary' ? 'temporary' : 'active',
+    status: PLAYER_STATUSES.has(status) ? status : 'active',
     ratingM: Number(source.rating_m ?? 0),
     ratingW: Number(source.rating_w ?? 0),
     ratingMix: Number(source.rating_mix ?? 0),
     wins: Number(source.wins ?? 0),
     totalPts: Number(source.total_pts ?? 0),
+    tournamentsPlayed: Number(source.tournaments_played ?? 0),
+    photoUrl: String(source.photo_url ?? ''),
+    birthDate: toIsoDate(source.birth_date),
+    heightCm: source.height_cm == null ? null : Number(source.height_cm),
+    weightKg: source.weight_kg == null ? null : Number(source.weight_kg),
+    skillLevel: PLAYER_SKILL_LEVELS.has(skillLevel) ? skillLevel : null,
+    preferredPosition: PLAYER_POSITIONS.has(preferredPosition) ? preferredPosition : null,
+    mixReady: Boolean(source.mix_ready),
+    phone: String(source.phone ?? ''),
+    telegram: String(source.telegram ?? ''),
+    adminComment: String(source.admin_comment ?? ''),
+  };
+}
+
+function mapFilterPreset(row: JsonObject | null) {
+  const source = row ?? {};
+  return {
+    id: String(source.id ?? ''),
+    actorId: String(source.actor_id ?? ''),
+    name: String(source.name ?? ''),
+    scope: String(source.scope ?? ''),
+    filters:
+      source.filters && typeof source.filters === 'object' && !Array.isArray(source.filters)
+        ? (source.filters as Record<string, unknown>)
+        : {},
+    createdAt: source.created_at ? String(source.created_at) : '',
+    updatedAt: source.updated_at ? String(source.updated_at) : '',
   };
 }
 
@@ -351,7 +399,73 @@ async function getPlayerCapabilities(): Promise<PlayerCapabilities> {
     wins: await probeColumn('players', 'wins'),
     totalPts: await probeColumn('players', 'total_pts'),
     tournamentsPlayed: await probeColumn('players', 'tournaments_played'),
+    photoUrl: await probeColumn('players', 'photo_url'),
+    birthDate: await probeColumn('players', 'birth_date'),
+    heightCm: await probeColumn('players', 'height_cm'),
+    weightKg: await probeColumn('players', 'weight_kg'),
+    skillLevel: await probeColumn('players', 'skill_level'),
+    preferredPosition: await probeColumn('players', 'preferred_position'),
+    mixReady: await probeColumn('players', 'mix_ready'),
+    phone: await probeColumn('players', 'phone'),
+    telegram: await probeColumn('players', 'telegram'),
+    adminComment: await probeColumn('players', 'admin_comment'),
   };
+}
+
+function buildPlayerSelect(caps: PlayerCapabilities): string {
+  return [
+    'id',
+    'name',
+    'gender',
+    'status',
+    ...(caps.ratingM ? ['rating_m'] : []),
+    ...(caps.ratingW ? ['rating_w'] : []),
+    ...(caps.ratingMix ? ['rating_mix'] : []),
+    ...(caps.wins ? ['wins'] : []),
+    ...(caps.totalPts ? ['total_pts'] : []),
+    ...(caps.tournamentsPlayed ? ['tournaments_played'] : []),
+    ...(caps.photoUrl ? ['photo_url'] : []),
+    ...(caps.birthDate ? ['birth_date'] : []),
+    ...(caps.heightCm ? ['height_cm'] : []),
+    ...(caps.weightKg ? ['weight_kg'] : []),
+    ...(caps.skillLevel ? ['skill_level'] : []),
+    ...(caps.preferredPosition ? ['preferred_position'] : []),
+    ...(caps.mixReady ? ['mix_ready'] : []),
+    ...(caps.phone ? ['phone'] : []),
+    ...(caps.telegram ? ['telegram'] : []),
+    ...(caps.adminComment ? ['admin_comment'] : []),
+  ].join(',');
+}
+
+function playerPayload(input: Partial<AdminPlayer>, caps: PlayerCapabilities): JsonObject {
+  const skillLevel = String(input.skillLevel ?? '').trim();
+  const preferredPosition = String(input.preferredPosition ?? '').trim();
+  const payload: JsonObject = {
+    name: String(input.name || '').trim(),
+    gender: String(input.gender || 'M') === 'W' ? 'W' : 'M',
+    status: PLAYER_STATUSES.has(input.status as PlayerStatus) ? input.status : 'active',
+  };
+  if (caps.ratingM) payload.rating_m = Number(input.ratingM || 0);
+  if (caps.ratingW) payload.rating_w = Number(input.ratingW || 0);
+  if (caps.ratingMix) payload.rating_mix = Number(input.ratingMix || 0);
+  if (caps.wins) payload.wins = Number(input.wins || 0);
+  if (caps.totalPts) payload.total_pts = Number(input.totalPts || 0);
+  if (caps.tournamentsPlayed) payload.tournaments_played = Number(input.tournamentsPlayed || 0);
+  if (caps.photoUrl) payload.photo_url = String(input.photoUrl || '').trim() || null;
+  if (caps.birthDate) payload.birth_date = String(input.birthDate || '').trim() || null;
+  if (caps.heightCm) payload.height_cm = input.heightCm == null || input.heightCm === 0 ? null : Number(input.heightCm);
+  if (caps.weightKg) payload.weight_kg = input.weightKg == null || input.weightKg === 0 ? null : Number(input.weightKg);
+  if (caps.skillLevel) payload.skill_level = PLAYER_SKILL_LEVELS.has(skillLevel as PlayerSkillLevel) ? skillLevel : null;
+  if (caps.preferredPosition) {
+    payload.preferred_position = PLAYER_POSITIONS.has(preferredPosition as PlayerPreferredPosition)
+      ? preferredPosition
+      : null;
+  }
+  if (caps.mixReady) payload.mix_ready = Boolean(input.mixReady);
+  if (caps.phone) payload.phone = String(input.phone || '').trim() || null;
+  if (caps.telegram) payload.telegram = String(input.telegram || '').trim() || null;
+  if (caps.adminComment) payload.admin_comment = String(input.adminComment || '').trim() || null;
+  return payload;
 }
 
 function encodeInFilter(ids: string[]): string {
@@ -594,19 +708,8 @@ async function fetchTournamentRow(id: string): Promise<JsonObject | null> {
 
 async function fetchPlayerRow(id: string): Promise<JsonObject | null> {
   const caps = await getPlayerCapabilities();
-  const select = [
-    'id',
-    'name',
-    'gender',
-    'status',
-    ...(caps.ratingM ? ['rating_m'] : []),
-    ...(caps.ratingW ? ['rating_w'] : []),
-    ...(caps.ratingMix ? ['rating_mix'] : []),
-    ...(caps.wins ? ['wins'] : []),
-    ...(caps.totalPts ? ['total_pts'] : []),
-  ].join(',');
   const rows = await requestJson<JsonObject[]>(
-    `/players?select=${select}&id=eq.${encodeURIComponent(id)}&limit=1`
+    `/players?select=${buildPlayerSelect(caps)}&id=eq.${encodeURIComponent(id)}&limit=1`
   );
   return firstRow<JsonObject>(rows);
 }
@@ -747,19 +850,9 @@ export async function getTournamentLegacyGameStateById(id: string): Promise<Reco
 export async function listPlayers(query = ''): Promise<AdminPlayer[]> {
   const caps = await getPlayerCapabilities();
   const params = new URLSearchParams({
-    select: [
-      'id',
-      'name',
-      'gender',
-      'status',
-      ...(caps.ratingM ? ['rating_m'] : []),
-      ...(caps.ratingW ? ['rating_w'] : []),
-      ...(caps.ratingMix ? ['rating_mix'] : []),
-      ...(caps.wins ? ['wins'] : []),
-      ...(caps.totalPts ? ['total_pts'] : []),
-    ].join(','),
+    select: buildPlayerSelect(caps),
     order: 'name.asc',
-    limit: '500',
+    limit: '2000',
   });
 
   const term = String(query || '').trim();
@@ -782,19 +875,8 @@ export async function getPlayersByIds(ids: string[]): Promise<AdminPlayer[]> {
   if (!normalizedIds.length) return [];
 
   const caps = await getPlayerCapabilities();
-  const select = [
-    'id',
-    'name',
-    'gender',
-    'status',
-    ...(caps.ratingM ? ['rating_m'] : []),
-    ...(caps.ratingW ? ['rating_w'] : []),
-    ...(caps.ratingMix ? ['rating_mix'] : []),
-    ...(caps.wins ? ['wins'] : []),
-    ...(caps.totalPts ? ['total_pts'] : []),
-  ].join(',');
   const rows = await requestJson<JsonObject[]>(
-    `/players?select=${select}&id=in.${encodeInFilter(normalizedIds)}&limit=${Math.max(1, normalizedIds.length)}`,
+    `/players?select=${buildPlayerSelect(caps)}&id=in.${encodeInFilter(normalizedIds)}&limit=${Math.max(1, normalizedIds.length)}`,
   );
   return (rows ?? []).map((row) => mapPlayer(row));
 }
@@ -803,15 +885,8 @@ export async function createPlayer(input: Partial<AdminPlayer>): Promise<AdminPl
   const caps = await getPlayerCapabilities();
   const payload: JsonObject = {
     id: String(input.id || randomUUID()),
-    name: String(input.name || '').trim(),
-    gender: String(input.gender || 'M') === 'W' ? 'W' : 'M',
-    status: String(input.status || 'active') === 'temporary' ? 'temporary' : 'active',
+    ...playerPayload(input, caps),
   };
-  if (caps.ratingM) payload.rating_m = Number(input.ratingM || 0);
-  if (caps.ratingW) payload.rating_w = Number(input.ratingW || 0);
-  if (caps.ratingMix) payload.rating_mix = Number(input.ratingMix || 0);
-  if (caps.wins) payload.wins = Number(input.wins || 0);
-  if (caps.totalPts) payload.total_pts = Number(input.totalPts || 0);
 
   const rows = await requestJson<JsonObject[]>(
     '/players',
@@ -828,16 +903,7 @@ export async function createPlayer(input: Partial<AdminPlayer>): Promise<AdminPl
 
 export async function updatePlayer(id: string, input: Partial<AdminPlayer>): Promise<AdminPlayer | null> {
   const caps = await getPlayerCapabilities();
-  const payload: JsonObject = {
-    name: String(input.name || '').trim(),
-    gender: String(input.gender || 'M') === 'W' ? 'W' : 'M',
-    status: String(input.status || 'active') === 'temporary' ? 'temporary' : 'active',
-  };
-  if (caps.ratingM) payload.rating_m = Number(input.ratingM || 0);
-  if (caps.ratingW) payload.rating_w = Number(input.ratingW || 0);
-  if (caps.ratingMix) payload.rating_mix = Number(input.ratingMix || 0);
-  if (caps.wins) payload.wins = Number(input.wins || 0);
-  if (caps.totalPts) payload.total_pts = Number(input.totalPts || 0);
+  const payload = playerPayload(input, caps);
 
   const rows = await requestJson<JsonObject[]>(
     `/players?id=eq.${encodeURIComponent(id)}`,
@@ -859,6 +925,62 @@ export async function deletePlayer(id: string): Promise<boolean> {
   await requestNoContent(`/players?id=eq.${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
+  return true;
+}
+
+export async function listFilterPresets(actorId: string, scope: string) {
+  const rows = await requestJson<JsonObject[]>(
+    `/admin_filter_presets?select=id,actor_id,name,scope,filters,created_at,updated_at&actor_id=eq.${encodeURIComponent(
+      actorId,
+    )}&scope=eq.${encodeURIComponent(scope)}&order=updated_at.desc,name.asc`,
+    {},
+    { allow404: true },
+  );
+  return (rows ?? []).map((row) => mapFilterPreset(row));
+}
+
+export async function upsertFilterPreset(input: {
+  id?: string;
+  actorId: string;
+  scope: string;
+  name: string;
+  filters: Record<string, unknown>;
+}) {
+  const payload = {
+    id: String(input.id || randomUUID()),
+    actor_id: String(input.actorId || '').trim(),
+    name: String(input.name || '').trim(),
+    scope: String(input.scope || '').trim(),
+    filters: input.filters ?? {},
+  };
+  const rows = await requestJson<JsonObject[]>(
+    '/admin_filter_presets?on_conflict=actor_id,scope,name',
+    {
+      method: 'POST',
+      headers: {
+        Prefer: 'resolution=merge-duplicates,return=representation',
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+  return mapFilterPreset(firstRow<JsonObject>(rows));
+}
+
+export async function deleteFilterPreset(input: { id: string; actorId: string; scope: string }): Promise<boolean> {
+  const existing = await requestJson<JsonObject[]>(
+    `/admin_filter_presets?select=id&id=eq.${encodeURIComponent(input.id)}&actor_id=eq.${encodeURIComponent(
+      input.actorId,
+    )}&scope=eq.${encodeURIComponent(input.scope)}&limit=1`,
+    {},
+    { allow404: true },
+  );
+  if (!(existing ?? []).length) return false;
+  await requestNoContent(
+    `/admin_filter_presets?id=eq.${encodeURIComponent(input.id)}&actor_id=eq.${encodeURIComponent(
+      input.actorId,
+    )}&scope=eq.${encodeURIComponent(input.scope)}`,
+    { method: 'DELETE' },
+  );
   return true;
 }
 

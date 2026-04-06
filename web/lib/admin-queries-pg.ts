@@ -60,16 +60,55 @@ export interface AdminPlayer {
   id: string;
   name: string;
   gender: 'M' | 'W';
-  status: 'active' | 'temporary';
+  status: PlayerStatus;
   ratingM: number;
   ratingW: number;
   ratingMix: number;
   wins: number;
   totalPts: number;
+  tournamentsPlayed: number;
+  photoUrl: string;
+  birthDate: string;
+  heightCm: number | null;
+  weightKg: number | null;
+  skillLevel: PlayerSkillLevel | null;
+  preferredPosition: PlayerPreferredPosition | null;
+  mixReady: boolean;
+  phone: string;
+  telegram: string;
+  adminComment: string;
+}
+
+export type PlayerStatus = 'active' | 'temporary' | 'inactive' | 'injured' | 'vacation';
+export type PlayerSkillLevel = 'light' | 'medium' | 'advanced' | 'pro';
+export type PlayerPreferredPosition = 'attacker' | 'defender' | 'universal' | 'setter' | 'blocker';
+
+export interface AdminFilterPreset {
+  id: string;
+  actorId: string;
+  name: string;
+  scope: string;
+  filters: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const PLAYER_DB_EXTERNAL_ID = '__playerdb__';
 let tournamentsColumnCache: Set<string> | null = null;
+
+const PLAYER_STATUSES = new Set<PlayerStatus>(['active', 'temporary', 'inactive', 'injured', 'vacation']);
+const PLAYER_SKILL_LEVELS = new Set<PlayerSkillLevel>(['light', 'medium', 'advanced', 'pro']);
+const PLAYER_POSITIONS = new Set<PlayerPreferredPosition>(['attacker', 'defender', 'universal', 'setter', 'blocker']);
+const PLAYER_SELECT = `
+  id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts,
+  COALESCE(tournaments_played, 0) AS tournaments_played,
+  COALESCE(photo_url, '') AS photo_url,
+  birth_date, height_cm, weight_kg, skill_level, preferred_position,
+  COALESCE(mix_ready, false) AS mix_ready,
+  COALESCE(phone, '') AS phone,
+  COALESCE(telegram, '') AS telegram,
+  COALESCE(admin_comment, '') AS admin_comment
+`;
 
 function toIsoDate(value: unknown): string {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
@@ -95,16 +134,73 @@ function mapTournament(row: Record<string, unknown>): AdminTournament {
 }
 
 function mapPlayer(row: Record<string, unknown>): AdminPlayer {
+  const status = String(row.status ?? 'active') as PlayerStatus;
+  const skillLevel = String(row.skill_level ?? '') as PlayerSkillLevel;
+  const preferredPosition = String(row.preferred_position ?? '') as PlayerPreferredPosition;
   return {
     id: String(row.id ?? ''),
     name: String(row.name ?? ''),
     gender: String(row.gender ?? 'M') === 'W' ? 'W' : 'M',
-    status: String(row.status ?? 'active') === 'temporary' ? 'temporary' : 'active',
+    status: PLAYER_STATUSES.has(status) ? status : 'active',
     ratingM: Number(row.rating_m ?? 0),
     ratingW: Number(row.rating_w ?? 0),
     ratingMix: Number(row.rating_mix ?? 0),
     wins: Number(row.wins ?? 0),
     totalPts: Number(row.total_pts ?? 0),
+    tournamentsPlayed: Number(row.tournaments_played ?? 0),
+    photoUrl: String(row.photo_url ?? ''),
+    birthDate: toIsoDate(row.birth_date),
+    heightCm: row.height_cm == null ? null : Number(row.height_cm),
+    weightKg: row.weight_kg == null ? null : Number(row.weight_kg),
+    skillLevel: PLAYER_SKILL_LEVELS.has(skillLevel) ? skillLevel : null,
+    preferredPosition: PLAYER_POSITIONS.has(preferredPosition) ? preferredPosition : null,
+    mixReady: Boolean(row.mix_ready),
+    phone: String(row.phone ?? ''),
+    telegram: String(row.telegram ?? ''),
+    adminComment: String(row.admin_comment ?? ''),
+  };
+}
+
+function mapFilterPreset(row: Record<string, unknown>): AdminFilterPreset {
+  return {
+    id: String(row.id ?? ''),
+    actorId: String(row.actor_id ?? ''),
+    name: String(row.name ?? ''),
+    scope: String(row.scope ?? ''),
+    filters:
+      row.filters && typeof row.filters === 'object' && !Array.isArray(row.filters)
+        ? (row.filters as Record<string, unknown>)
+        : {},
+    createdAt: row.created_at ? String(row.created_at) : '',
+    updatedAt: row.updated_at ? String(row.updated_at) : '',
+  };
+}
+
+function playerDbPayload(input: Partial<AdminPlayer>): Record<string, unknown> {
+  const skillLevel = String(input.skillLevel ?? '').trim();
+  const preferredPosition = String(input.preferredPosition ?? '').trim();
+  return {
+    name: String(input.name || '').trim(),
+    gender: String(input.gender || 'M') === 'W' ? 'W' : 'M',
+    status: PLAYER_STATUSES.has(input.status as PlayerStatus) ? input.status : 'active',
+    rating_m: Number(input.ratingM || 0),
+    rating_w: Number(input.ratingW || 0),
+    rating_mix: Number(input.ratingMix || 0),
+    wins: Number(input.wins || 0),
+    total_pts: Number(input.totalPts || 0),
+    tournaments_played: Number(input.tournamentsPlayed || 0),
+    photo_url: String(input.photoUrl || '') || null,
+    birth_date: String(input.birthDate || '').trim() || null,
+    height_cm: input.heightCm == null || input.heightCm === 0 ? null : Number(input.heightCm),
+    weight_kg: input.weightKg == null || input.weightKg === 0 ? null : Number(input.weightKg),
+    skill_level: PLAYER_SKILL_LEVELS.has(skillLevel as PlayerSkillLevel) ? skillLevel : null,
+    preferred_position: PLAYER_POSITIONS.has(preferredPosition as PlayerPreferredPosition)
+      ? preferredPosition
+      : null,
+    mix_ready: Boolean(input.mixReady),
+    phone: String(input.phone || '').trim() || null,
+    telegram: String(input.telegram || '').trim() || null,
+    admin_comment: String(input.adminComment || '').trim() || null,
   };
 }
 
@@ -154,7 +250,18 @@ async function listTournamentPlayersForLegacyTx(client: PoolClient, tournamentId
         p.rating_w,
         p.rating_mix,
         p.wins,
-        p.total_pts
+        p.total_pts,
+        p.tournaments_played,
+        p.photo_url,
+        p.birth_date,
+        p.height_cm,
+        p.weight_kg,
+        p.skill_level,
+        p.preferred_position,
+        p.mix_ready,
+        p.phone,
+        p.telegram,
+        p.admin_comment
       FROM tournament_participants tp
       JOIN players p ON p.id = tp.player_id
       WHERE tp.tournament_id = $1
@@ -168,7 +275,7 @@ async function listTournamentPlayersForLegacyTx(client: PoolClient, tournamentId
 async function listPlayersForLegacySnapshotTx(client: PoolClient): Promise<AdminPlayer[]> {
   const { rows } = await client.query(
     `
-      SELECT id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts
+      SELECT ${PLAYER_SELECT}
       FROM players
       ORDER BY name ASC
     `
@@ -547,11 +654,11 @@ export async function listPlayers(query = ''): Promise<AdminPlayer[]> {
   const hasFilter = term.length > 0;
   const { rows } = await pool.query(
     `
-      SELECT id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts
+      SELECT ${PLAYER_SELECT}
       FROM players
       ${hasFilter ? 'WHERE name ILIKE $1 OR id ILIKE $1' : ''}
       ORDER BY name ASC
-      LIMIT 500
+      LIMIT 2000
     `,
     hasFilter ? [`%${term}%`] : []
   );
@@ -562,7 +669,7 @@ export async function getPlayerById(id: string): Promise<AdminPlayer | null> {
   if (!process.env.DATABASE_URL) return null;
   const pool = getPool();
   const { rows } = await pool.query(
-    `SELECT id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts FROM players WHERE id = $1 LIMIT 1`,
+    `SELECT ${PLAYER_SELECT} FROM players WHERE id = $1 LIMIT 1`,
     [id]
   );
   const data = rows[0];
@@ -577,7 +684,7 @@ export async function getPlayersByIds(ids: string[]): Promise<AdminPlayer[]> {
   const pool = getPool();
   const { rows } = await pool.query(
     `
-      SELECT id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts
+      SELECT ${PLAYER_SELECT}
       FROM players
       WHERE id = ANY($1::text[])
     `,
@@ -589,23 +696,35 @@ export async function getPlayersByIds(ids: string[]): Promise<AdminPlayer[]> {
 export async function createPlayer(input: Partial<AdminPlayer>): Promise<AdminPlayer> {
   const pool = getPool();
   const id = String(input.id || randomUUID());
-  const gender = String(input.gender || 'M') === 'W' ? 'W' : 'M';
-  const status = String(input.status || 'active') === 'temporary' ? 'temporary' : 'active';
+  const payload = playerDbPayload(input);
   const { rows } = await pool.query(
     `INSERT INTO players
-      (id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-     RETURNING id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts`,
+      (id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts,
+       tournaments_played, photo_url, birth_date, height_cm, weight_kg, skill_level,
+       preferred_position, mix_ready, phone, telegram, admin_comment)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+     RETURNING ${PLAYER_SELECT}`,
     [
       id,
-      String(input.name || '').trim(),
-      gender,
-      status,
-      Number(input.ratingM || 0),
-      Number(input.ratingW || 0),
-      Number(input.ratingMix || 0),
-      Number(input.wins || 0),
-      Number(input.totalPts || 0),
+      payload.name,
+      payload.gender,
+      payload.status,
+      payload.rating_m,
+      payload.rating_w,
+      payload.rating_mix,
+      payload.wins,
+      payload.total_pts,
+      payload.tournaments_played,
+      payload.photo_url,
+      payload.birth_date,
+      payload.height_cm,
+      payload.weight_kg,
+      payload.skill_level,
+      payload.preferred_position,
+      payload.mix_ready,
+      payload.phone,
+      payload.telegram,
+      payload.admin_comment,
     ]
   );
   return mapPlayer(rows[0] ?? {});
@@ -613,23 +732,35 @@ export async function createPlayer(input: Partial<AdminPlayer>): Promise<AdminPl
 
 export async function updatePlayer(id: string, input: Partial<AdminPlayer>): Promise<AdminPlayer | null> {
   const pool = getPool();
-  const gender = String(input.gender || 'M') === 'W' ? 'W' : 'M';
-  const status = String(input.status || 'active') === 'temporary' ? 'temporary' : 'active';
+  const payload = playerDbPayload(input);
   const { rows } = await pool.query(
     `UPDATE players
-     SET name=$2, gender=$3, status=$4, rating_m=$5, rating_w=$6, rating_mix=$7, wins=$8, total_pts=$9
+     SET name=$2, gender=$3, status=$4, rating_m=$5, rating_w=$6, rating_mix=$7, wins=$8, total_pts=$9,
+         tournaments_played=$10, photo_url=$11, birth_date=$12, height_cm=$13, weight_kg=$14,
+         skill_level=$15, preferred_position=$16, mix_ready=$17, phone=$18, telegram=$19, admin_comment=$20
      WHERE id=$1
-     RETURNING id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts`,
+     RETURNING ${PLAYER_SELECT}`,
     [
       id,
-      String(input.name || '').trim(),
-      gender,
-      status,
-      Number(input.ratingM || 0),
-      Number(input.ratingW || 0),
-      Number(input.ratingMix || 0),
-      Number(input.wins || 0),
-      Number(input.totalPts || 0),
+      payload.name,
+      payload.gender,
+      payload.status,
+      payload.rating_m,
+      payload.rating_w,
+      payload.rating_mix,
+      payload.wins,
+      payload.total_pts,
+      payload.tournaments_played,
+      payload.photo_url,
+      payload.birth_date,
+      payload.height_cm,
+      payload.weight_kg,
+      payload.skill_level,
+      payload.preferred_position,
+      payload.mix_ready,
+      payload.phone,
+      payload.telegram,
+      payload.admin_comment,
     ]
   );
   const data = rows[0];
@@ -643,6 +774,60 @@ export async function deletePlayer(id: string): Promise<boolean> {
 }
 
 /** Объединяет ключи в `tournaments.settings` без затрагивания состава участников. */
+export async function listFilterPresets(actorId: string, scope: string): Promise<AdminFilterPreset[]> {
+  if (!process.env.DATABASE_URL) return [];
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT id, actor_id, name, scope, filters, created_at, updated_at
+     FROM admin_filter_presets
+     WHERE actor_id = $1 AND scope = $2
+     ORDER BY updated_at DESC, name ASC`,
+    [actorId, scope],
+  );
+  return rows.map((row) => mapFilterPreset(row));
+}
+
+export async function upsertFilterPreset(input: {
+  id?: string;
+  actorId: string;
+  scope: string;
+  name: string;
+  filters: Record<string, unknown>;
+}): Promise<AdminFilterPreset> {
+  const pool = getPool();
+  const id = String(input.id || randomUUID());
+  const { rows } = await pool.query(
+    `INSERT INTO admin_filter_presets (id, actor_id, name, scope, filters)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (actor_id, scope, name) DO UPDATE
+       SET filters = EXCLUDED.filters,
+           updated_at = now()
+     RETURNING id, actor_id, name, scope, filters, created_at, updated_at`,
+    [
+      id,
+      String(input.actorId || '').trim(),
+      String(input.name || '').trim(),
+      String(input.scope || '').trim(),
+      JSON.stringify(input.filters ?? {}),
+    ],
+  );
+  return mapFilterPreset(rows[0] ?? {});
+}
+
+export async function deleteFilterPreset(input: {
+  id: string;
+  actorId: string;
+  scope: string;
+}): Promise<boolean> {
+  const pool = getPool();
+  const result = await pool.query(
+    `DELETE FROM admin_filter_presets
+     WHERE id = $1 AND actor_id = $2 AND scope = $3`,
+    [input.id, input.actorId, input.scope],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function mergeTournamentSettingsKeys(
   id: string,
   patch: Record<string, unknown>,
@@ -705,7 +890,7 @@ export async function applyPlayerRecalcOverride(input: { playerId: string }): Pr
     `UPDATE players
      SET wins = $2, total_pts = $3
      WHERE id = $1
-     RETURNING id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts`,
+     RETURNING ${PLAYER_SELECT}`,
     [input.playerId, wins, totalPts]
   );
   const data = rows[0];
@@ -729,7 +914,7 @@ export async function applyPlayerRatingOverride(input: {
     `UPDATE players
      SET rating_m = $2, rating_w = $3, rating_mix = $4
      WHERE id = $1
-     RETURNING id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts`,
+     RETURNING ${PLAYER_SELECT}`,
     [input.playerId, nextRatingM, nextRatingW, nextRatingMix]
   );
   const data = rows[0];

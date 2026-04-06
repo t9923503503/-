@@ -16,6 +16,7 @@ import {
   ratingPointsForPlace,
   sqlEffectiveRatingPointsExpr,
 } from './rating-points';
+import { resolveThaiSpectatorBoardUrlForArchive } from './thai-archive-meta';
 
 const PLAYER_DB_EXTERNAL_ID = '__playerdb__';
 
@@ -595,7 +596,9 @@ export async function fetchPlayerMatches(
         tr.balls,
         t.id AS tournament_id,
         t.name AS tournament_name,
-        t.date AS tournament_date
+        t.date AS tournament_date,
+        t.format AS tournament_format,
+        t.settings AS tournament_settings
       FROM tournament_results tr
       JOIN tournaments t ON t.id = tr.tournament_id
       JOIN players p ON p.id = tr.player_id
@@ -607,25 +610,38 @@ export async function fetchPlayerMatches(
     [playerId, limit]
   );
 
-  return rows.map((r) => ({
-    playerId: r.player_id,
-    playerName: r.player_name,
-    place: Number(r.place ?? 0),
-    gamePts: Number(r.game_pts ?? 0),
-    ratingPts: ratingPointsForPlace(
-      Number(r.place ?? 0),
-      r.rating_pool === 'novice' ? 'novice' : 'pro',
-    ),
-    gender: (r.gender ?? 'M') as 'M' | 'W',
-    tournamentId: r.tournament_id,
-    tournamentName: r.tournament_name ?? '',
-    tournamentDate: r.tournament_date ? String(r.tournament_date) : '',
-    ratingType: (r.rating_type ?? 'M') as 'M' | 'W' | 'Mix',
-    wins: r.wins != null ? Number(r.wins) : 0,
-    diff: r.diff != null ? Number(r.diff) : 0,
-    coef: r.coef ?? 0,
-    balls: r.balls != null ? Number(r.balls) : 0,
-  }));
+  return rows.map((r) => {
+    const tid = String(r.tournament_id ?? '');
+    const settings =
+      r.tournament_settings && typeof r.tournament_settings === 'object' && !Array.isArray(r.tournament_settings)
+        ? (r.tournament_settings as Record<string, unknown>)
+        : undefined;
+    const thaiSpectatorBoardUrl = resolveThaiSpectatorBoardUrlForArchive(
+      tid,
+      String(r.tournament_format ?? ''),
+      settings,
+    );
+    return {
+      playerId: r.player_id,
+      playerName: r.player_name,
+      place: Number(r.place ?? 0),
+      gamePts: Number(r.game_pts ?? 0),
+      ratingPts: ratingPointsForPlace(
+        Number(r.place ?? 0),
+        r.rating_pool === 'novice' ? 'novice' : 'pro',
+      ),
+      gender: (r.gender ?? 'M') as 'M' | 'W',
+      tournamentId: tid,
+      tournamentName: r.tournament_name ?? '',
+      tournamentDate: r.tournament_date ? String(r.tournament_date) : '',
+      ratingType: (r.rating_type ?? 'M') as 'M' | 'W' | 'Mix',
+      wins: r.wins != null ? Number(r.wins) : 0,
+      diff: r.diff != null ? Number(r.diff) : 0,
+      coef: r.coef ?? 0,
+      balls: r.balls != null ? Number(r.balls) : 0,
+      thaiSpectatorBoardUrl,
+    };
+  });
 }
 
 // ─── Teams (парные заявки на турнир) ──────────────────────────────────────

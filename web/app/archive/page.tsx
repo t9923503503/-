@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { getArchiveTournaments } from '@/lib/admin-queries';
 import type { ArchiveTournament } from '@/lib/admin-queries';
 
@@ -34,16 +35,29 @@ function TournamentCard({ t }: { t: ArchiveTournament }) {
             <h2 className="font-heading text-xl leading-tight">{t.name}</h2>
             <p className="text-sm text-text-secondary mt-1">📅 {formatDate(t.date)}</p>
           </div>
-          {t.photoUrl && (
-            <a
-              href={t.photoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 text-yellow-400 text-xs font-semibold hover:bg-yellow-500/20 transition-colors"
-            >
-              📸 Фото
-            </a>
-          )}
+          <div className="flex flex-wrap items-center gap-2 shrink-0 justify-end">
+            {t.thaiSpectatorBoardUrl ? (
+              <Link
+                href={t.thaiSpectatorBoardUrl}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-sky-500/35 bg-sky-500/10 text-sky-200 text-xs font-semibold hover:bg-sky-500/20 transition-colors"
+              >
+                Табло Thai
+                {t.thaiSpectatorBoardHasSnapshot ? (
+                  <span className="text-[10px] font-normal text-sky-300/80">· архив</span>
+                ) : null}
+              </Link>
+            ) : null}
+            {t.photoUrl && (
+              <a
+                href={t.photoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 text-yellow-400 text-xs font-semibold hover:bg-yellow-500/20 transition-colors"
+              >
+                📸 Фото
+              </a>
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2 mt-2">
           <span className="text-xs px-2.5 py-1 rounded-full border border-white/15 text-text-secondary">

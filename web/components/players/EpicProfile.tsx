@@ -307,6 +307,14 @@ export default function EpicProfile({ player, stats, matches, ratingHistory, bac
                         <div className="text-xs text-text-secondary font-condensed">
                           {r.tournamentDate ? formatDate(String(r.tournamentDate)) : ''} {' \u{2022} '} {r.ratingType ?? ''}
                         </div>
+                        {r.thaiSpectatorBoardUrl ? (
+                          <Link
+                            href={r.thaiSpectatorBoardUrl}
+                            className="mt-1 inline-flex text-xs font-medium text-sky-300/95 underline decoration-sky-500/40 underline-offset-2 hover:text-sky-200"
+                          >
+                            Табло турнира (Thai)
+                          </Link>
+                        ) : null}
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
