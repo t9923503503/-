@@ -11,6 +11,7 @@ interface Props {
   results: TournamentResultRow[];
   related: Tournament[];
   thaiBoard?: ThaiSpectatorBoardPayload | null;
+  heroPhotoUrl?: string | null;
 }
 
 // ── Fire keywords: heading gets neon-fire glow if matched ──────────────────
@@ -116,6 +117,7 @@ export default function FinishedTournamentPage({
   results,
   related,
   thaiBoard = null,
+  heroPhotoUrl = null,
 }: Props) {
   const { id, name, date, time, location, format, division, level, participantCount, photoUrl } =
     tournament;
@@ -161,9 +163,9 @@ export default function FinishedTournamentPage({
       {/* ── Hero ─────────────────────────────────────────────────────── */}
       <div className="hero-poster relative overflow-hidden rounded-2xl px-6 py-14 md:py-20 min-h-[420px] flex flex-col justify-end anim-fade-up anim-delay-1">
         {/* Background photo */}
-        {photoUrl ? (
+        {heroPhotoUrl ? (
           <img
-            src={photoUrl}
+            src={heroPhotoUrl}
             alt=""
             aria-hidden="true"
             className="absolute inset-0 h-full w-full scale-[1.03] object-cover opacity-45 md:opacity-50 blur-[1px]"

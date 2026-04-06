@@ -25,7 +25,7 @@ const FINISHED_TOURNAMENT_HERO_FALLBACKS: Record<string, string> = {
 
 function resolveFinishedHeroPhoto(id: string, photoUrl?: string | null): string | null {
   const normalized = String(photoUrl || '').trim();
-  return normalized || FINISHED_TOURNAMENT_HERO_FALLBACKS[id] || null;
+  return FINISHED_TOURNAMENT_HERO_FALLBACKS[id] || normalized || null;
 }
 
 function statusLabel(status: string): string {
@@ -125,13 +125,11 @@ export default async function TournamentPage({ params }: PageProps) {
   if (tournament.status === 'finished') {
     return (
       <FinishedTournamentPage
-        tournament={{
-          ...tournament,
-          photoUrl: resolveFinishedHeroPhoto(tournament.id, tournament.photoUrl) ?? '',
-        }}
+        tournament={tournament}
         results={results}
         related={related}
         thaiBoard={thaiBoard}
+        heroPhotoUrl={resolveFinishedHeroPhoto(tournament.id, tournament.photoUrl)}
       />
     );
   }
