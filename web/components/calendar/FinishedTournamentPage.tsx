@@ -209,6 +209,16 @@ function getFinishedTournamentEditorial(tournamentId: string): FinishedTournamen
   return FINISHED_EDITORIALS[tournamentId] ?? null;
 }
 
+function getEditorialPlayerName(label: string): string {
+  return label.replace(/\s*\([^)]*\)\s*$/, '').trim();
+}
+
+function getEditorialRatingPts(results: TournamentResultRow[], label: string): number | null {
+  const playerName = getEditorialPlayerName(label).toLowerCase();
+  const match = results.find((row) => row.playerName.trim().toLowerCase() === playerName);
+  return match ? match.ratingPts : null;
+}
+
 function VkIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -265,6 +275,7 @@ export default function FinishedTournamentPage({
   const galleryImages = FINISHED_TOURNAMENT_GALLERIES[id] ?? [];
   const photoActionLabel =
     photoUrl && heroPhotoUrl && photoUrl !== heroPhotoUrl ? 'Открыть фотоотчёт' : 'Открыть фото';
+  const primaryAnchor = editorial ? '#editorial' : '#results';
   const resultsActionLabel = editorial
     ? 'Таблица начисления рейтинга'
     : '🏆 Результаты турнира';
@@ -391,7 +402,7 @@ export default function FinishedTournamentPage({
           </div>
 
           <div className="flex flex-col sm:flex-row flex-wrap gap-3 mt-2">
-            <a href="#results" className="btn-action flex items-center justify-center gap-2">
+            <a href={primaryAnchor} className="btn-action flex items-center justify-center gap-2">
               {resultsActionLabel}
             </a>
 
@@ -431,7 +442,7 @@ export default function FinishedTournamentPage({
       </div>
 
       {editorial ? (
-        <section aria-label="Итоги по уровням" className="mt-8 anim-fade-up anim-delay-2">
+        <section id="editorial" aria-label="Итоги по уровням" className="mt-8 anim-fade-up anim-delay-2">
           <div className="rounded-[28px] border border-brand/30 bg-[linear-gradient(180deg,rgba(18,14,12,0.98),rgba(9,9,14,0.98))] px-5 py-6 shadow-[0_24px_70px_rgba(0,0,0,0.35)] md:px-7">
             <div className="text-[11px] font-body uppercase tracking-[0.24em] text-brand/90">
               {editorial.eyebrow}
@@ -458,7 +469,11 @@ export default function FinishedTournamentPage({
                     <span>Лютые</span>
                   </div>
                   <div className="mt-3 space-y-2">
-                    {pool.rows.map((row) => (
+                    {pool.rows.map((row) => {
+                      const leftRating = getEditorialRatingPts(results, row.left);
+                      const rightRating = getEditorialRatingPts(results, row.right);
+
+                      return (
                       <div
                         key={`${pool.title}-${row.place}-${row.left}`}
                         className="rounded-xl border border-white/8 bg-black/20 px-3 py-3"
@@ -468,20 +483,19 @@ export default function FinishedTournamentPage({
                           <span className="font-body sm:hidden">Место</span>
                         </div>
                         <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                          <div className="rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-body text-text-primary">
-                            {row.left}
-                          </div>
-                          <div className="rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-body text-text-primary">
-                            {row.right}
-                          </div>
+                          <EditorialRatingCell label={row.left} ratingPts={leftRating} />
+                          <EditorialRatingCell label={row.right} ratingPts={rightRating} />
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                   <p className="mt-4 text-sm font-body text-brand/90">{pool.note}</p>
                 </section>
               ))}
             </div>
+
+            <EditorialRatingInfoGrid />
 
             <div className="mt-6 rounded-2xl border border-brand/20 bg-brand/10 px-4 py-4">
               {editorial.footer.map((line) => (
@@ -597,7 +611,7 @@ export default function FinishedTournamentPage({
         </div>
       ) : null}
 
-      {results.length > 0 ? (
+      {!editorial && results.length > 0 ? (
         <div id="results" className="mt-10 anim-fade-up anim-delay-4">
           {editorial ? (
             <details className="group rounded-2xl border border-white/10 bg-black/20 open:bg-black/25">
@@ -739,6 +753,50 @@ function StatCard({ icon, label, value }: { icon: string; label: string; value: 
         {icon} {label}
       </div>
       <div className="text-xl font-heading text-text-primary mt-1">{value}</div>
+    </div>
+  );
+}
+
+function EditorialRatingCell({
+  label,
+  ratingPts,
+}: {
+  label: string;
+  ratingPts: number | null;
+}) {
+  return (
+    <div className="rounded-lg bg-white/[0.04] px-3 py-2">
+      <div className="text-sm font-body text-text-primary">{label}</div>
+      {ratingPts !== null ? (
+        <div className="mt-1 text-xs font-body font-semibold text-brand">В рейтинг: {ratingPts} pts</div>
+      ) : null}
+    </div>
+  );
+}
+
+function EditorialRatingInfoGrid() {
+  return (
+    <div className="mt-6 grid gap-3 md:grid-cols-3">
+      <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+        <div className="text-[11px] uppercase tracking-[0.18em] text-brand/90">1. За что очки</div>
+        <p className="mt-2 text-sm font-body text-text-primary/90">
+          Рейтинг здесь начисляется за итоговое место игрока в своей группе, а не за промежуточные победы, diff или мячи.
+        </p>
+      </div>
+      <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+        <div className="text-[11px] uppercase tracking-[0.18em] text-brand/90">2. Почему два золота</div>
+        <p className="mt-2 text-sm font-body text-text-primary/90">
+          В этом Double Trouble было две параллельные сетки: «Монстры» и «Лютые». Поэтому у каждого уровня есть свой победитель
+          и призёры в обеих группах.
+        </p>
+      </div>
+      <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+        <div className="text-[11px] uppercase tracking-[0.18em] text-brand/90">3. Почему нули в статах</div>
+        <p className="mt-2 text-sm font-body text-text-primary/90">
+          Колонки «Победы / Diff / Мячи» в этой архивной выгрузке не определяют итоговый рейтинг. Ключевые поля здесь: место и
+          начисленные очки.
+        </p>
+      </div>
     </div>
   );
 }
