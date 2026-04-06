@@ -858,7 +858,7 @@ export async function listPlayers(query = ''): Promise<AdminPlayer[]> {
   const term = String(query || '').trim();
   if (term) {
     const escaped = term.replace(/\*/g, '');
-    params.set('or', `(name.ilike.*${escaped}*,id.ilike.*${escaped}*)`);
+    params.set('name', `ilike.*${escaped}*`);
   }
 
   const rows = await requestJson<JsonObject[]>(`/players?${params.toString()}`);

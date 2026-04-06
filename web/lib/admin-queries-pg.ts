@@ -656,7 +656,7 @@ export async function listPlayers(query = ''): Promise<AdminPlayer[]> {
     `
       SELECT ${PLAYER_SELECT}
       FROM players
-      ${hasFilter ? 'WHERE name ILIKE $1 OR id ILIKE $1' : ''}
+      ${hasFilter ? 'WHERE name ILIKE $1 OR id::text ILIKE $1' : ''}
       ORDER BY name ASC
       LIMIT 2000
     `,
@@ -686,7 +686,7 @@ export async function getPlayersByIds(ids: string[]): Promise<AdminPlayer[]> {
     `
       SELECT ${PLAYER_SELECT}
       FROM players
-      WHERE id = ANY($1::text[])
+      WHERE id::text = ANY($1::text[])
     `,
     [normalizedIds],
   );
