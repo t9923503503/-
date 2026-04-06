@@ -14,6 +14,8 @@
 Вход в проект: [`README.md`](README.md), для агентов — [`docs/AGENTS.md`](docs/AGENTS.md), деплой — [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ### Новые задачи
+- [x] Admin archive results: нормализация дробного места (`32.5` → `32`) перед записью в `tournament_results.place integer`, чтобы `/api/admin/tournaments/[id]/results` не падал 500 ✅ (2026-04-06, `web/app/api/admin/tournaments/[id]/results/route.ts`, `web/lib/admin-queries-pg.ts`, `web/lib/admin-postgrest.ts`, `STATUS.md`)
+- [x] Страница завершённого турнира: эмоциональная landing page (hero с закатом, подиум, stats strip, share VK/Telegram, OG-метаданные) ✅ (2026-04-06, `web/components/calendar/FinishedTournamentPage.tsx`, `web/app/calendar/[id]/page.tsx`, `web/app/globals.css`, `STATUS.md`; задеплоено на prod 157.22.173.248, проверено 200)
 - [x] Admin filter presets prod grant: добавлен доступ роли PostgREST `authenticated` к `admin_filter_presets`, чтобы `/api/admin/filter-presets` не падал 500 у авторизованного админа ✅ (2026-04-06, `migrations/029_admin_filter_presets_authenticated_grant.sql`, `STATUS.md`)
 - [x] Admin players prod hotfix: grant/reload для `admin_filter_presets`/`players` в PostgREST и безопасный поиск по UUID (`id::text` в PG, без `id.ilike` в PostgREST) ✅ (2026-04-06, `migrations/028_admin_players_postgrest_grants.sql`, `web/lib/admin-postgrest.ts`, `web/lib/admin-queries-pg.ts`, `STATUS.md`)
 - [x] Thai Next bootstrap: совместимость старых structural signatures без `rules=...`, чтобы уже инициализированные турниры не блокировались ложным `roster/settings drifted after initialization` после обновления кода ✅ (2026-04-06, `web/lib/thai-judge-config.ts`, `web/lib/sudyam-bootstrap.ts`, `web/lib/thai-live/service.ts`, `tests/unit/thai-judge-config.test.js`, `STATUS.md`)

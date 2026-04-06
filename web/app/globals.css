@@ -169,6 +169,16 @@
   letter-spacing: 0.04em;
 }
 
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.anim-fade-up  { animation: fadeUp 0.55s ease both; }
+.anim-delay-1  { animation-delay: 0.10s; }
+.anim-delay-2  { animation-delay: 0.22s; }
+.anim-delay-3  { animation-delay: 0.36s; }
+.anim-delay-4  { animation-delay: 0.52s; }
+
 body.judge-workspace {
   background: #050914;
 }

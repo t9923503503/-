@@ -1381,7 +1381,8 @@ export async function upsertTournamentResults(
   }
 
   const payload = results.map((item) => {
-    const place = Number(item.placement || 0);
+    const parsedPlace = Number(item.placement || 0);
+    const place = Number.isFinite(parsedPlace) ? Math.max(0, Math.trunc(parsedPlace)) : 0;
     const pool: RatingPool = item.ratingPool === 'novice' ? 'novice' : 'pro';
     return {
       name: String(item.playerName || '').trim(),

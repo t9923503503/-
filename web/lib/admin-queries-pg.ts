@@ -1329,6 +1329,12 @@ function ratingTypeFromDivision(division: string, gender: 'M' | 'W'): 'M' | 'W' 
   return gender === 'W' ? 'W' : 'M';
 }
 
+function normalizeTournamentResultPlace(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.trunc(parsed));
+}
+
 export async function upsertTournamentResults(
   tournamentId: string,
   results: Array<{
@@ -1359,7 +1365,8 @@ export async function upsertTournamentResults(
       );
       const playerId = String(playerRes.rows[0]?.id ?? '');
       if (!playerId) continue;
-      const place = Number(r.placement);
+      const place = normalizeTournamentResultPlace(r.placement);
+      if (place <= 0) continue;
       const poolKind: RatingPool = r.ratingPool === 'novice' ? 'novice' : 'pro';
       const ratingPts = ratingPointsForPlace(place, poolKind);
       const ratingPoolDb = poolKind === 'novice' ? 'novice' : null;

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import CalendarGrid from '@/components/calendar/CalendarGrid';
+import FinishedTournamentPage from '@/components/calendar/FinishedTournamentPage';
 import {
   fetchTournamentById,
   fetchTournamentResults,
@@ -63,6 +64,27 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     return { title: 'Турнир | Лютые Пляжники' };
   }
 
+  if (tournament.status === 'finished') {
+    const dateLabel = formatDateLabel(tournament.date, tournament.time);
+    const description = `Итоги турнира · ${dateLabel}${tournament.location ? ` · ${tournament.location}` : ''}`;
+    return {
+      title: `Результаты: ${tournament.name} | Лютые Пляжники`,
+      description,
+      openGraph: {
+        title: `Результаты: ${tournament.name}`,
+        description,
+        type: 'website',
+        locale: 'ru_RU',
+        ...(tournament.photoUrl
+          ? { images: [{ url: tournament.photoUrl, width: 1200, height: 630 }] }
+          : {}),
+      },
+      ...(tournament.photoUrl
+        ? { twitter: { card: 'summary_large_image' as const, images: [tournament.photoUrl] } }
+        : {}),
+    };
+  }
+
   return {
     title: `${tournament.name} | Лютые Пляжники`,
     description:
@@ -83,11 +105,17 @@ export default async function TournamentPage({ params }: PageProps) {
   ]);
 
   const related = tournaments.filter((item) => item.id !== tournament.id).slice(0, 4);
+
+  // Finished tournament gets its own rich landing page
+  if (tournament.status === 'finished') {
+    return <FinishedTournamentPage tournament={tournament} results={results} related={related} />;
+  }
+
   const mapsUrl = buildTournamentMapsUrl(tournament.location);
   const partnerUrl = `/partner?tournament=${encodeURIComponent(tournament.id)}`;
   const calendarUrl = `/api/calendar/${tournament.id}/ics`;
   const cta =
-    tournament.status === 'finished' || tournament.status === 'cancelled'
+    tournament.status === 'cancelled'
       ? null
       : {
           href: `/calendar/${tournament.id}/register`,

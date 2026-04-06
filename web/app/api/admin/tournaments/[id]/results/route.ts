@@ -6,6 +6,12 @@ import { adminErrorResponse } from '@/lib/admin-errors';
 
 export const dynamic = 'force-dynamic';
 
+function normalizePlacement(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.trunc(parsed));
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -25,7 +31,7 @@ export async function POST(
         return {
           playerName: String(r.playerName ?? r.player_name ?? '').trim(),
           gender: String(r.gender ?? 'M') === 'W' ? ('W' as const) : ('M' as const),
-          placement: Number(r.placement ?? 0),
+          placement: normalizePlacement(r.placement),
           points: Number(r.points ?? 0),
           ratingPool: poolRaw === 'novice' ? ('novice' as const) : ('pro' as const),
         };
