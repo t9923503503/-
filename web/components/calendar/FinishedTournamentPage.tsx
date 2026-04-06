@@ -3,7 +3,7 @@ import type { Tournament } from '@/lib/types';
 import type { TournamentResultRow } from '@/lib/queries';
 import { isThaiAdminFormat } from '@/lib/admin-legacy-sync';
 import type { ThaiSpectatorBoardPayload } from '@/lib/thai-spectator';
-import { buildThaiSpectatorBoardUrl } from '@/lib/tournament-links';
+import FinishedTournamentGallery from '@/components/calendar/FinishedTournamentGallery';
 
 interface Props {
   tournament: Tournament;
@@ -93,6 +93,24 @@ const FINISHED_EDITORIALS: Record<string, FinishedTournamentEditorial> = {
       '⚡️ СЛАБЫХ НЕТ. ЕСТЬ ТЕ, КТО ЛОМАЕТСЯ.',
     ],
   },
+};
+
+const FINISHED_TOURNAMENT_GALLERIES: Record<string, string[]> = {
+  'a19522bb-864e-4520-8182-61e035c27894': [
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-00.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-01.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-02.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-03.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-04.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-05.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-06.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-07.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-08.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-09.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-10.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-11.jpg',
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-12.jpg',
+  ],
 };
 
 const FIRE_KEYWORDS = ['МОНСТР', 'ЛЮТ', 'HARD', 'MONSTER', 'BEAST', 'FIRE', 'FIERCE'];
@@ -200,11 +218,17 @@ export default function FinishedTournamentPage({
   const editorial = getFinishedTournamentEditorial(id);
   const previewPhotoUrl = heroPhotoUrl || photoUrl || null;
   const photoLinkUrl = photoUrl || heroPhotoUrl || null;
+  const galleryImages = FINISHED_TOURNAMENT_GALLERIES[id] ?? [];
   const photoActionLabel =
     photoUrl && heroPhotoUrl && photoUrl !== heroPhotoUrl ? 'Открыть фотоотчёт' : 'Открыть фото';
+  const resultsActionLabel = editorial
+    ? 'Таблица начисления рейтинга'
+    : '🏆 Результаты турнира';
+  const resultsSectionTitle = editorial
+    ? 'Таблица начисления рейтинга'
+    : 'Таблица результатов';
 
   const isThai = isThaiAdminFormat(format);
-  const thaiUrl = isThai ? buildThaiSpectatorBoardUrl(id) : null;
   const pageUrl = `https://lpvolley.ru/calendar/${id}`;
   const vkUrl = `https://vk.com/share.php?url=${encodeURIComponent(pageUrl)}`;
   const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(pageUrl)}&text=${encodeURIComponent(`Результаты: ${name}`)}`;
@@ -324,7 +348,7 @@ export default function FinishedTournamentPage({
 
           <div className="flex flex-col sm:flex-row flex-wrap gap-3 mt-2">
             <a href="#results" className="btn-action flex items-center justify-center gap-2">
-              🏆 Результаты турнира
+              {resultsActionLabel}
             </a>
 
             {photoLinkUrl ? (
@@ -336,16 +360,6 @@ export default function FinishedTournamentPage({
                 aria-label="Открыть фото турнира"
               >
                 📸 {photoActionLabel}
-              </a>
-            ) : null}
-
-            {thaiUrl ? (
-              <a
-                href={thaiUrl}
-                className="btn-action-outline flex items-center justify-center gap-2"
-                aria-label="Открыть табло Thai"
-              >
-                Табло Thai
               </a>
             ) : null}
 
@@ -447,7 +461,7 @@ export default function FinishedTournamentPage({
         </section>
       ) : null}
 
-      {previewPhotoUrl ? (
+      {previewPhotoUrl || galleryImages.length > 0 ? (
         <section aria-label="Фото турнира" className="mt-8 anim-fade-up anim-delay-3">
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
@@ -469,14 +483,24 @@ export default function FinishedTournamentPage({
               </a>
             ) : null}
           </div>
-          <div className="overflow-hidden rounded-[28px] border border-white/10 bg-black/30 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
-            <img
-              src={previewPhotoUrl}
-              alt={`Фото турнира ${name}`}
-              className="block h-auto w-full object-cover"
-              loading="eager"
+
+          {galleryImages.length > 0 ? (
+            <FinishedTournamentGallery
+              images={galleryImages.map((src, index) => ({
+                src,
+                alt: `Атмосфера площадки ${index + 1} · ${name}`,
+              }))}
             />
-          </div>
+          ) : previewPhotoUrl ? (
+            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-black/30 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+              <img
+                src={previewPhotoUrl}
+                alt={`Фото турнира ${name}`}
+                className="block h-auto w-full object-cover"
+                loading="eager"
+              />
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -530,71 +554,67 @@ export default function FinishedTournamentPage({
 
       {results.length > 0 ? (
         <div id="results" className="mt-10 anim-fade-up anim-delay-4">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="font-heading text-3xl md:text-4xl tracking-wide text-text-primary">
-              {editorial ? 'Подробная таблица результатов' : 'Таблица результатов'}
-            </h2>
-            <span className="text-xs font-body text-text-secondary border border-white/10 rounded-full px-3 py-1">
-              {results.length} игроков
-            </span>
-          </div>
+          {editorial ? (
+            <details className="group rounded-2xl border border-white/10 bg-black/20 open:bg-black/25">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4">
+                <div>
+                  <h2 className="font-heading text-2xl md:text-3xl tracking-wide text-text-primary">
+                    {resultsSectionTitle}
+                  </h2>
+                  <p className="mt-1 text-sm font-body text-text-secondary">
+                    Почему такие цифры в колонке «В рейтинг» и откуда здесь по два призёра на каждом уровне.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-body text-text-secondary border border-white/10 rounded-full px-3 py-1">
+                    {results.length} игроков
+                  </span>
+                  <span className="text-sm font-body font-semibold text-brand transition-transform group-open:rotate-180">
+                    ↓
+                  </span>
+                </div>
+              </summary>
 
-          <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/20">
-            <table role="table" className="min-w-full text-sm font-body">
-              <thead>
-                <tr className="sticky top-0 bg-surface/95 border-b border-white/10 text-text-secondary text-xs">
-                  <th className="px-4 py-3 text-left font-medium w-12">Место</th>
-                  <th className="px-4 py-3 text-left font-medium">Игрок</th>
-                  <th className="px-4 py-3 text-center font-medium">Победы</th>
-                  <th className="px-4 py-3 text-center font-medium">Diff</th>
-                  <th className="px-4 py-3 text-center font-medium">Мячи</th>
-                  <th className="px-4 py-3 text-right font-medium" title="Очки в рейтинг">
-                    В рейтинг
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((row) => {
-                  const medalIdx = row.place - 1;
-                  const hasMedal = medalIdx >= 0 && medalIdx <= 2;
-                  const borderClass = hasMedal
-                    ? [
-                        'border-l-4 border-[#FFD700]/70',
-                        'border-l-4 border-[#C0C0C0]/60',
-                        'border-l-4 border-[#CD7F32]/60',
-                      ][medalIdx]
-                    : 'border-l-4 border-transparent';
-
-                  return (
-                    <tr
-                      key={`${row.playerId}-${row.place}`}
-                      className={`border-b border-white/5 ${borderClass} ${hasMedal ? 'bg-white/[0.02]' : ''}`}
-                    >
-                      <td className="px-4 py-3 text-text-primary font-semibold">
-                        {hasMedal ? (
-                          <span role="img" aria-label={`${row.place} место`}>
-                            {MEDAL_EMOJI[medalIdx]}
-                          </span>
-                        ) : (
-                          row.place
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <Avatar photoUrl={row.playerPhotoUrl} name={row.playerName} size={28} />
-                          <span className="text-text-primary">{row.playerName}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-center text-text-primary/80">{row.wins}</td>
-                      <td className="px-4 py-3 text-center text-text-primary/80">{row.diff}</td>
-                      <td className="px-4 py-3 text-center text-text-primary/80">{row.balls}</td>
-                      <td className="px-4 py-3 text-right text-brand font-semibold">{row.ratingPts}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+              <div className="border-t border-white/10 px-4 py-4 md:px-5">
+                <div className="mb-4 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-brand/90">1. За что очки</div>
+                    <p className="mt-2 text-sm font-body text-text-primary/90">
+                      Рейтинг здесь начисляется за итоговое место игрока в своей группе, а не за промежуточные победы,
+                      diff или мячи.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-brand/90">2. Почему два золота</div>
+                    <p className="mt-2 text-sm font-body text-text-primary/90">
+                      В этом Double Trouble было две параллельные сетки: «Монстры» и «Лютые». Поэтому у каждого уровня
+                      есть свой победитель и призёры в обеих группах.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-brand/90">3. Почему нули в статах</div>
+                    <p className="mt-2 text-sm font-body text-text-primary/90">
+                      Колонки «Победы / Diff / Мячи» в этой архивной выгрузке не определяют итоговый рейтинг. Ключевые
+                      поля здесь: место и начисленные очки.
+                    </p>
+                  </div>
+                </div>
+                <ResultsTable results={results} />
+              </div>
+            </details>
+          ) : (
+            <>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="font-heading text-3xl md:text-4xl tracking-wide text-text-primary">
+                  {resultsSectionTitle}
+                </h2>
+                <span className="text-xs font-body text-text-secondary border border-white/10 rounded-full px-3 py-1">
+                  {results.length} игроков
+                </span>
+              </div>
+              <ResultsTable results={results} />
+            </>
+          )}
         </div>
       ) : null}
 
@@ -674,6 +694,67 @@ function StatCard({ icon, label, value }: { icon: string; label: string; value: 
         {icon} {label}
       </div>
       <div className="text-xl font-heading text-text-primary mt-1">{value}</div>
+    </div>
+  );
+}
+
+function ResultsTable({ results }: { results: TournamentResultRow[] }) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/20">
+      <table role="table" className="min-w-full text-sm font-body">
+        <thead>
+          <tr className="sticky top-0 bg-surface/95 border-b border-white/10 text-text-secondary text-xs">
+            <th className="px-4 py-3 text-left font-medium w-12">Место</th>
+            <th className="px-4 py-3 text-left font-medium">Игрок</th>
+            <th className="px-4 py-3 text-center font-medium">Победы</th>
+            <th className="px-4 py-3 text-center font-medium">Diff</th>
+            <th className="px-4 py-3 text-center font-medium">Мячи</th>
+            <th className="px-4 py-3 text-right font-medium" title="Очки в рейтинг">
+              В рейтинг
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {results.map((row) => {
+            const medalIdx = row.place - 1;
+            const hasMedal = medalIdx >= 0 && medalIdx <= 2;
+            const borderClass = hasMedal
+              ? [
+                  'border-l-4 border-[#FFD700]/70',
+                  'border-l-4 border-[#C0C0C0]/60',
+                  'border-l-4 border-[#CD7F32]/60',
+                ][medalIdx]
+              : 'border-l-4 border-transparent';
+
+            return (
+              <tr
+                key={`${row.playerId}-${row.place}`}
+                className={`border-b border-white/5 ${borderClass} ${hasMedal ? 'bg-white/[0.02]' : ''}`}
+              >
+                <td className="px-4 py-3 text-text-primary font-semibold">
+                  {hasMedal ? (
+                    <span role="img" aria-label={`${row.place} место`}>
+                      {MEDAL_EMOJI[medalIdx]}
+                    </span>
+                  ) : (
+                    row.place
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Avatar photoUrl={row.playerPhotoUrl} name={row.playerName} size={28} />
+                    <span className="text-text-primary">{row.playerName}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-center text-text-primary/80">{row.wins}</td>
+                <td className="px-4 py-3 text-center text-text-primary/80">{row.diff}</td>
+                <td className="px-4 py-3 text-center text-text-primary/80">{row.balls}</td>
+                <td className="px-4 py-3 text-right text-brand font-semibold">{row.ratingPts}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
