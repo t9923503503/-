@@ -28,7 +28,7 @@ const nextConfig: NextConfig = {
           "script-src 'self' 'unsafe-inline'",
           "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
           "font-src 'self' https://fonts.gstatic.com",
-          "img-src 'self' data: https: http:",
+          "img-src 'self' data: blob: https: http:",
           "connect-src 'self'",
           "worker-src 'self' blob:",
           "base-uri 'self'",
