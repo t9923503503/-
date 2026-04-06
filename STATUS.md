@@ -14,6 +14,7 @@
 Вход в проект: [`README.md`](README.md), для агентов — [`docs/AGENTS.md`](docs/AGENTS.md), деплой — [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ### Новые задачи
+- [x] Finished tournament gallery: добавлены автопрокрутка, подписи к кадрам и полноэкранный lightbox для блока «Атмосфера площадки» ✅ (2026-04-06, `web/components/calendar/FinishedTournamentGallery.tsx`, `web/components/calendar/FinishedTournamentPage.tsx`, `STATUS.md`)
 - [x] Finished tournament photos: блок «Атмосфера площадки» переведён на перелистываемую галерею кадров + добавлено общее фото первым слайдом, hero-кнопка Thai board убрана ✅ (2026-04-06, `web/components/calendar/FinishedTournamentPage.tsx`, `web/components/calendar/FinishedTournamentGallery.tsx`, `web/public/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/*`, `STATUS.md`)
 - [x] Finished tournament UX: editorial summary оставлен сверху, фото вынесено отдельно, а полная таблица свёрнута в блок «Таблица начисления рейтинга» с пояснениями по очкам и дублю призёров ✅ (2026-04-06, `web/components/calendar/FinishedTournamentPage.tsx`, `STATUS.md`)
 - [x] Calendar finished Thai: hero-фото турнира сверху + блок статистики из Thai-табло на странице завершённого турнира ✅ (2026-04-06, `web/app/calendar/[id]/page.tsx`, `web/components/calendar/FinishedTournamentPage.tsx`, `web/public/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/hero.jpg`, `STATUS.md`)

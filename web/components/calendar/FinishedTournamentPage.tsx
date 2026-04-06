@@ -35,6 +35,11 @@ interface FinishedTournamentEditorial {
   factLines: string[];
 }
 
+interface FinishedTournamentGalleryEntry {
+  src: string;
+  caption: string;
+}
+
 const FINISHED_EDITORIALS: Record<string, FinishedTournamentEditorial> = {
   'a19522bb-864e-4520-8182-61e035c27894': {
     eyebrow: '🔥 РЕЗУЛЬТАТЫ ТУРНИРА 04.04.2026',
@@ -95,21 +100,60 @@ const FINISHED_EDITORIALS: Record<string, FinishedTournamentEditorial> = {
   },
 };
 
-const FINISHED_TOURNAMENT_GALLERIES: Record<string, string[]> = {
+const FINISHED_TOURNAMENT_GALLERIES: Record<string, FinishedTournamentGalleryEntry[]> = {
   'a19522bb-864e-4520-8182-61e035c27894': [
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-00.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-01.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-02.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-03.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-04.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-05.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-06.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-07.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-08.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-09.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-10.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-11.jpg',
-    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-12.jpg',
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-00.jpg',
+      caption: 'Общее фото турнира после финала',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-01.jpg',
+      caption: 'Аплодисменты и награждение после решающих матчей',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-02.jpg',
+      caption: 'Финалисты и участники после окончания игр',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-03.jpg',
+      caption: 'Атака у сетки в одном из самых жёстких розыгрышей вечера',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-04.jpg',
+      caption: 'Дуэль у сетки и борьба за каждый мяч',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-05.jpg',
+      caption: 'Эмоции, улыбки и лёгкий хаос Double Trouble',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-06.jpg',
+      caption: 'Приём на песке и игра до последнего касания',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-07.jpg',
+      caption: 'Высокий мяч у сетки и полное внимание трибун',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-08.jpg',
+      caption: 'Атака с хода и фирменная динамика Thai формата',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-09.jpg',
+      caption: 'Спасение мяча в песке, когда розыгрыш уже почти потерян',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-10.jpg',
+      caption: 'Розыгрыш под флагами и шум трибун на заднем плане',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-11.jpg',
+      caption: 'Сэйв в защите и погоня за каждым очком',
+    },
+    {
+      src: '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/gallery/gallery-12.jpg',
+      caption: 'Момент удара в прыжке под светом площадки',
+    },
   ],
 };
 
@@ -486,9 +530,10 @@ export default function FinishedTournamentPage({
 
           {galleryImages.length > 0 ? (
             <FinishedTournamentGallery
-              images={galleryImages.map((src, index) => ({
-                src,
+              images={galleryImages.map((image, index) => ({
+                src: image.src,
                 alt: `Атмосфера площадки ${index + 1} · ${name}`,
+                caption: image.caption,
               }))}
             />
           ) : previewPhotoUrl ? (
