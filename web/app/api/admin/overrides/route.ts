@@ -41,6 +41,10 @@ export async function POST(req: NextRequest) {
         beforeState: before,
         afterState: updated,
       });
+      if (status === 'finished') {
+        const { persistThaiSpectatorBoardSnapshot } = await import('@/lib/thai-spectator');
+        void persistThaiSpectatorBoardSnapshot(tournamentId).catch(() => {});
+      }
       return NextResponse.json(updated);
     }
 

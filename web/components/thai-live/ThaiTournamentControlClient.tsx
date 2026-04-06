@@ -27,6 +27,10 @@ export function ThaiTournamentControlClient({ tournamentId }: { tournamentId: st
   const [thaiDrawPreviewLoading, setThaiDrawPreviewLoading] = useState(false);
   const [thaiR2SeedDraft, setThaiR2SeedDraft] = useState<ThaiR2SeedDraft | null>(null);
   const [thaiR2SeedLoading, setThaiR2SeedLoading] = useState(false);
+  const [syncRatingLoading, setSyncRatingLoading] = useState(false);
+  const [syncRatingMessage, setSyncRatingMessage] = useState<string | null>(null);
+  const [finishCalendarLoading, setFinishCalendarLoading] = useState(false);
+  const [finishCalendarMessage, setFinishCalendarMessage] = useState<string | null>(null);
 
   const resetThaiLiveState = useCallback(() => {
     setThaiLivePayload(null);
@@ -145,6 +149,81 @@ export function ThaiTournamentControlClient({ tournamentId }: { tournamentId: st
       ? 'manual'
       : 'random';
 
+  const opState = thaiLivePayload?.thaiOperatorState;
+  const hasFinishedRound = Boolean(
+    opState?.rounds?.some((r) => r.roundStatus === 'finished'),
+  );
+  const canSyncToRating =
+    Boolean(opState) &&
+    (hasFinishedRound ||
+      ['r1_finished', 'r2_finished'].includes(String(opState?.stage ?? '')));
+
+  const tournamentRecordStatus = String(
+    thaiLivePayload?.bootstrapState?.tournament?.status ?? '',
+  ).toLowerCase();
+  const hasR2InModel = Boolean(opState?.rounds?.some((r) => r.roundType === 'r2'));
+  const playDoneForCalendar =
+    Boolean(opState) &&
+    (opState!.stage === 'r2_finished' ||
+      (opState!.stage === 'r1_finished' && !hasR2InModel));
+  const canMarkCalendarFinished =
+    tournamentRecordStatus !== 'finished' && playDoneForCalendar;
+
+  async function markTournamentFinishedInCalendar() {
+    if (!id) return;
+    setFinishCalendarLoading(true);
+    setFinishCalendarMessage(null);
+    try {
+      const response = await fetch('/api/admin/overrides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'tournament_status',
+          tournamentId: id,
+          status: 'finished',
+          reason: 'Thai: раунды завершены, оператор закрыл турнир в календаре',
+        }),
+      });
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || 'Не удалось обновить статус');
+      }
+      setFinishCalendarMessage('Турнир отмечен как завершённый в календаре.');
+      await loadThaiLive();
+    } catch (error) {
+      setFinishCalendarMessage(getErrorText(error, 'Ошибка'));
+    } finally {
+      setFinishCalendarLoading(false);
+    }
+  }
+
+  async function syncThaiResultsToRating() {
+    if (!id) return;
+    setSyncRatingLoading(true);
+    setSyncRatingMessage(null);
+    try {
+      const response = await fetch(`/api/admin/tournaments/${encodeURIComponent(id)}/sync-thai-results`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        inserted?: number;
+        roundUsed?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || 'Не удалось записать итоги');
+      }
+      setSyncRatingMessage(
+        `Записано строк: ${data.inserted ?? 0} (раунд ${data.roundUsed ?? '—'}). Рейтинг и архив обновятся после обновления страницы.`,
+      );
+    } catch (error) {
+      setSyncRatingMessage(getErrorText(error, 'Ошибка синхронизации'));
+    } finally {
+      setSyncRatingLoading(false);
+    }
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -176,6 +255,15 @@ export function ThaiTournamentControlClient({ tournamentId }: { tournamentId: st
             Распечатать расписание R1/R2
             <span className="text-[10px] font-normal uppercase tracking-wide text-emerald-200/70">постер · П+Н</span>
           </Link>
+          <p className="mt-3 max-w-xl text-xs text-text-secondary">
+            Кнопки «Завершить R1» / «Завершить R2» закрывают раунд в судейской системе. Чтобы турнир стал «завершённым» в
+            календаре и на карточке события, отдельно нажмите «Завершить турнир в календаре» ниже или выставьте статус
+            «Завершён» в{' '}
+            <Link href="/admin/tournaments" className="text-brand hover:underline">
+              списке турниров
+            </Link>
+            .
+          </p>
         </div>
       </div>
 
@@ -214,7 +302,61 @@ export function ThaiTournamentControlClient({ tournamentId }: { tournamentId: st
             onConfirmR2Seed: (zones) => void runThaiAdminAction('confirm_r2_seed', { zones }),
           }}
         />
-      ) : !thaiLiveLoading && thaiLiveMessage ? (
+      ) : null}
+
+      {thaiLivePayload && canMarkCalendarFinished ? (
+        <div className="rounded-xl border border-sky-500/35 bg-sky-500/10 p-4">
+          <h2 className="text-sm font-semibold text-sky-100">Календарь и карточка турнира</h2>
+          <p className="mt-1 text-xs text-text-secondary">
+            Игровая часть Thai уже завершена (R2 или только R1 без второго раунда). Нажмите, чтобы в базе у турнира
+            статус стал «завершён» — так это увидят участники на сайте.
+          </p>
+          <button
+            type="button"
+            disabled={finishCalendarLoading}
+            onClick={() => void markTournamentFinishedInCalendar()}
+            className="mt-3 rounded-lg border border-sky-400/45 bg-sky-500/20 px-4 py-2 text-sm font-medium text-sky-50 hover:bg-sky-500/30 disabled:opacity-50"
+          >
+            {finishCalendarLoading ? 'Сохраняем…' : 'Завершить турнир в календаре'}
+          </button>
+          {finishCalendarMessage ? (
+            <p
+              className={`mt-2 text-xs ${
+                finishCalendarMessage.includes('завершён') ? 'text-emerald-200' : 'text-red-200'
+              }`}
+            >
+              {finishCalendarMessage}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {thaiLivePayload && canSyncToRating ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <h2 className="text-sm font-semibold text-amber-100">Рейтинг и архив</h2>
+          <p className="mt-1 text-xs text-text-secondary">
+            Итоги Thai не попадают в общий рейтинг сами. После завершения раунда нажмите, чтобы записать места и игровые
+            очки из последнего завершённого раунда (R2, если он завершён, иначе R1) в таблицу результатов.
+          </p>
+          <button
+            type="button"
+            disabled={syncRatingLoading}
+            onClick={() => void syncThaiResultsToRating()}
+            className="mt-3 rounded-lg border border-amber-400/40 bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-50 hover:bg-amber-500/25 disabled:opacity-50"
+          >
+            {syncRatingLoading ? 'Запись…' : 'Записать итоги в рейтинг / архив'}
+          </button>
+          {syncRatingMessage ? (
+            <p
+              className={`mt-2 text-xs ${syncRatingMessage.includes('Записано') ? 'text-emerald-200' : 'text-red-200'}`}
+            >
+              {syncRatingMessage}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {thaiLivePayload ? null : !thaiLiveLoading && thaiLiveMessage ? (
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{thaiLiveMessage}</div>
       ) : null}
     </div>

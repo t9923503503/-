@@ -78,6 +78,15 @@ export async function applyTournamentStatusOverride(
     : pgQueries.applyTournamentStatusOverride(input);
 }
 
+export async function mergeTournamentSettingsKeys(
+  id: string,
+  patch: Parameters<typeof pgQueries.mergeTournamentSettingsKeys>[1]
+) {
+  return useRemote()
+    ? remoteQueries.mergeTournamentSettingsKeys(id, patch)
+    : pgQueries.mergeTournamentSettingsKeys(id, patch);
+}
+
 export async function applyPlayerRecalcOverride(
   input: Parameters<typeof pgQueries.applyPlayerRecalcOverride>[0]
 ) {

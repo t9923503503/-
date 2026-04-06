@@ -336,6 +336,21 @@ export function ThaiOperatorPanel({
           ) : null}
         </div>
 
+        {isNextModule &&
+        operatorState &&
+        !isFinishedTournamentRecord &&
+        (operatorState.stage === 'r2_finished' ||
+          (operatorState.stage === 'r1_finished' &&
+            !operatorState.rounds.some((r) => r.roundType === 'r2'))) ? (
+          <div className="mt-3 rounded-[18px] border border-sky-400/25 bg-sky-500/10 px-4 py-3 text-sm leading-relaxed text-sky-100/95">
+            <span className="font-semibold text-sky-50">Календарь: </span>
+            «Завершить R1/R2» закрывает только раунд в судейской системе. Чтобы на сайте турнир стал «завершённым», на
+            странице{' '}
+            <span className="whitespace-nowrap font-mono text-xs text-sky-200/90">/admin/tournaments/…/thai-live</span>{' '}
+            нажмите «Завершить турнир в календаре» или в списке турниров выставьте статус «Завершён».
+          </div>
+        ) : null}
+
         {isReady && isNextModule && data.tournamentId ? (
           <div className="mt-4 rounded-[18px] border border-emerald-400/25 bg-emerald-500/10 px-4 py-3">
             <div className="text-[10px] uppercase tracking-[0.28em] text-emerald-200/90">Зрители</div>

@@ -20,6 +20,7 @@ import {
   ratingPointsForPlace,
   type RatingPool,
 } from './rating-points';
+import { augmentArchiveTournamentWithThaiBoard } from './thai-archive-meta';
 
 type JsonObject = Record<string, unknown>;
 
@@ -861,6 +862,28 @@ export async function deletePlayer(id: string): Promise<boolean> {
   return true;
 }
 
+export async function mergeTournamentSettingsKeys(
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<AdminTournament | null> {
+  const current = await getTournamentById(id);
+  if (!current) return null;
+  const settings = { ...current.settings, ...patch };
+  return updateTournament(id, {
+    name: current.name,
+    date: current.date,
+    time: current.time,
+    location: current.location,
+    format: current.format,
+    division: current.division,
+    level: current.level,
+    capacity: current.capacity,
+    status: current.status,
+    photoUrl: current.photoUrl,
+    settings,
+  });
+}
+
 export async function applyTournamentStatusOverride(input: {
   tournamentId: string;
   status: string;
@@ -1193,10 +1216,12 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
     byTournament.set(tournamentId, current);
   }
 
-  return visible.map((row) => ({
-    ...mapTournament(row, Number(counts.get(String(row.id ?? '')) ?? 0)),
-    results: byTournament.get(String(row.id ?? '')) ?? [],
-  }));
+  return visible.map((row) =>
+    augmentArchiveTournamentWithThaiBoard({
+      ...mapTournament(row, Number(counts.get(String(row.id ?? '')) ?? 0)),
+      results: byTournament.get(String(row.id ?? '')) ?? [],
+    }),
+  );
 }
 
 export async function setTournamentPhotoUrl(

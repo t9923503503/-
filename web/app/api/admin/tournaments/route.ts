@@ -217,6 +217,12 @@ export async function PUT(req: NextRequest) {
       afterState: updated,
       reason: input.reason,
     });
+    const wasFinished = String(before?.status || '').toLowerCase() === 'finished';
+    const nowFinished = String(updated.status || '').toLowerCase() === 'finished';
+    if (!wasFinished && nowFinished) {
+      const { persistThaiSpectatorBoardSnapshot } = await import('@/lib/thai-spectator');
+      void persistThaiSpectatorBoardSnapshot(id).catch(() => {});
+    }
     return NextResponse.json(updated);
   } catch (err) {
     return adminErrorResponse(err, 'tournaments.put');

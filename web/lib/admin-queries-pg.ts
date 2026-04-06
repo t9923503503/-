@@ -13,6 +13,7 @@ import {
   ratingPointsForPlace,
   type RatingPool,
 } from './rating-points';
+import { augmentArchiveTournamentWithThaiBoard } from './thai-archive-meta';
 
 export interface AdminTournament {
   id: string;
@@ -49,6 +50,10 @@ export interface ArchiveResult {
 
 export interface ArchiveTournament extends AdminTournament {
   results: ArchiveResult[];
+  /** Публичное табло Thai Next (`/live/thai/...`), иначе null. */
+  thaiSpectatorBoardUrl: string | null;
+  /** В `settings` сохранён снимок табло для истории. */
+  thaiSpectatorBoardHasSnapshot: boolean;
 }
 
 export interface AdminPlayer {
@@ -637,6 +642,29 @@ export async function deletePlayer(id: string): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
+/** Объединяет ключи в `tournaments.settings` без затрагивания состава участников. */
+export async function mergeTournamentSettingsKeys(
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<AdminTournament | null> {
+  const current = await getTournamentById(id);
+  if (!current) return null;
+  const settings = { ...current.settings, ...patch };
+  return updateTournament(id, {
+    name: current.name,
+    date: current.date,
+    time: current.time,
+    location: current.location,
+    format: current.format,
+    division: current.division,
+    level: current.level,
+    capacity: current.capacity,
+    status: current.status,
+    photoUrl: current.photoUrl,
+    settings,
+  });
+}
+
 export async function applyTournamentStatusOverride(input: {
   tournamentId: string;
   status: string;
@@ -1054,7 +1082,7 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
   const pool = getPool();
   const { rows } = await pool.query(`
     SELECT t.id, t.name, t.date, t.time, t.location, t.format, t.division,
-           t.level, t.capacity, t.status, t.photo_url,
+           t.level, t.capacity, t.status, t.photo_url, t.settings,
            0 AS participant_count,
            COALESCE(
              json_agg(
@@ -1073,7 +1101,8 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
     LEFT JOIN tournament_results tr ON tr.tournament_id = t.id
     LEFT JOIN players p ON p.id = tr.player_id
     WHERE t.status = 'finished' AND t.name != '__playerdb__'
-    GROUP BY t.id
+    GROUP BY t.id, t.name, t.date, t.time, t.location, t.format, t.division,
+             t.level, t.capacity, t.status, t.photo_url, t.settings
     ORDER BY t.date DESC
   `);
   return rows.map((row) => {
@@ -1084,7 +1113,8 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
       const ratingPts = effectiveRatingPtsFromStored(placement, pool, r.ratingPts);
       return { ...r, ratingPts, ratingPool: pool };
     });
-    return { ...mapTournament(row), results };
+    const base = { ...mapTournament(row), results };
+    return augmentArchiveTournamentWithThaiBoard(base);
   });
 }
 

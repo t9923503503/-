@@ -2487,7 +2487,7 @@ export async function runThaiOperatorAction(
     throw new ThaiJudgeError(400, 'tournamentId is required');
   }
 
-  return withTransaction(async (client) => {
+  const result = await withTransaction(async (client) => {
     if (action === 'preview_draw') {
       const state = await loadThaiOperatorStateSummaryTx(client, normalizedId);
       if (!state) {
@@ -2540,6 +2540,13 @@ export async function runThaiOperatorAction(
       judgeState: await loadJudgeSummaryIfExistsTx(client, normalizedId),
     };
   });
+
+  if ((action === 'finish_r1' || action === 'finish_r2') && result.success) {
+    const { persistThaiSpectatorBoardSnapshot } = await import('@/lib/thai-spectator');
+    void persistThaiSpectatorBoardSnapshot(normalizedId).catch(() => {});
+  }
+
+  return result as ThaiOperatorActionResult;
 }
 
 export interface ThaiAdminTourCorrectionAudit {

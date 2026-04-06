@@ -4,6 +4,16 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   output: 'standalone',
   outputFileTracingRoot: path.join(__dirname, '..'),
+  /** До резолва страницы: убирает 404 на «судейском» URL, который путают с операторским Thai live. */
+  async redirects() {
+    return [
+      {
+        source: '/court/tournament/:tournamentId/thai-live',
+        destination: '/admin/tournaments/:tournamentId/thai-live',
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     const securityHeaders = [
       { key: 'X-Content-Type-Options', value: 'nosniff' },

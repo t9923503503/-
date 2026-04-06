@@ -53,8 +53,21 @@ export function ThaiSpectatorBoard({ data }: { data: ThaiSpectatorBoardPayload }
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-[#aeb6c8]">
               {formatThaiStage(data.stage)}
             </span>
+            {data.viewSource === 'snapshot' ? (
+              <span className="rounded-full border border-sky-400/35 bg-sky-500/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-100">
+                Архив
+              </span>
+            ) : null}
           </div>
         </div>
+
+        {data.viewSource === 'snapshot' ? (
+          <p className="mt-3 rounded-2xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm leading-relaxed text-sky-100/95">
+            Показан сохранённый снимок табло
+            {data.snapshotCapturedAt ? ` (${data.snapshotCapturedAt.slice(0, 10)})` : ''}. Так зрительская страница не
+            теряется после завершения турнира или сброса Thai.
+          </p>
+        ) : null}
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-[18px] border border-white/8 bg-[#11111d] px-4 py-3">
