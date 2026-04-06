@@ -2,7 +2,6 @@ import Link from 'next/link';
 import type { Tournament } from '@/lib/types';
 import type { TournamentResultRow } from '@/lib/queries';
 import { isThaiAdminFormat } from '@/lib/admin-legacy-sync';
-import { ThaiSpectatorFunStats } from '@/components/thai-live/ThaiSpectatorFunStats';
 import type { ThaiSpectatorBoardPayload } from '@/lib/thai-spectator';
 import { buildThaiSpectatorBoardUrl } from '@/lib/tournament-links';
 
@@ -14,23 +13,114 @@ interface Props {
   heroPhotoUrl?: string | null;
 }
 
-// ── Fire keywords: heading gets neon-fire glow if matched ──────────────────
-const FIRE_KEYWORDS = ['МОНСТР', 'ЛЮТ', 'HARD', 'MONSTER', 'BEAST', 'FIRE', 'FIERCE'];
-function isFieryCup(name: string): boolean {
-  const up = name.toUpperCase();
-  return FIRE_KEYWORDS.some((k) => up.includes(k)) || up.includes('!');
+interface FinishedPoolRow {
+  place: string;
+  left: string;
+  right: string;
 }
 
-// ── Emotional stats caption ────────────────────────────────────────────────
-function statsCaption(t: Pick<Tournament, 'level' | 'format'>): string {
-  const lvl = (t.level || '').toLowerCase();
-  const fmt = (t.format || '').toLowerCase();
-  if (lvl.includes('hard')) return 'Один из самых жарких турниров сезона 🔥';
-  if (fmt.includes('thai')) return 'Thai формат — настоящий экзамен для игроков ⚡';
+interface FinishedPoolSummary {
+  title: string;
+  note: string;
+  rows: FinishedPoolRow[];
+}
+
+interface FinishedTournamentEditorial {
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  pools: FinishedPoolSummary[];
+  footer: string[];
+  factTitle: string;
+  factLines: string[];
+}
+
+const FINISHED_EDITORIALS: Record<string, FinishedTournamentEditorial> = {
+  'a19522bb-864e-4520-8182-61e035c27894': {
+    eyebrow: '🔥 РЕЗУЛЬТАТЫ ТУРНИРА 04.04.2026',
+    title: 'ЛЮТЫЕ ПЛЯЖНИКИ × DOUBLE TROUBLE',
+    subtitle: '8 туров • разные напарники • каждый сам за себя',
+    pools: [
+      {
+        title: '🏆 HARD',
+        note: '👉 Тут не играют. Тут выживают.',
+        rows: [
+          { place: '🥇', left: 'Рогожкин А (МОНСТРЫ)', right: 'Никифоров (ЛЮТЫЕ)' },
+          { place: '🥈', left: 'Соболев (МОНСТРЫ)', right: 'Килатов (ЛЮТЫЕ)' },
+          { place: '🥉', left: 'Рукавишников (МОНСТРЫ)', right: 'Шперлинг (ЛЮТЫЕ)' },
+          { place: '4️⃣', left: 'Жидков (МОНСТРЫ)', right: 'Терехов (ЛЮТЫЕ)' },
+        ],
+      },
+      {
+        title: '🏆 ADVANCE',
+        note: '👉 Ошибка = минус 1 место. Всё честно.',
+        rows: [
+          { place: '🥇', left: 'Лебедев (МОНСТРЫ)', right: 'Пивин (ЛЮТЫЕ)' },
+          { place: '🥈', left: 'Салим (МОНСТРЫ)', right: 'Камалов (ЛЮТЫЕ)' },
+          { place: '🥉', left: 'Паничкин (МОНСТРЫ)', right: 'Александр (ЛЮТЫЕ)' },
+          { place: '4️⃣', left: 'Фатин (МОНСТРЫ)', right: 'Грузин (ЛЮТЫЕ)' },
+        ],
+      },
+      {
+        title: '🏆 MEDIUM',
+        note: '👉 Тут ломались те, кто думал что готов.',
+        rows: [
+          { place: '🥇', left: 'Шелгачев А (МОНСТРЫ)', right: 'Привет (ЛЮТЫЕ)' },
+          { place: '🥈', left: 'Салмин М (МОНСТРЫ)', right: 'Микуляк (ЛЮТЫЕ)' },
+          { place: '🥉', left: 'Яковлев (МОНСТРЫ)', right: 'Обухов (ЛЮТЫЕ)' },
+          { place: '4️⃣', left: 'Гадаборшев (МОНСТРЫ)', right: 'Шерметов (ЛЮТЫЕ)' },
+        ],
+      },
+      {
+        title: '🏆 LITE',
+        note: '👉 Лёгкий? Только на бумаге.',
+        rows: [
+          { place: '🥇', left: 'Пекшев (МОНСТРЫ)', right: 'Андрей (ЛЮТЫЕ)' },
+          { place: '🥈', left: 'Надымов Н (МОНСТРЫ)', right: 'Степанян (ЛЮТЫЕ)' },
+          { place: '🥉', left: 'Артиков (МОНСТРЫ)', right: 'Мамедов (ЛЮТЫЕ)' },
+          { place: '4️⃣', left: 'Смирнов (МОНСТРЫ)', right: 'Володя (ЛЮТЫЕ)' },
+        ],
+      },
+    ],
+    footer: ['⚡️ Стабильность > случайность', 'Спасибо всем за игру 🤝'],
+    factTitle: '💣 ФАКТ ДНЯ',
+    factLines: [
+      'Каждый играл с разными напарниками.',
+      'Но в итоге всё равно всплыли сильнейшие.',
+      'Не спрятался.',
+      'Не отсиделся.',
+      'Не повезло.',
+      '⚡️ СЛАБЫХ НЕТ. ЕСТЬ ТЕ, КТО ЛОМАЕТСЯ.',
+    ],
+  },
+};
+
+const FIRE_KEYWORDS = ['МОНСТР', 'ЛЮТ', 'HARD', 'MONSTER', 'BEAST', 'FIRE', 'FIERCE'];
+const MEDAL_EMOJI = ['🥇', '🥈', '🥉'];
+const MEDAL_BORDER = [
+  'border-[#FFD700]/55',
+  'border-[#C0C0C0]/45',
+  'border-[#CD7F32]/45',
+];
+const MEDAL_GLOW = [
+  'shadow-[0_0_18px_rgba(255,215,0,0.25)]',
+  'shadow-[0_0_12px_rgba(192,192,192,0.18)]',
+  'shadow-[0_0_10px_rgba(205,127,50,0.18)]',
+];
+
+function isFieryCup(name: string): boolean {
+  const upper = name.toUpperCase();
+  return FIRE_KEYWORDS.some((keyword) => upper.includes(keyword)) || upper.includes('!');
+}
+
+function statsCaption(tournament: Pick<Tournament, 'level' | 'format'>): string {
+  const level = (tournament.level || '').toLowerCase();
+  const format = (tournament.format || '').toLowerCase();
+  if (level.includes('hard')) return 'Один из самых жарких турниров сезона 🔥';
+  if (format.includes('thai')) return 'Thai формат — настоящий экзамен для игроков ⚡';
   return 'Спасибо всем участникам за огонь и драйв!';
 }
 
-// ── Date formatter ─────────────────────────────────────────────────────────
 function formatDate(date: string, time: string): string {
   if (!date) return 'Дата уточняется';
   try {
@@ -45,29 +135,18 @@ function formatDate(date: string, time: string): string {
   }
 }
 
-// ── Initials from name ─────────────────────────────────────────────────────
 function initials(name: string): string {
   return name
     .split(/\s+/)
     .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
+    .map((part) => part[0]?.toUpperCase() ?? '')
     .join('');
 }
 
-// ── Podium medal colours ───────────────────────────────────────────────────
-const MEDAL_EMOJI = ['🥇', '🥈', '🥉'];
-const MEDAL_BORDER = [
-  'border-[#FFD700]/55',
-  'border-[#C0C0C0]/45',
-  'border-[#CD7F32]/45',
-];
-const MEDAL_GLOW = [
-  'shadow-[0_0_18px_rgba(255,215,0,0.25)]',
-  'shadow-[0_0_12px_rgba(192,192,192,0.18)]',
-  'shadow-[0_0_10px_rgba(205,127,50,0.18)]',
-];
+function getFinishedTournamentEditorial(tournamentId: string): FinishedTournamentEditorial | null {
+  return FINISHED_EDITORIALS[tournamentId] ?? null;
+}
 
-// ── Inline SVG icons ───────────────────────────────────────────────────────
 function VkIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -84,9 +163,8 @@ function TelegramIcon() {
   );
 }
 
-// ── Avatar component ───────────────────────────────────────────────────────
 function Avatar({ photoUrl, name, size }: { photoUrl: string; name: string; size: number }) {
-  const cls = `rounded-full object-cover flex-shrink-0`;
+  const sharedClassName = 'rounded-full object-cover flex-shrink-0';
   if (photoUrl) {
     return (
       <img
@@ -94,7 +172,7 @@ function Avatar({ photoUrl, name, size }: { photoUrl: string; name: string; size
         alt={name}
         width={size}
         height={size}
-        className={cls}
+        className={sharedClassName}
         style={{ width: size, height: size }}
         loading="lazy"
       />
@@ -102,7 +180,7 @@ function Avatar({ photoUrl, name, size }: { photoUrl: string; name: string; size
   }
   return (
     <div
-      className={`${cls} bg-white/10 flex items-center justify-center font-heading text-text-primary/80`}
+      className={`${sharedClassName} bg-white/10 flex items-center justify-center font-heading text-text-primary/80`}
       style={{ width: size, height: size, fontSize: size * 0.35 }}
       aria-hidden="true"
     >
@@ -111,16 +189,19 @@ function Avatar({ photoUrl, name, size }: { photoUrl: string; name: string; size
   );
 }
 
-// ── Main component ─────────────────────────────────────────────────────────
 export default function FinishedTournamentPage({
   tournament,
   results,
   related,
-  thaiBoard = null,
   heroPhotoUrl = null,
 }: Props) {
   const { id, name, date, time, location, format, division, level, participantCount, photoUrl } =
     tournament;
+  const editorial = getFinishedTournamentEditorial(id);
+  const previewPhotoUrl = heroPhotoUrl || photoUrl || null;
+  const photoLinkUrl = photoUrl || heroPhotoUrl || null;
+  const photoActionLabel =
+    photoUrl && heroPhotoUrl && photoUrl !== heroPhotoUrl ? 'Открыть фотоотчёт' : 'Открыть фото';
 
   const isThai = isThaiAdminFormat(format);
   const thaiUrl = isThai ? buildThaiSpectatorBoardUrl(id) : null;
@@ -131,39 +212,38 @@ export default function FinishedTournamentPage({
   const fiery = isFieryCup(name);
   const isHardLevel = (level || '').toLowerCase().includes('hard');
 
-  // Podium: top 3 sorted by place
-  const podium = results
-    .filter((r) => r.place >= 1 && r.place <= 3)
-    .sort((a, b) => a.place - b.place);
+  const podiumMap = new Map<number, TournamentResultRow>();
+  for (const row of results) {
+    if (row.place >= 1 && row.place <= 3) {
+      const previous = podiumMap.get(row.place);
+      if (!previous || row.ratingPts > previous.ratingPts) {
+        podiumMap.set(row.place, row);
+      }
+    }
+  }
+  const podium = ([1, 2, 3] as const)
+    .map((place) => podiumMap.get(place))
+    .filter(Boolean) as TournamentResultRow[];
 
-  // Stats
-  const totalWins = results.reduce((s, r) => s + (r.wins ?? 0), 0);
-  const totalBalls = results.reduce((s, r) => s + (r.balls ?? 0), 0);
-  const topRating = results.length > 0 ? Math.max(...results.map((r) => r.ratingPts)) : 0;
-  const thaiStatsSourceText =
-    thaiBoard?.viewSource === 'snapshot'
-      ? 'Номинации и финальные показатели из архивного снимка Thai-табло.'
-      : 'Номинации и финальные показатели из финального Thai-табло.';
+  const totalWins = results.reduce((sum, row) => sum + (row.wins ?? 0), 0);
+  const totalBalls = results.reduce((sum, row) => sum + (row.balls ?? 0), 0);
+  const topRating = results.length > 0 ? Math.max(...results.map((row) => row.ratingPts)) : 0;
 
-  // Next upcoming tournament
-  const nextTournament = related.find((t) => t.status === 'open' || t.status === 'full') ?? null;
+  const nextTournament = related.find((item) => item.status === 'open' || item.status === 'full') ?? null;
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      {/* Breadcrumb */}
-      <nav aria-label="\u041d\u0430\u0432\u0438\u0433\u0430\u0446\u0438\u044f" className="anim-fade-up mb-5">
+      <nav aria-label="Навигация" className="anim-fade-up mb-5">
         <Link
           href="/calendar"
-          className="inline-flex items-center gap-1 text-sm font-body text-text-secondary hover:text-brand transition-colors"
+          className="inline-flex items-center gap-1 text-sm font-body text-text-secondary transition-colors hover:text-brand"
         >
           <span className="text-base leading-none">&lsaquo;</span> Календарь
         </Link>
       </nav>
 
-      {/* ── Hero ─────────────────────────────────────────────────────── */}
       <div className="hero-poster relative overflow-hidden rounded-2xl px-6 py-14 md:py-20 min-h-[420px] flex flex-col justify-end anim-fade-up anim-delay-1">
-        {/* Background photo */}
-        {heroPhotoUrl ? (
+        {!editorial && heroPhotoUrl ? (
           <img
             src={heroPhotoUrl}
             alt=""
@@ -173,13 +253,9 @@ export default function FinishedTournamentPage({
             loading="lazy"
           />
         ) : null}
-
-        {/* Sunset overlay */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/35 to-[#FF5A00]/20 pointer-events-none" />
 
-        {/* Content */}
         <div className="relative z-10 flex flex-col gap-4">
-          {/* Name */}
           <h1
             className={[
               'font-heading uppercase tracking-tight leading-none text-5xl md:text-7xl text-text-primary',
@@ -192,7 +268,6 @@ export default function FinishedTournamentPage({
             {name}
           </h1>
 
-          {/* Pills */}
           <div className="flex flex-wrap gap-2">
             {format ? (
               <span
@@ -230,7 +305,6 @@ export default function FinishedTournamentPage({
             ) : null}
           </div>
 
-          {/* Date + location */}
           <p className="text-base md:text-lg font-body text-text-primary/90">
             {formatDate(date, time)}
             {location ? (
@@ -242,35 +316,33 @@ export default function FinishedTournamentPage({
             ) : null}
           </p>
 
-          {/* Status badge */}
           <div>
             <span className="inline-flex items-center bg-brand text-white font-heading tracking-widest px-5 py-2 rounded-full text-sm neon-fire">
               ТУРНИР ЗАВЕРШЁН
             </span>
           </div>
 
-          {/* Action buttons */}
           <div className="flex flex-col sm:flex-row flex-wrap gap-3 mt-2">
-            <a href="#results" className="btn-action flex items-center gap-2 justify-center">
+            <a href="#results" className="btn-action flex items-center justify-center gap-2">
               🏆 Результаты турнира
             </a>
 
-            {photoUrl ? (
+            {photoLinkUrl ? (
               <a
-                href={photoUrl}
+                href={photoLinkUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn-action-outline flex items-center gap-2 justify-center"
+                className="btn-action-outline flex items-center justify-center gap-2"
                 aria-label="Открыть фото турнира"
               >
-                📸 Фото с турнира
+                📸 {photoActionLabel}
               </a>
             ) : null}
 
             {thaiUrl ? (
               <a
                 href={thaiUrl}
-                className="btn-action-outline flex items-center gap-2 justify-center"
+                className="btn-action-outline flex items-center justify-center gap-2"
                 aria-label="Открыть табло Thai"
               >
                 Табло Thai
@@ -281,7 +353,7 @@ export default function FinishedTournamentPage({
               href={vkUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-action-outline flex items-center gap-2 justify-center"
+              className="btn-action-outline flex items-center justify-center gap-2"
               aria-label="Поделиться во ВКонтакте"
             >
               <VkIcon /> VK
@@ -291,7 +363,7 @@ export default function FinishedTournamentPage({
               href={tgUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn-action-outline flex items-center gap-2 justify-center"
+              className="btn-action-outline flex items-center justify-center gap-2"
               aria-label="Поделиться в Telegram"
             >
               <TelegramIcon /> Telegram
@@ -300,26 +372,129 @@ export default function FinishedTournamentPage({
         </div>
       </div>
 
-      {/* ── Podium ───────────────────────────────────────────────────── */}
-      {podium.length >= 1 ? (
+      {editorial ? (
+        <section aria-label="Итоги по уровням" className="mt-8 anim-fade-up anim-delay-2">
+          <div className="rounded-[28px] border border-brand/30 bg-[linear-gradient(180deg,rgba(18,14,12,0.98),rgba(9,9,14,0.98))] px-5 py-6 shadow-[0_24px_70px_rgba(0,0,0,0.35)] md:px-7">
+            <div className="text-[11px] font-body uppercase tracking-[0.24em] text-brand/90">
+              {editorial.eyebrow}
+            </div>
+            <h2 className="mt-2 font-heading text-3xl uppercase tracking-wide text-text-primary md:text-4xl">
+              {editorial.title}
+            </h2>
+            <p className="mt-2 text-sm font-body text-text-secondary md:text-base">
+              {editorial.subtitle}
+            </p>
+
+            <div className="mt-6 grid gap-4 xl:grid-cols-2">
+              {editorial.pools.map((pool) => (
+                <section
+                  key={pool.title}
+                  className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4"
+                >
+                  <h3 className="font-heading text-2xl uppercase tracking-wide text-text-primary">
+                    {pool.title}
+                  </h3>
+                  <div className="mt-3 hidden grid-cols-[64px,1fr,1fr] gap-2 px-1 text-[11px] uppercase tracking-[0.18em] text-text-secondary sm:grid">
+                    <span>Место</span>
+                    <span>Монстры</span>
+                    <span>Лютые</span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {pool.rows.map((row) => (
+                      <div
+                        key={`${pool.title}-${row.place}-${row.left}`}
+                        className="rounded-xl border border-white/8 bg-black/20 px-3 py-3"
+                      >
+                        <div className="flex items-center gap-2 text-base font-semibold text-text-primary">
+                          <span className="text-xl leading-none">{row.place}</span>
+                          <span className="font-body sm:hidden">Место</span>
+                        </div>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          <div className="rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-body text-text-primary">
+                            {row.left}
+                          </div>
+                          <div className="rounded-lg bg-white/[0.04] px-3 py-2 text-sm font-body text-text-primary">
+                            {row.right}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-4 text-sm font-body text-brand/90">{pool.note}</p>
+                </section>
+              ))}
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-brand/20 bg-brand/10 px-4 py-4">
+              {editorial.footer.map((line) => (
+                <p key={line} className="text-base font-body font-semibold text-text-primary">
+                  {line}
+                </p>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+              <h3 className="font-heading text-2xl uppercase tracking-wide text-text-primary">
+                {editorial.factTitle}
+              </h3>
+              <div className="mt-3 space-y-1 text-sm font-body text-text-primary/90">
+                {editorial.factLines.map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {previewPhotoUrl ? (
+        <section aria-label="Фото турнира" className="mt-8 anim-fade-up anim-delay-3">
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-[11px] font-body uppercase tracking-[0.24em] text-brand/90">
+                Фото турнира
+              </div>
+              <h2 className="mt-1 font-heading text-3xl uppercase tracking-wide text-text-primary">
+                Атмосфера площадки
+              </h2>
+            </div>
+            {photoLinkUrl ? (
+              <a
+                href={photoLinkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-action-outline inline-flex items-center justify-center gap-2"
+              >
+                📸 {photoActionLabel}
+              </a>
+            ) : null}
+          </div>
+          <div className="overflow-hidden rounded-[28px] border border-white/10 bg-black/30 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+            <img
+              src={previewPhotoUrl}
+              alt={`Фото турнира ${name}`}
+              className="block h-auto w-full object-cover"
+              loading="eager"
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {!editorial && podium.length >= 1 ? (
         <section aria-label="Победители" className="mt-10 anim-fade-up anim-delay-2">
           <h2 className="font-heading text-3xl md:text-4xl tracking-wide text-text-primary mb-6">
             Победители
           </h2>
 
-          {/* Desktop podium */}
           <div className="hidden md:flex items-end justify-center gap-4">
-            {/* 2nd place — left */}
             {podium[1] ? (
               <PodiumSlot row={podium[1]} idx={1} heightClass="h-44" />
             ) : (
               <div className="flex-1 max-w-[180px] h-44" />
             )}
-            {/* 1st place — center, tallest */}
             {podium[0] ? (
               <PodiumSlot row={podium[0]} idx={0} heightClass="h-56" elevated />
             ) : null}
-            {/* 3rd place — right */}
             {podium[2] ? (
               <PodiumSlot row={podium[2]} idx={2} heightClass="h-40" />
             ) : (
@@ -327,17 +502,15 @@ export default function FinishedTournamentPage({
             )}
           </div>
 
-          {/* Mobile: vertical stack 1→2→3 */}
           <div className="flex flex-col items-center gap-4 md:hidden">
-            {podium.sort((a, b) => a.place - b.place).map((row) => (
+            {podium.map((row) => (
               <PodiumSlot key={row.playerId} row={row} idx={row.place - 1} heightClass="h-auto" mobile />
             ))}
           </div>
         </section>
       ) : null}
 
-      {/* ── Stats strip ──────────────────────────────────────────────── */}
-      {results.length > 0 ? (
+      {!editorial && results.length > 0 ? (
         <div className="mt-8 anim-fade-up anim-delay-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <StatCard icon="👥" label="Участников" value={String(results.length)} />
@@ -355,27 +528,11 @@ export default function FinishedTournamentPage({
         </div>
       ) : null}
 
-      {/* ── Results table ────────────────────────────────────────────── */}
-      {thaiBoard?.funStats ? (
-        <section className="mt-10 anim-fade-up anim-delay-4" aria-label="Статистика Thai табло">
-          <div className="mb-4 rounded-2xl border border-[#00E5FF]/20 bg-[rgba(0,229,255,0.06)] px-5 py-4">
-            <div className="text-[10px] font-body uppercase tracking-[0.24em] text-[#00E5FF]">
-              Thai табло
-            </div>
-            <h2 className="mt-1 font-heading text-3xl uppercase tracking-wide text-text-primary">
-              Статистика с табло
-            </h2>
-            <p className="mt-2 text-sm font-body text-text-secondary">{thaiStatsSourceText}</p>
-          </div>
-          <ThaiSpectatorFunStats stats={thaiBoard.funStats} />
-        </section>
-      ) : null}
-
       {results.length > 0 ? (
         <div id="results" className="mt-10 anim-fade-up anim-delay-4">
-          <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="font-heading text-3xl md:text-4xl tracking-wide text-text-primary">
-              Таблица результатов
+              {editorial ? 'Подробная таблица результатов' : 'Таблица результатов'}
             </h2>
             <span className="text-xs font-body text-text-secondary border border-white/10 rounded-full px-3 py-1">
               {results.length} игроков
@@ -400,13 +557,18 @@ export default function FinishedTournamentPage({
                 {results.map((row) => {
                   const medalIdx = row.place - 1;
                   const hasMedal = medalIdx >= 0 && medalIdx <= 2;
-                  const borderCls = hasMedal
-                    ? ['border-l-4 border-[#FFD700]/70', 'border-l-4 border-[#C0C0C0]/60', 'border-l-4 border-[#CD7F32]/60'][medalIdx]
+                  const borderClass = hasMedal
+                    ? [
+                        'border-l-4 border-[#FFD700]/70',
+                        'border-l-4 border-[#C0C0C0]/60',
+                        'border-l-4 border-[#CD7F32]/60',
+                      ][medalIdx]
                     : 'border-l-4 border-transparent';
+
                   return (
                     <tr
                       key={`${row.playerId}-${row.place}`}
-                      className={`border-b border-white/5 ${borderCls} ${hasMedal ? 'bg-white/[0.02]' : ''}`}
+                      className={`border-b border-white/5 ${borderClass} ${hasMedal ? 'bg-white/[0.02]' : ''}`}
                     >
                       <td className="px-4 py-3 text-text-primary font-semibold">
                         {hasMedal ? (
@@ -436,33 +598,6 @@ export default function FinishedTournamentPage({
         </div>
       ) : null}
 
-      {/* ── Photo block ──────────────────────────────────────────────── */}
-      {photoUrl ? (
-        <div className="mt-8 anim-fade-up anim-delay-4">
-          <a
-            href={photoUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Открыть фото турнира"
-            className="block group"
-          >
-            <div className="relative rounded-2xl overflow-hidden h-48 md:h-64 border border-white/10">
-              <img
-                src={photoUrl}
-                alt="Фото турнира"
-                className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-75 transition-opacity duration-300"
-                loading="lazy"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-              <div className="absolute bottom-4 left-5 flex items-center gap-2 font-heading text-xl tracking-wide text-text-primary">
-                📸 Открыть фото турнира →
-              </div>
-            </div>
-          </a>
-        </div>
-      ) : null}
-
-      {/* ── Next tournament ───────────────────────────────────────────── */}
       {nextTournament ? (
         <div className="mt-8 anim-fade-up anim-delay-4">
           <div className="border border-brand/40 bg-brand/5 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -489,7 +624,6 @@ export default function FinishedTournamentPage({
   );
 }
 
-// ── Podium slot sub-component ──────────────────────────────────────────────
 function PodiumSlot({
   row,
   idx,
@@ -503,7 +637,7 @@ function PodiumSlot({
   elevated?: boolean;
   mobile?: boolean;
 }) {
-  const safeIdx = Math.min(idx, 2);
+  const safeIdx = Math.min(Math.max(idx, 0), 2);
   return (
     <div
       className={[
@@ -520,11 +654,7 @@ function PodiumSlot({
         .join(' ')}
     >
       <Avatar photoUrl={row.playerPhotoUrl} name={row.playerName} size={72} />
-      <span
-        role="img"
-        aria-label={`${row.place} место`}
-        className="text-3xl leading-none mt-1"
-      >
+      <span role="img" aria-label={`${row.place} место`} className="text-3xl leading-none mt-1">
         {MEDAL_EMOJI[safeIdx]}
       </span>
       <p className="font-heading text-lg text-text-primary text-center leading-tight">
@@ -537,7 +667,6 @@ function PodiumSlot({
   );
 }
 
-// ── Stats card sub-component ───────────────────────────────────────────────
 function StatCard({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
     <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
