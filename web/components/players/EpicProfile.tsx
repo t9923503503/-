@@ -276,6 +276,85 @@ export default function EpicProfile({ player, stats, matches, ratingHistory, bac
         </section>
       )}
 
+      {/* ═══ PRIZES BY LEVEL ═══ */}
+      {(() => {
+        const lp = stats.levelPrizes;
+        const hasAny = lp.hard.total + lp.advanced.total + lp.medium.total + lp.light.total > 0;
+        if (!hasAny) return null;
+        const levels: Array<{ key: keyof typeof lp; label: string; color: string }> = [
+          { key: 'hard',     label: 'HARD',     color: '#FF5A00' },
+          { key: 'advanced', label: 'ADVANCED',  color: '#00D1FF' },
+          { key: 'medium',   label: 'MEDIUM',   color: '#FFD700' },
+          { key: 'light',    label: 'LIGHT',    color: '#6ABF69' },
+        ];
+        return (
+          <section>
+            <h2 className="font-heading text-3xl text-text-primary uppercase mb-5 tracking-wide flex items-center gap-3">
+              <span className="w-2 h-8 rounded-full bg-brand" />
+              Призы по уровням
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {levels.filter(l => lp[l.key].total > 0).map(l => {
+                const b = lp[l.key];
+                return (
+                  <div key={l.key} className="glass-panel rounded-2xl p-4 border border-white/10 hover:border-white/20 transition-colors">
+                    <div className="text-xs font-condensed uppercase tracking-widest mb-3" style={{ color: l.color }}>
+                      {l.label}
+                    </div>
+                    <div className="flex items-center gap-2 mb-2">
+                      {b.gold   > 0 && <span className="flex items-center gap-1 text-sm font-bold"><span className="text-base">🥇</span>{b.gold}</span>}
+                      {b.silver > 0 && <span className="flex items-center gap-1 text-sm font-bold"><span className="text-base">🥈</span>{b.silver}</span>}
+                      {b.bronze > 0 && <span className="flex items-center gap-1 text-sm font-bold"><span className="text-base">🥉</span>{b.bronze}</span>}
+                    </div>
+                    <div className="text-xs text-text-secondary">{b.total} {b.total === 1 ? 'турнир' : 'турниров'}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })()}
+
+      {/* ═══ FORMAT RATINGS (KOTC / Double Trouble / Thai) ═══ */}
+      {(() => {
+        const fs = stats.formatStats;
+        const fmts: Array<{ key: keyof typeof fs; label: string; emoji: string; color: string }> = [
+          { key: 'kotc',   label: 'King of the Court', emoji: '👑', color: '#00D1FF' },
+          { key: 'double', label: 'Double Trouble',    emoji: '⚡', color: '#FF5A00' },
+          { key: 'thai',   label: 'Thai Next',         emoji: '🏖️', color: '#FFD700' },
+        ];
+        const active = fmts.filter(f => fs[f.key].total > 0);
+        if (active.length === 0) return null;
+        return (
+          <section>
+            <h2 className="font-heading text-3xl text-text-primary uppercase mb-5 tracking-wide flex items-center gap-3">
+              <span className="w-2 h-8 rounded-full bg-[#00D1FF]" />
+              Рейтинг по форматам
+            </h2>
+            <div className={`grid gap-4 ${active.length === 1 ? 'grid-cols-1 max-w-xs' : active.length === 2 ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'}`}>
+              {active.map(f => {
+                const b = fs[f.key];
+                return (
+                  <div key={f.key} className="glass-panel rounded-2xl p-5 border border-white/10 hover:border-white/20 transition-all"
+                    style={{ borderColor: `${f.color}30` }}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-2xl">{f.emoji}</span>
+                      <span className="text-xs font-condensed uppercase tracking-widest text-text-secondary">{f.label}</span>
+                    </div>
+                    <div className="font-heading text-4xl" style={{ color: f.color }}>{b.rating}</div>
+                    <div className="text-xs text-text-secondary mt-1">очков рейтинга</div>
+                    <div className="flex items-center gap-3 mt-3 text-sm text-text-secondary">
+                      <span>{b.total} {b.total === 1 ? 'турнир' : 'турниров'}</span>
+                      {b.gold > 0 && <span className="text-[#FFD700] font-bold">🥇 ×{b.gold}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })()}
+
       {/* ═══ TOURNAMENT HISTORY (with placements) ═══ */}
       <section>
         <h2 className="font-heading text-3xl text-text-primary uppercase mb-5 tracking-wide flex items-center gap-3">

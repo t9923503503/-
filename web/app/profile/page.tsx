@@ -140,6 +140,8 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
 
   let matches: TournamentResult[] = [];
   let ratingHistory: RatingHistoryEntry[] = [];
+  const emptyLvlBucket = () => ({ gold: 0, silver: 0, bronze: 0, total: 0 });
+  const emptyFmtBucket = () => ({ total: 0, rating: 0, gold: 0 });
   let stats: PlayerExtendedStats = {
     totalTournaments: 0,
     gold: 0,
@@ -160,6 +162,8 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
     rankW: null,
     rankMix: null,
     formLast5: [],
+    levelPrizes: { hard: emptyLvlBucket(), advanced: emptyLvlBucket(), medium: emptyLvlBucket(), light: emptyLvlBucket() },
+    formatStats: { kotc: emptyFmtBucket(), double: emptyFmtBucket(), thai: emptyFmtBucket() },
   };
   try {
     [matches, ratingHistory, stats] = await Promise.all([

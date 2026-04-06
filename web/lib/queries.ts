@@ -833,6 +833,9 @@ export async function fetchRatingHistory(
 
 // ─── Extended Player Stats ──────────────────────────────────────────────
 
+interface LevelBucket { gold: number; silver: number; bronze: number; total: number; }
+interface FormatBucket { total: number; rating: number; gold: number; }
+
 export interface PlayerExtendedStats {
   totalTournaments: number;
   gold: number;
@@ -853,15 +856,21 @@ export interface PlayerExtendedStats {
   rankW: number | null;
   rankMix: number | null;
   formLast5: number[];
+  levelPrizes: { hard: LevelBucket; advanced: LevelBucket; medium: LevelBucket; light: LevelBucket };
+  formatStats: { kotc: FormatBucket; double: FormatBucket; thai: FormatBucket };
 }
 
 export async function fetchPlayerExtendedStats(playerId: string): Promise<PlayerExtendedStats> {
+  const emptyLvl = () => ({ gold: 0, silver: 0, bronze: 0, total: 0 });
+  const emptyFmtDef = () => ({ total: 0, rating: 0, gold: 0 });
   const empty: PlayerExtendedStats = {
     totalTournaments: 0, gold: 0, silver: 0, bronze: 0,
     topThreeRate: 0, avgPlace: 0, bestPlace: 0, totalRatingPts: 0, avgRatingPts: 0,
     winRate: 0, totalWins: 0, totalBalls: 0, avgBalls: 0,
     bestTournament: null, currentStreak: { type: 'none', count: 0 },
     rankM: null, rankW: null, rankMix: null, formLast5: [],
+    levelPrizes: { hard: emptyLvl(), advanced: emptyLvl(), medium: emptyLvl(), light: emptyLvl() },
+    formatStats: { kotc: emptyFmtDef(), double: emptyFmtDef(), thai: emptyFmtDef() },
   };
   if (!process.env.DATABASE_URL) return empty;
   if (!isUuid(playerId)) return empty;
@@ -870,7 +879,8 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
   const { rows: results } = await pool.query(
     `SELECT tr.place, tr.game_pts, tr.rating_pts, tr.wins, tr.diff, tr.balls, tr.rating_type,
             tr.rating_pool,
-            t.name AS tournament_name, t.date AS tournament_date, t.format
+            t.name AS tournament_name, t.date AS tournament_date, t.format,
+            COALESCE(t.level, '') AS tournament_level
      FROM tournament_results tr
      JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
      WHERE tr.player_id = $1
@@ -940,10 +950,56 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
     if (r.rating_type === 'Mix') rankMix = Number(r.rn);
   }
 
+  // ── Level prizes breakdown ───────────────────────────────────────────────
+  function normLevel(raw: string): 'hard' | 'advanced' | 'medium' | 'light' | null {
+    const l = (raw || '').toLowerCase();
+    if (l.includes('hard')) return 'hard';
+    if (l.includes('advanc')) return 'advanced';
+    if (l.includes('medium') || l.includes('mid')) return 'medium';
+    if (l.includes('light') || l.includes('lite') || l.includes('easy') || l.includes('novice')) return 'light';
+    return null;
+  }
+  const emptyBucket = (): LevelBucket => ({ gold: 0, silver: 0, bronze: 0, total: 0 });
+  const levelPrizes: PlayerExtendedStats['levelPrizes'] = {
+    hard: emptyBucket(), advanced: emptyBucket(), medium: emptyBucket(), light: emptyBucket(),
+  };
+  for (const r of results) {
+    const key = normLevel(String(r.tournament_level ?? ''));
+    if (!key) continue;
+    const b = levelPrizes[key];
+    b.total++;
+    const p = Number(r.place);
+    if (p === 1) b.gold++;
+    else if (p === 2) b.silver++;
+    else if (p === 3) b.bronze++;
+  }
+
+  // ── Format stats (KOTC / Double Trouble / Thai) ──────────────────────────
+  function normFormat(raw: string): 'kotc' | 'double' | 'thai' | null {
+    const f = (raw || '').toLowerCase();
+    if (f.includes('thai')) return 'thai';
+    if (f.includes('kotc') || f.includes('king')) return 'kotc';
+    if (f.includes('double') || f.includes('dbl') || f.includes('trouble') || f.includes('трабл')) return 'double';
+    return null;
+  }
+  const emptyFmt = (): FormatBucket => ({ total: 0, rating: 0, gold: 0 });
+  const formatStats: PlayerExtendedStats['formatStats'] = {
+    kotc: emptyFmt(), double: emptyFmt(), thai: emptyFmt(),
+  };
+  for (const r of results) {
+    const key = normFormat(String(r.format ?? ''));
+    if (!key) continue;
+    const b = formatStats[key];
+    b.total++;
+    b.rating += ratingPointsForPlace(Number(r.place), r.rating_pool === 'novice' ? 'novice' : 'pro');
+    if (Number(r.place) === 1) b.gold++;
+  }
+
   return {
     totalTournaments, gold, silver, bronze, topThreeRate,
     avgPlace, bestPlace, totalRatingPts, avgRatingPts, winRate, totalWins,
     totalBalls, avgBalls, bestTournament, currentStreak, rankM, rankW, rankMix, formLast5,
+    levelPrizes, formatStats,
   };
 }
 
