@@ -121,7 +121,7 @@ function createEmptyForm(): Row {
     time: '',
     location: '',
     format: 'Round Robin',
-    division: '',
+    division: 'Мужской',
     level: 'medium',
     capacity: 24,
     status: 'open',
@@ -752,7 +752,7 @@ export default function AdminTournamentsPage() {
       setMessage(`Игроков больше, чем capacity: ${draftPlayers.length} / ${participantLimit}`);
       return;
     }
-    if (thaiRosterError) {
+    if (thaiRosterError && form.status !== 'open') {
       setMessage(thaiRosterError);
       return;
     }
@@ -854,7 +854,7 @@ export default function AdminTournamentsPage() {
       setMessage(`Игроков больше, чем capacity: ${draftPlayers.length} / ${participantLimit}`);
       return;
     }
-    if (thaiRosterError) {
+    if (thaiRosterError && form.status !== 'open') {
       setMessage(thaiRosterError);
       return;
     }
@@ -968,7 +968,7 @@ export default function AdminTournamentsPage() {
     setMessage('Сохранено');
   }
 
-  const saveDisabled = loading || rosterLoading || Boolean(rosterError) || rosterOverflow || Boolean(thaiRosterError);
+  const saveDisabled = loading || rosterLoading || Boolean(rosterError) || rosterOverflow || (Boolean(thaiRosterError) && form.status !== 'open');
 
   return (
     <div className="grid lg:grid-cols-[1.2fr_1fr] gap-4">

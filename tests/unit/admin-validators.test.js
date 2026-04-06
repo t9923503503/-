@@ -122,10 +122,23 @@ describe('admin validators', () => {
       format: 'Thai',
       division: 'Мужской',
       capacity: 16,
+      status: 'full',
       settings: { courts: 2, thaiVariant: 'MM', tourCount: 2 },
       participants: players16.slice(0, 8),
     });
     expect(validateTournamentInput(bad)).toBe('Thai requires exactly 16 players');
+
+    const draftOpen = normalizeTournamentInput({
+      name: 'Thai Draft Open',
+      date: '2026-03-22',
+      format: 'Thai',
+      division: 'Мужской',
+      capacity: 16,
+      status: 'open',
+      settings: { courts: 2, thaiVariant: 'MM', tourCount: 2 },
+      participants: players16.slice(0, 8),
+    });
+    expect(validateTournamentInput(draftOpen)).toBeNull();
 
     const legacyAlias = normalizeTournamentInput({
       name: 'Legacy IPT Alias',
@@ -133,6 +146,7 @@ describe('admin validators', () => {
       format: 'IPT Mixed',
       division: 'Микст',
       capacity: 16,
+      status: 'full',
       settings: { courts: 2 },
       participants: players16.slice(0, 8),
     });
@@ -162,6 +176,7 @@ describe('admin validators', () => {
       format: 'Thai',
       division: 'Мужской',
       capacity: 48,
+      status: 'full',
       settings: { courts: 6, thaiVariant: 'MM', tourCount: 12 },
       participants: players48.slice(0, 40),
     });

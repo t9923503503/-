@@ -108,7 +108,7 @@ export function validateTournamentInput(input: ReturnType<typeof normalizeTourna
       seen.add(participant.playerId);
     }
   }
-  if (isThaiAdminFormat(input.format)) {
+  if (isThaiAdminFormat(input.format) && input.status !== 'open') {
     const thaiSettings = normalizeThaiAdminSettings(input.settings, input.participants?.length ?? 0);
     const expectedParticipants = getThaiSeatCount(thaiSettings.courts);
     if ((input.participants?.length ?? 0) !== expectedParticipants) {
