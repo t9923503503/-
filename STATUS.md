@@ -14,6 +14,7 @@
 Вход в проект: [`README.md`](README.md), для агентов — [`docs/AGENTS.md`](docs/AGENTS.md), деплой — [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ### Новые задачи
+- [x] Finished tournament Thai CTA: внутри editorial-блока завершённого Thai-турнира добавлена кнопка `Результаты игр турнира` на архивное зрительское табло `/live/thai/[id]` ✅ (2026-04-06, `web/components/calendar/FinishedTournamentPage.tsx`, `STATUS.md`)
 - [x] Admin tournaments Thai draft save: новые Thai-турниры по умолчанию создаются как `Мужской`, неполный Thai-ростер не блокирует сохранение при `status=open`, но серверная/клиентская проверка остаётся для не-open статусов ✅ (2026-04-06, `web/app/admin/tournaments/page.tsx`, `web/lib/admin-validators.ts`, `tests/unit/admin-validators.test.js`, `STATUS.md`)
 - [x] Finished tournament editorial: очки рейтинга вынесены в компактные таблицы по местам/уровням, добавлен структурированный блок пояснений, нижняя архивная таблица скрыта для этого турнира ✅ (2026-04-06, `web/components/calendar/FinishedTournamentPage.tsx`, `STATUS.md`)
 - [x] Finished tournament gallery: добавлены автопрокрутка, подписи к кадрам и полноэкранный lightbox для блока «Атмосфера площадки» ✅ (2026-04-06, `web/components/calendar/FinishedTournamentGallery.tsx`, `web/components/calendar/FinishedTournamentPage.tsx`, `STATUS.md`)

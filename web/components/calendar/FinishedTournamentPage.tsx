@@ -509,6 +509,25 @@ export default function FinishedTournamentPage({
               <EditorialRatingInfoGrid />
             </div>
 
+            {isThai ? (
+              <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-teal-400/30 bg-teal-400/10 px-4 py-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-[11px] font-body uppercase tracking-[0.24em] text-teal-300">
+                    Табло турнира
+                  </div>
+                  <p className="mt-1 text-sm font-body text-text-primary/85">
+                    Подробные игры, туры и архивное Thai-табло — отдельной страницей.
+                  </p>
+                </div>
+                <Link
+                  href={`/live/thai/${id}`}
+                  className="btn-action-outline inline-flex items-center justify-center gap-2 whitespace-nowrap border-teal-400/45 bg-teal-400/10 text-teal-200 hover:bg-teal-400/20"
+                >
+                  Результаты игр турнира
+                </Link>
+              </div>
+            ) : null}
+
             <div className="mt-6 rounded-2xl border border-brand/20 bg-brand/10 px-4 py-4">
               {editorial.footer.map((line) => (
                 <p key={line} className="text-base font-body font-semibold text-text-primary">
