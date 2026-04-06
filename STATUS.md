@@ -14,6 +14,7 @@
 Вход в проект: [`README.md`](README.md), для агентов — [`docs/AGENTS.md`](docs/AGENTS.md), деплой — [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ### Новые задачи
+- [x] Finished tournament player links: фамилии в editorial-таблице, подиуме и таблице результатов ведут на публичные карточки игроков `/players/[id]` ✅ (2026-04-06, `web/components/calendar/FinishedTournamentPage.tsx`, `tests/unit/finished-tournament-source-contract.test.js`, `STATUS.md`)
 - [x] Calendar UX: карточка завершённого Double Trouble на `/calendar` использует общее фото турнира как постер, получила мягкий фото-акцент, а отдельная кнопка `Табло для зрителей` убрана из списка календаря ✅ (2026-04-06, `web/components/calendar/EventCard.tsx`, `web/lib/tournament-poster.ts`, `tests/unit/calendar-utils.test.js`, `STATUS.md`)
 - [x] Finished tournament Thai CTA: внутри editorial-блока завершённого Thai-турнира добавлена кнопка `Результаты игр турнира` на архивное зрительское табло `/live/thai/[id]` ✅ (2026-04-06, `web/components/calendar/FinishedTournamentPage.tsx`, `STATUS.md`)
 - [x] Admin tournaments Thai draft save: новые Thai-турниры по умолчанию создаются как `Мужской`, неполный Thai-ростер не блокирует сохранение при `status=open`, но серверная/клиентская проверка остаётся для не-open статусов ✅ (2026-04-06, `web/app/admin/tournaments/page.tsx`, `web/lib/admin-validators.ts`, `tests/unit/admin-validators.test.js`, `STATUS.md`)

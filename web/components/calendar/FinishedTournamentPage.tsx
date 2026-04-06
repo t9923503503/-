@@ -213,6 +213,25 @@ function getFinishedTournamentEditorial(tournamentId: string): FinishedTournamen
   return FINISHED_EDITORIALS[tournamentId] ?? null;
 }
 
+function editorialPlayerName(label: string): string {
+  return label.replace(/\s*\([^)]*\)\s*$/u, '').trim();
+}
+
+function editorialPlayerNameKey(label: string): string {
+  return editorialPlayerName(label).replace(/\s+/g, ' ').toLocaleLowerCase('ru-RU');
+}
+
+function buildEditorialPlayerIdMap(results: TournamentResultRow[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const row of results) {
+    const key = editorialPlayerNameKey(row.playerName);
+    if (key && row.playerId && !map.has(key)) {
+      map.set(key, row.playerId);
+    }
+  }
+  return map;
+}
+
 function VkIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -301,6 +320,7 @@ export default function FinishedTournamentPage({
   const totalWins = results.reduce((sum, row) => sum + (row.wins ?? 0), 0);
   const totalBalls = results.reduce((sum, row) => sum + (row.balls ?? 0), 0);
   const topRating = results.length > 0 ? Math.max(...results.map((row) => row.ratingPts)) : 0;
+  const editorialPlayerIds = buildEditorialPlayerIdMap(results);
 
   const nextTournament = related.find((item) => item.status === 'open' || item.status === 'full') ?? null;
 
@@ -486,11 +506,13 @@ export default function FinishedTournamentPage({
                           <EditorialRatingCell
                             groupLabel="Монстры"
                             label={row.left}
+                            playerId={editorialPlayerIds.get(editorialPlayerNameKey(row.left))}
                             ratingPts={row.leftRatingPts}
                           />
                           <EditorialRatingCell
                             groupLabel="Лютые"
                             label={row.right}
+                            playerId={editorialPlayerIds.get(editorialPlayerNameKey(row.right))}
                             ratingPts={row.rightRatingPts}
                           />
                         </div>
@@ -715,9 +737,11 @@ function PodiumSlot({
       <span role="img" aria-label={`${row.place} место`} className="text-3xl leading-none mt-1">
         {MEDAL_EMOJI[safeIdx]}
       </span>
-      <p className="font-heading text-lg text-text-primary text-center leading-tight">
-        {row.playerName}
-      </p>
+      <PlayerProfileLink
+        playerId={row.playerId}
+        name={row.playerName}
+        className="block font-heading text-lg text-text-primary text-center leading-tight"
+      />
       {row.ratingPts > 0 ? (
         <p className="text-brand font-semibold text-sm font-body">{row.ratingPts} pts</p>
       ) : null}
@@ -736,13 +760,38 @@ function StatCard({ icon, label, value }: { icon: string; label: string; value: 
   );
 }
 
+function PlayerProfileLink({
+  playerId,
+  name,
+  className,
+}: {
+  playerId?: string | null;
+  name: string;
+  className: string;
+}) {
+  if (!playerId) {
+    return <span className={className}>{name}</span>;
+  }
+
+  return (
+    <Link
+      href={`/players/${playerId}`}
+      className={`${className} transition-colors hover:text-brand hover:underline underline-offset-4`}
+    >
+      {name}
+    </Link>
+  );
+}
+
 function EditorialRatingCell({
   groupLabel,
   label,
+  playerId,
   ratingPts,
 }: {
   groupLabel: string;
   label: string;
+  playerId?: string;
   ratingPts: number;
 }) {
   return (
@@ -751,7 +800,11 @@ function EditorialRatingCell({
         <div className="text-[10px] uppercase tracking-[0.16em] text-text-secondary sm:hidden">
           {groupLabel}
         </div>
-        <div className="truncate text-sm font-body text-text-primary">{label}</div>
+        <PlayerProfileLink
+          playerId={playerId}
+          name={label}
+          className="block truncate text-sm font-body text-text-primary"
+        />
       </div>
       <div className="shrink-0 rounded-full border border-brand/30 bg-brand/12 px-3 py-1 text-right">
         <div className="text-[10px] uppercase tracking-[0.16em] text-text-secondary">в рейтинг</div>
@@ -833,7 +886,11 @@ function ResultsTable({ results }: { results: TournamentResultRow[] }) {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <Avatar photoUrl={row.playerPhotoUrl} name={row.playerName} size={28} />
-                    <span className="text-text-primary">{row.playerName}</span>
+                    <PlayerProfileLink
+                      playerId={row.playerId}
+                      name={row.playerName}
+                      className="text-text-primary"
+                    />
                   </div>
                 </td>
                 <td className="px-4 py-3 text-center text-text-primary/80">{row.wins}</td>
