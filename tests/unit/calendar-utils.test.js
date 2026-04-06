@@ -9,6 +9,7 @@ import {
   enrichTournamentRuntimeState,
   resolveTournamentStatus,
 } from '../../web/lib/tournament-status.ts';
+import { localPosterForTournamentId } from '../../web/lib/tournament-poster.ts';
 import { shouldHideTournamentFromPublic } from '../../web/lib/queries.ts';
 
 const NOW = new Date(2026, 3, 2, 12, 0, 0);
@@ -240,5 +241,11 @@ describe('calendar helpers', () => {
 
     expect(morning).not.toBe(evening);
     expect(morning).not.toBe(anotherClub);
+  });
+
+  it('uses the editorial photo for the finished Double Trouble tournament card', () => {
+    expect(localPosterForTournamentId('a19522bb-864e-4520-8182-61e035c27894')).toBe(
+      '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/hero.jpg'
+    );
   });
 });

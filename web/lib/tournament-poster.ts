@@ -1,5 +1,14 @@
 import type { Tournament } from '@/lib/types';
 
+const LOCAL_TOURNAMENT_POSTERS: Record<string, string> = {
+  'a19522bb-864e-4520-8182-61e035c27894':
+    '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/hero.jpg',
+};
+
+export function localPosterForTournamentId(id: string): string {
+  return LOCAL_TOURNAMENT_POSTERS[id] ?? '';
+}
+
 /** True if URL looks like a direct image asset (not Yandex Disk / Google Drive HTML). */
 export function isLikelyDirectImageUrl(url: string): boolean {
   const value = String(url || '').trim();

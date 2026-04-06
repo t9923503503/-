@@ -1,7 +1,5 @@
 import Link from 'next/link';
 import type { Tournament } from '@/lib/types';
-import { isThaiAdminFormat } from '@/lib/admin-legacy-sync';
-import { buildThaiSpectatorBoardUrl } from '@/lib/tournament-links';
 import {
   buildTournamentEventKey,
   sortTournamentGroupsForCalendar,
@@ -9,6 +7,7 @@ import {
 import {
   fallbackPosterForTournament,
   isLikelyHostedPlayerOrVkPhoto,
+  localPosterForTournamentId,
 } from '@/lib/tournament-poster';
 
 export interface TournamentGroup {
@@ -182,9 +181,12 @@ export default function EventCard({ group }: { group: TournamentGroup }) {
   const formatInfo = formatDescriptions[group.format] ?? null;
 
   const albumUrl = String(group.photoUrl || '').trim();
-  const posterSrc = isLikelyHostedPlayerOrVkPhoto(albumUrl)
+  const localPosterSrc =
+    group.categories.map((category) => localPosterForTournamentId(category.id)).find(Boolean) ?? '';
+  const posterSrc = localPosterSrc || (isLikelyHostedPlayerOrVkPhoto(albumUrl)
     ? albumUrl
-    : fallbackPosterForTournament({ format: group.format || group.baseName });
+    : fallbackPosterForTournament({ format: group.format || group.baseName }));
+  const hasEditorialPoster = Boolean(localPosterSrc);
   const showAlbumLink = Boolean(albumUrl) && !isLikelyHostedPlayerOrVkPhoto(albumUrl);
   const fillPercent =
     group.totalCapacity > 0
@@ -209,7 +211,9 @@ export default function EventCard({ group }: { group: TournamentGroup }) {
             ? 'border-brand/40 bg-gradient-to-br from-brand/5 to-transparent hover:border-brand/70 hover:shadow-[0_0_30px_rgba(255,90,0,0.15)]'
             : isFull
               ? 'border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-transparent hover:border-amber-500/50'
-              : 'border-white/10 bg-surface-light/30 hover:border-white/20',
+              : hasEditorialPoster
+                ? 'border-brand/25 bg-gradient-to-br from-brand/10 via-surface-light/40 to-cyan-500/5 hover:border-brand/45 hover:shadow-[0_0_34px_rgba(255,90,0,0.14)]'
+                : 'border-white/10 bg-surface-light/30 hover:border-white/20',
         ].join(' ')}
       >
         <div className="relative aspect-[2.2/1] w-full overflow-hidden">
@@ -220,6 +224,11 @@ export default function EventCard({ group }: { group: TournamentGroup }) {
             loading="lazy"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/55 to-transparent" />
+          {hasEditorialPoster ? (
+            <div className="absolute left-4 top-4 rounded-full border border-brand/35 bg-black/45 px-3 py-1.5 text-xs font-body font-semibold text-brand-light backdrop-blur-sm">
+              {'\u0424\u043e\u0442\u043e\u043e\u0442\u0447\u0451\u0442'}
+            </div>
+          ) : null}
           <span
             className={[
               'absolute right-4 top-4 rounded-full border px-3 py-1.5 text-xs font-body font-semibold backdrop-blur-sm',
@@ -434,20 +443,6 @@ export default function EventCard({ group }: { group: TournamentGroup }) {
           </Link>
         ) : null}
 
-        {isFinished && isThaiAdminFormat(group.format) ? (
-          <div className="relative z-20 flex flex-col gap-2 border-t border-white/10 bg-surface px-6 py-4">
-            {group.categories.map((category) => (
-              <Link
-                key={category.id}
-                href={buildThaiSpectatorBoardUrl(category.id)}
-                className="inline-flex w-full items-center justify-center rounded-xl border border-sky-500/35 bg-sky-500/10 px-4 py-2.5 text-sm font-body font-semibold text-sky-200 transition-colors hover:border-sky-400/50 hover:bg-sky-500/15"
-              >
-                Табло для зрителей
-                {group.categories.length > 1 ? ` · ${category.name}` : ''}
-              </Link>
-            ))}
-          </div>
-        ) : null}
       </article>
     </div>
   );
