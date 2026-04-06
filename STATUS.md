@@ -14,6 +14,7 @@
 Вход в проект: [`README.md`](README.md), для агентов — [`docs/AGENTS.md`](docs/AGENTS.md), деплой — [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ### Новые задачи
+- [x] Rankings medals: медали в карточках рейтинга, отдельный таб «Медали» с разбивкой по уровням/форматам + фильтры истории в профиле игрока ✅ (2026-04-06, `web/lib/types.ts`, `web/lib/queries.ts`, `web/app/api/leaderboard-medals/route.ts`, `web/app/rankings/RankingsClient.tsx`, `web/components/players/EpicProfile.tsx`, `tests/unit/rankings-medals-source-contract.test.js`, `STATUS.md`)
 - [x] Admin archive results: нормализация дробного места (`32.5` → `32`) перед записью в `tournament_results.place integer`, чтобы `/api/admin/tournaments/[id]/results` не падал 500 ✅ (2026-04-06, `web/app/api/admin/tournaments/[id]/results/route.ts`, `web/lib/admin-queries-pg.ts`, `web/lib/admin-postgrest.ts`, `STATUS.md`)
 - [x] Профиль игрока: призы по уровням (Hard/Advanced/Medium/Light) + рейтинг по форматам (KOTC/Double Trouble/Thai) ✅ (2026-04-06, `web/lib/queries.ts`, `web/components/players/EpicProfile.tsx`, `web/app/profile/page.tsx`, `STATUS.md`)
 - [x] Страница завершённого турнира: эмоциональная landing page (hero с закатом, подиум, stats strip, share VK/Telegram, OG-метаданные) ✅ (2026-04-06, `web/components/calendar/FinishedTournamentPage.tsx`, `web/app/calendar/[id]/page.tsx`, `web/app/globals.css`, `STATUS.md`; задеплоено на prod 157.22.173.248, проверено 200)

@@ -1,3 +1,6 @@
+'use client';
+
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import type { Player, TournamentResult, RatingHistoryEntry } from '@/lib/types';
 import PlayerPhoto from '@/components/ui/PlayerPhoto';
@@ -121,9 +124,40 @@ interface EpicProfileProps {
   backLink?: { href: string; label: string };
 }
 
+const FORMAT_LABELS: Record<string, string> = {
+  KOTC: 'King of the Court',
+  Thai: 'Thai Next',
+  IPT: 'IPT',
+};
+
 export default function EpicProfile({ player, stats, matches, ratingHistory, backLink }: EpicProfileProps) {
   const mainRating = player.gender === 'M' ? player.ratingM : player.ratingW;
   const mainRank = player.gender === 'M' ? stats.rankM : stats.rankW;
+
+  const [filterFormat, setFilterFormat] = useState<string>('all');
+  const [filterLevel, setFilterLevel] = useState<string>('all');
+
+  const availableFormats = useMemo(() => {
+    const seen = new Set<string>();
+    matches.forEach(m => { if (m.format) seen.add(m.format); });
+    return [...seen];
+  }, [matches]);
+
+  const availableLevels = useMemo(() => {
+    const order = ['hard', 'advanced', 'medium', 'light'];
+    const seen = new Set<string>();
+    matches.forEach(m => { if (m.level) seen.add(m.level.toLowerCase()); });
+    return order.filter(l => seen.has(l));
+  }, [matches]);
+
+  const filteredMatches = useMemo(() => {
+    return matches.filter(m => {
+      const fmtOk = filterFormat === 'all' || (m.format ?? '') === filterFormat;
+      const lvlNorm = m.level ? m.level.toLowerCase() : '';
+      const lvlOk = filterLevel === 'all' || lvlNorm === filterLevel;
+      return fmtOk && lvlOk;
+    });
+  }, [matches, filterFormat, filterLevel]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
@@ -261,20 +295,32 @@ export default function EpicProfile({ player, stats, matches, ratingHistory, bac
       </section>
 
       {/* ═══ BEST TOURNAMENT ═══ */}
-      {stats.bestTournament && (
-        <section className="glass-panel rounded-2xl p-6 border border-gold/30 neon-fire">
+      {stats.bestTournament && (() => {
+        const bt = stats.bestTournament!;
+        const inner = (
           <div className="flex items-center gap-3">
             <span className="text-3xl">{'\u{1F31F}'}</span>
             <div>
               <div className="text-xs font-condensed uppercase tracking-widest text-gold">Best Performance</div>
-              <div className="font-heading text-2xl text-text-primary mt-1">{stats.bestTournament.name}</div>
+              <div className="font-heading text-2xl text-text-primary mt-1">{bt.name}</div>
               <div className="text-sm text-text-secondary mt-1">
-                {formatDate(stats.bestTournament.date)} {' \u{2022} '} Место: {placeEmoji(stats.bestTournament.place)} {' \u{2022} '} +{stats.bestTournament.pts} pts
+                {formatDate(bt.date)} {' \u{2022} '} Место: {placeEmoji(bt.place)} {' \u{2022} '} +{bt.pts} pts
               </div>
             </div>
           </div>
-        </section>
-      )}
+        );
+        return bt.id ? (
+          <Link href={`/calendar/${bt.id}`}>
+            <section className="glass-panel rounded-2xl p-6 border border-gold/30 neon-fire hover:scale-[1.01] transition-transform cursor-pointer">
+              {inner}
+            </section>
+          </Link>
+        ) : (
+          <section className="glass-panel rounded-2xl p-6 border border-gold/30 neon-fire">
+            {inner}
+          </section>
+        );
+      })()}
 
       {/* ═══ PRIZES BY LEVEL ═══ */}
       {(() => {
@@ -357,23 +403,69 @@ export default function EpicProfile({ player, stats, matches, ratingHistory, bac
 
       {/* ═══ TOURNAMENT HISTORY (with placements) ═══ */}
       <section>
-        <h2 className="font-heading text-3xl text-text-primary uppercase mb-5 tracking-wide flex items-center gap-3">
+        <h2 className="font-heading text-3xl text-text-primary uppercase mb-4 tracking-wide flex items-center gap-3">
           <span className="w-2 h-8 rounded-full bg-brand" />
           История турниров
         </h2>
 
-        {matches.length === 0 ? (
+        {/* Filters */}
+        {(availableFormats.length > 1 || availableLevels.length > 1) && (
+          <div className="flex flex-wrap gap-2 mb-5">
+            {availableFormats.length > 1 && (
+              <div className="flex flex-wrap gap-1.5 items-center">
+                <span className="text-xs font-condensed uppercase text-text-secondary mr-1">Формат:</span>
+                {['all', ...availableFormats].map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setFilterFormat(f)}
+                    className={`px-3 py-1 rounded-lg text-xs font-medium border transition-colors ${filterFormat === f ? 'bg-brand text-white border-brand' : 'border-white/20 text-text-secondary hover:border-white/40'}`}
+                  >
+                    {f === 'all' ? 'Все' : (FORMAT_LABELS[f] ?? f)}
+                  </button>
+                ))}
+              </div>
+            )}
+            {availableLevels.length > 1 && (
+              <div className="flex flex-wrap gap-1.5 items-center">
+                <span className="text-xs font-condensed uppercase text-text-secondary mr-1">Уровень:</span>
+                {['all', ...availableLevels].map(l => {
+                  const levelColorMap: Record<string, string> = { hard: '#FF5A00', advanced: '#00D1FF', medium: '#FFD700', light: '#6ABF69' };
+                  const active = filterLevel === l;
+                  return (
+                    <button
+                      key={l}
+                      onClick={() => setFilterLevel(l)}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold uppercase border transition-colors ${active ? 'text-black border-transparent' : 'border-white/20 text-text-secondary hover:border-white/40'}`}
+                      style={active && l !== 'all' ? { background: levelColorMap[l], borderColor: levelColorMap[l] } : active ? { background: '#FF5A00', borderColor: '#FF5A00', color: '#fff' } : {}}
+                    >
+                      {l === 'all' ? 'Все' : l.toUpperCase()}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {filteredMatches.length === 0 ? (
           <div className="glass-panel rounded-2xl p-8 text-center border border-white/10">
             <div className="text-4xl mb-3">{'\u{1F3D0}'}</div>
-            <div className="text-text-secondary font-body">Пока нет сыгранных турниров</div>
+            <div className="text-text-secondary font-body">Нет турниров по выбранным фильтрам</div>
           </div>
         ) : (
           <div className="space-y-3">
-            {matches.map((r, i) => {
+            {filteredMatches.map((r, i) => {
               const place = Number(r.place);
-              return (
-                <article key={`${r.tournamentId ?? i}`}
-                  className={`glass-panel rounded-2xl p-4 md:p-5 border transition-all hover:scale-[1.01] ${placeBorderClass(place)}`}>
+              const levelNorm: Record<string, string> = {
+                advance: 'ADVANCED', advanced: 'ADVANCED',
+                hard: 'HARD', medium: 'MEDIUM', light: 'LIGHT',
+              };
+              const levelLabel = r.level ? (levelNorm[r.level.toLowerCase()] ?? r.level.toUpperCase()) : null;
+              const levelColor: Record<string, string> = {
+                HARD: '#FF5A00', ADVANCED: '#00D1FF', MEDIUM: '#FFD700', LIGHT: '#6ABF69',
+              };
+              const cardContent = (
+                <>
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold shrink-0 ${place <= 3 ? 'bg-white/10' : 'bg-white/5'}`}>
@@ -383,16 +475,26 @@ export default function EpicProfile({ player, stats, matches, ratingHistory, bac
                         <div className="font-heading text-lg text-text-primary truncate">
                           {r.tournamentName}
                         </div>
-                        <div className="text-xs text-text-secondary font-condensed">
-                          {r.tournamentDate ? formatDate(String(r.tournamentDate)) : ''} {' \u{2022} '} {r.ratingType ?? ''}
+                        <div className="text-xs text-text-secondary font-condensed flex items-center gap-1.5 flex-wrap">
+                          {r.tournamentDate ? formatDate(String(r.tournamentDate)) : ''}
+                          {' \u{2022} '}
+                          {r.ratingType ?? ''}
+                          {levelLabel && (
+                            <>
+                              {' \u{2022} '}
+                              <span className="font-bold uppercase" style={{ color: levelColor[levelLabel] ?? '#aaa' }}>
+                                {levelLabel}
+                              </span>
+                            </>
+                          )}
                         </div>
                         {r.thaiSpectatorBoardUrl ? (
-                          <Link
-                            href={r.thaiSpectatorBoardUrl}
+                          <span
                             className="mt-1 inline-flex text-xs font-medium text-sky-300/95 underline decoration-sky-500/40 underline-offset-2 hover:text-sky-200"
+                            onClick={e => e.stopPropagation()}
                           >
-                            Табло турнира (Thai)
-                          </Link>
+                            <Link href={r.thaiSpectatorBoardUrl}>Табло турнира (Thai)</Link>
+                          </span>
                         ) : null}
                       </div>
                     </div>
@@ -416,6 +518,18 @@ export default function EpicProfile({ player, stats, matches, ratingHistory, bac
                       <span>Diff: <span className={r.diff > 0 ? 'text-brand' : 'text-text-secondary'}>{r.diff > 0 ? `+${r.diff}` : r.diff}</span></span>
                     )}
                   </div>
+                </>
+              );
+              return r.tournamentId ? (
+                <Link key={`${r.tournamentId ?? i}`} href={`/calendar/${r.tournamentId}`}>
+                  <article className={`glass-panel rounded-2xl p-4 md:p-5 border transition-all hover:scale-[1.01] cursor-pointer ${placeBorderClass(place)}`}>
+                    {cardContent}
+                  </article>
+                </Link>
+              ) : (
+                <article key={`${r.tournamentId ?? i}-no`}
+                  className={`glass-panel rounded-2xl p-4 md:p-5 border transition-all hover:scale-[1.01] ${placeBorderClass(place)}`}>
+                  {cardContent}
                 </article>
               );
             })}

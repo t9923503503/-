@@ -26,8 +26,29 @@ export interface LeaderboardEntry {
   rating: number;
   tournaments: number;
   wins: number;
+  gold: number;
+  silver: number;
+  bronze: number;
   lastSeen: string;
   photoUrl: string;
+}
+
+export interface MedalEntry {
+  rank: number;
+  playerId: string;
+  name: string;
+  photoUrl: string;
+  gender: 'M' | 'W';
+  gold: number;
+  silver: number;
+  bronze: number;
+  hardWins: number;
+  advancedWins: number;
+  mediumWins: number;
+  lightWins: number;
+  kotcWins: number;
+  thaiWins: number;
+  iptWins: number;
 }
 
 export interface Tournament {
@@ -72,6 +93,10 @@ export interface TournamentResult {
   balls?: number;
   /** Thai Next: ссылка на зрительское табло (архивный снимок на той же странице). */
   thaiSpectatorBoardUrl?: string | null;
+  /** Уровень турнира: hard, advanced, medium, light и т.д. */
+  level?: string | null;
+  /** Формат турнира: KOTC, Thai, IPT и т.д. */
+  format?: string | null;
 }
 
 export type RatingType = 'M' | 'W' | 'Mix';

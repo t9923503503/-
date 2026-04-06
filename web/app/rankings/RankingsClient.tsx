@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import type { LeaderboardEntry, RatingType } from '@/lib/types';
+import type { LeaderboardEntry, MedalEntry, RatingType } from '@/lib/types';
 import PlayerPhoto from '@/components/ui/PlayerPhoto';
 import type { RankingCounts } from '@/lib/queries';
 
 /* ── helpers ───────────────────────────────────── */
 
-type SortMode = 'pts' | 'avg' | 'trn';
+type SortMode = 'pts' | 'avg' | 'trn' | 'medals';
 
 function zoneMeta(rank: number) {
   if (rank <= 10) return { cls: 'zone-hard', label: 'HARD', color: '#e94560', bg: 'rgba(233,69,96,.12)', border: 'rgba(233,69,96,.3)' };
@@ -34,6 +34,7 @@ function sortEntries(entries: LeaderboardEntry[], mode: SortMode): LeaderboardEn
 function sortLabel(mode: SortMode) {
   if (mode === 'avg') return 'СР.';
   if (mode === 'trn') return 'ТУРН.';
+  if (mode === 'medals') return 'ЗОЛ.';
   return 'РЕЙТ.';
 }
 
@@ -42,7 +43,12 @@ function sortValue(entry: LeaderboardEntry, mode: SortMode): string {
     return entry.tournaments > 0 ? (entry.rating / entry.tournaments).toFixed(1) : '0';
   }
   if (mode === 'trn') return String(entry.tournaments);
+  if (mode === 'medals') return String(entry.gold);
   return String(entry.rating);
+}
+
+function hasMedals(entry: Pick<LeaderboardEntry, 'gold' | 'silver' | 'bronze'>): boolean {
+  return entry.gold > 0 || entry.silver > 0 || entry.bronze > 0;
 }
 
 /* ── sub‑components ──────────────────────────────── */
@@ -128,6 +134,13 @@ function PlayerItem({ entry, sort }: { entry: LeaderboardEntry; sort: SortMode }
           <span>⚡ {entry.rating} рейт.</span>
           <span>📊 {avg} ср.</span>
         </div>
+        {hasMedals(entry) ? (
+          <div className="flex items-center gap-1.5 text-[10px] text-text-secondary mt-0.5">
+            {entry.gold > 0 ? <span>🥇{entry.gold}</span> : null}
+            {entry.silver > 0 ? <span>🥈{entry.silver}</span> : null}
+            {entry.bronze > 0 ? <span>🥉{entry.bronze}</span> : null}
+          </div>
+        ) : null}
       </div>
 
       {/* Value */}
@@ -147,6 +160,80 @@ function PlayerItem({ entry, sort }: { entry: LeaderboardEntry; sort: SortMode }
   );
 }
 
+function MedalItem({ entry }: { entry: MedalEntry }) {
+  const levelChips = [
+    { label: 'HARD', value: entry.hardWins, className: 'border-brand/50 bg-brand/15 text-orange-300' },
+    { label: 'ADVANCED', value: entry.advancedWins, className: 'border-[#00D1FF]/50 bg-[#00D1FF]/10 text-[#00D1FF]' },
+    { label: 'MEDIUM', value: entry.mediumWins, className: 'border-[#FFD700]/50 bg-[#FFD700]/10 text-[#FFD700]' },
+    { label: 'LIGHT', value: entry.lightWins, className: 'border-[#6ABF69]/50 bg-[#6ABF69]/10 text-[#6ABF69]' },
+  ].filter((chip) => chip.value > 0);
+  const formatChips = [
+    { label: 'KOTC', icon: '👑', value: entry.kotcWins },
+    { label: 'Thai', icon: '🏖️', value: entry.thaiWins },
+    { label: 'Double', icon: '⚡', value: entry.iptWins },
+  ].filter((chip) => chip.value > 0);
+
+  return (
+    <Link
+      href={`/players/${entry.playerId}`}
+      className="block rounded-2xl border border-[#2a2a44] bg-[#16162a] p-4 transition-all hover:border-brand/45 hover:bg-[#1a1a30] group"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex-shrink-0 w-11 text-center">
+          <div className="font-heading text-2xl text-[#FFD700] leading-none">#{entry.rank}</div>
+          <div className="text-[9px] text-text-secondary uppercase tracking-wider mt-1">место</div>
+        </div>
+
+        {entry.photoUrl ? (
+          <div className="flex-shrink-0 w-12 h-12 rounded-xl overflow-hidden border border-[#2a2a44]">
+            <PlayerPhoto photoUrl={entry.photoUrl} alt={entry.name} width={48} height={48} />
+          </div>
+        ) : (
+          <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-[#FFD700]/30 to-brand/30 border border-[#2a2a44] flex items-center justify-center text-sm font-bold text-white/90">
+            {entry.name.charAt(0).toUpperCase()}
+          </div>
+        )}
+
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-bold text-sm text-white truncate group-hover:text-brand transition-colors">
+              {entry.name}
+            </div>
+            <div className="flex items-center gap-2 text-sm font-bold">
+              {entry.gold > 0 ? <span className="text-[#FFD700]">🥇{entry.gold}</span> : null}
+              {entry.silver > 0 ? <span className="text-[#c0c0c0]">🥈{entry.silver}</span> : null}
+              {entry.bronze > 0 ? <span className="text-[#cd7f32]">🥉{entry.bronze}</span> : null}
+            </div>
+          </div>
+
+          {levelChips.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {levelChips.map((chip) => (
+                <span
+                  key={chip.label}
+                  className={`rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide ${chip.className}`}
+                >
+                  {chip.label} ×{chip.value}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          {formatChips.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-text-secondary">
+              {formatChips.map((chip) => (
+                <span key={chip.label} className="rounded-full border border-white/10 bg-white/[.04] px-2 py-0.5">
+                  {chip.icon} {chip.label} ×{chip.value}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 /* ── main client ─────────────────────────────────── */
 
 interface RankingsClientProps {
@@ -158,7 +245,10 @@ interface RankingsClientProps {
 export default function RankingsClient({ initialEntries, initialType, counts }: RankingsClientProps) {
   const [type, setType] = useState<RatingType>(initialType);
   const [entries, setEntries] = useState<LeaderboardEntry[]>(initialEntries);
+  const [medalEntries, setMedalEntries] = useState<MedalEntry[]>([]);
+  const [medalsType, setMedalsType] = useState<RatingType | null>(null);
   const [loading, setLoading] = useState(false);
+  const [medalsLoading, setMedalsLoading] = useState(false);
   const [sort, setSort] = useState<SortMode>('pts');
   const [search, setSearch] = useState('');
 
@@ -175,6 +265,22 @@ export default function RankingsClient({ initialEntries, initialType, counts }: 
       .finally(() => setLoading(false));
   }, [type, initialType, initialEntries]);
 
+  useEffect(() => {
+    if (sort !== 'medals' || medalsType === type) return;
+    setMedalsLoading(true);
+    fetch(`/api/leaderboard-medals?type=${type}&limit=100`)
+      .then((r) => r.json())
+      .then((data: MedalEntry[]) => {
+        setMedalEntries(data);
+        setMedalsType(type);
+      })
+      .catch(() => {
+        setMedalEntries([]);
+        setMedalsType(type);
+      })
+      .finally(() => setMedalsLoading(false));
+  }, [sort, type, medalsType]);
+
   const filtered = useMemo(() => {
     let list = entries;
     if (search.trim()) {
@@ -183,6 +289,15 @@ export default function RankingsClient({ initialEntries, initialType, counts }: 
     }
     return sortEntries(list, sort);
   }, [entries, sort, search]);
+
+  const filteredMedals = useMemo(() => {
+    let list = medalEntries;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter((e) => e.name.toLowerCase().includes(q));
+    }
+    return list;
+  }, [medalEntries, search]);
 
   const genderTabs: { value: RatingType; label: string; icon: string; count: number }[] = [
     { value: 'M', label: 'М', icon: '🏋️', count: counts.men },
@@ -194,6 +309,7 @@ export default function RankingsClient({ initialEntries, initialType, counts }: 
     { value: 'pts', label: 'РЕЙТИНГ', icon: '⚡' },
     { value: 'avg', label: 'СРЕДНИЙ', icon: '📊' },
     { value: 'trn', label: 'ТУРНИРЫ', icon: '🏆' },
+    { value: 'medals', label: 'МЕДАЛИ', icon: '🏅' },
   ];
 
   return (
@@ -257,9 +373,8 @@ export default function RankingsClient({ initialEntries, initialType, counts }: 
       </div>
 
       {/* Loading */}
-      <div className={loading ? 'opacity-40 transition-opacity pointer-events-none' : ''}>
-        {/* Podium */}
-        <Podium entries={filtered} sort={sort} />
+      <div className={loading || medalsLoading ? 'opacity-40 transition-opacity pointer-events-none' : ''}>
+        {sort !== 'medals' ? <Podium entries={filtered} sort={sort} /> : null}
 
         {/* Search */}
         <div className="relative mb-4">
@@ -274,7 +389,19 @@ export default function RankingsClient({ initialEntries, initialType, counts }: 
         </div>
 
         {/* Player list */}
-        {filtered.length === 0 ? (
+        {sort === 'medals' ? (
+          filteredMedals.length === 0 ? (
+            <div className="text-center text-text-secondary py-16">
+              Нет медалей для отображения
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {filteredMedals.map((entry) => (
+                <MedalItem key={entry.playerId} entry={entry} />
+              ))}
+            </div>
+          )
+        ) : filtered.length === 0 ? (
           <div className="text-center text-text-secondary py-16">
             Нет данных для отображения
           </div>

@@ -1,5 +1,5 @@
 import { getPool } from './db';
-import type { LeaderboardEntry, Player, Tournament, RatingType, Team, RatingHistoryEntry } from './types';
+import type { LeaderboardEntry, MedalEntry, Player, Tournament, RatingType, Team, RatingHistoryEntry } from './types';
 import {
   applyTournamentOverride,
   applyTournamentOverrides,
@@ -171,6 +171,9 @@ export async function fetchLeaderboard(
        COALESCE(SUM(${eff}), 0)::int AS rating,
        COUNT(DISTINCT tr.tournament_id)::int AS tournaments,
        COALESCE(SUM(tr.wins), 0)::int AS wins,
+       COUNT(CASE WHEN tr.place = 1 THEN 1 END)::int AS gold,
+       COUNT(CASE WHEN tr.place = 2 THEN 1 END)::int AS silver,
+       COUNT(CASE WHEN tr.place = 3 THEN 1 END)::int AS bronze,
        MAX(t.date) AS last_seen
      FROM tournament_results tr
      JOIN players p ON p.id = tr.player_id AND p.status = 'active'
@@ -192,8 +195,72 @@ export async function fetchLeaderboard(
     rating: row.rating ?? 0,
     tournaments: row.tournaments ?? 0,
     wins: row.wins ?? 0,
+    gold: Number(row.gold ?? 0),
+    silver: Number(row.silver ?? 0),
+    bronze: Number(row.bronze ?? 0),
     lastSeen: toIsoDate(row.last_seen),
     photoUrl: row.photo_url ?? '',
+  }));
+}
+
+export async function fetchMedalsLeaderboard(
+  type: RatingType = 'M',
+  limit = 100
+): Promise<MedalEntry[]> {
+  if (!process.env.DATABASE_URL) return [];
+  const pool = getPool();
+
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(Number(limit) || 100)));
+
+  const { rows } = await pool.query(
+    `SELECT
+       p.id,
+       p.name,
+       p.photo_url,
+       p.gender,
+       COUNT(CASE WHEN tr.place = 1 THEN 1 END)::int AS gold,
+       COUNT(CASE WHEN tr.place = 2 THEN 1 END)::int AS silver,
+       COUNT(CASE WHEN tr.place = 3 THEN 1 END)::int AS bronze,
+       COUNT(CASE WHEN tr.place = 1 AND LOWER(COALESCE(t.level, '')) = 'hard' THEN 1 END)::int AS hard_wins,
+       COUNT(CASE WHEN tr.place = 1 AND LOWER(COALESCE(t.level, '')) IN ('advanced', 'advance') THEN 1 END)::int AS advanced_wins,
+       COUNT(CASE WHEN tr.place = 1 AND LOWER(COALESCE(t.level, '')) = 'medium' THEN 1 END)::int AS medium_wins,
+       COUNT(CASE WHEN tr.place = 1 AND LOWER(COALESCE(t.level, '')) = 'light' THEN 1 END)::int AS light_wins,
+       COUNT(CASE WHEN tr.place = 1 AND (
+         LOWER(COALESCE(t.format, '')) = 'kotc' OR LOWER(COALESCE(t.format, '')) LIKE '%king%'
+       ) THEN 1 END)::int AS kotc_wins,
+       COUNT(CASE WHEN tr.place = 1 AND LOWER(COALESCE(t.format, '')) LIKE '%thai%' THEN 1 END)::int AS thai_wins,
+       COUNT(CASE WHEN tr.place = 1 AND (
+         LOWER(COALESCE(t.format, '')) LIKE '%ipt%' OR
+         LOWER(COALESCE(t.format, '')) LIKE '%double%' OR
+         LOWER(COALESCE(t.format, '')) LIKE '%trouble%'
+       ) THEN 1 END)::int AS ipt_wins
+     FROM tournament_results tr
+     JOIN players p ON p.id = tr.player_id AND p.status = 'active'
+     JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
+     WHERE tr.rating_type = $1
+     GROUP BY p.id, p.name, p.photo_url, p.gender
+     HAVING COUNT(CASE WHEN tr.place = 1 THEN 1 END) > 0
+     ORDER BY gold DESC, silver DESC, bronze DESC, p.name ASC
+     LIMIT $2`,
+    [type, safeLimit]
+  );
+
+  return rows.map((row, i) => ({
+    rank: i + 1,
+    playerId: row.id,
+    name: row.name,
+    photoUrl: row.photo_url ?? '',
+    gender: row.gender,
+    gold: Number(row.gold ?? 0),
+    silver: Number(row.silver ?? 0),
+    bronze: Number(row.bronze ?? 0),
+    hardWins: Number(row.hard_wins ?? 0),
+    advancedWins: Number(row.advanced_wins ?? 0),
+    mediumWins: Number(row.medium_wins ?? 0),
+    lightWins: Number(row.light_wins ?? 0),
+    kotcWins: Number(row.kotc_wins ?? 0),
+    thaiWins: Number(row.thai_wins ?? 0),
+    iptWins: Number(row.ipt_wins ?? 0),
   }));
 }
 
@@ -598,7 +665,8 @@ export async function fetchPlayerMatches(
         t.name AS tournament_name,
         t.date AS tournament_date,
         t.format AS tournament_format,
-        t.settings AS tournament_settings
+        t.settings AS tournament_settings,
+        t.level AS tournament_level
       FROM tournament_results tr
       JOIN tournaments t ON t.id = tr.tournament_id
       JOIN players p ON p.id = tr.player_id
@@ -640,6 +708,8 @@ export async function fetchPlayerMatches(
       coef: r.coef ?? 0,
       balls: r.balls != null ? Number(r.balls) : 0,
       thaiSpectatorBoardUrl,
+      level: r.tournament_level ? String(r.tournament_level) : null,
+      format: r.tournament_format ? String(r.tournament_format) : null,
     };
   });
 }
@@ -850,7 +920,7 @@ export interface PlayerExtendedStats {
   totalWins: number;
   totalBalls: number;
   avgBalls: number;
-  bestTournament: { name: string; date: string; place: number; pts: number } | null;
+  bestTournament: { id?: string; name: string; date: string; place: number; pts: number } | null;
   currentStreak: { type: 'top3' | 'none'; count: number };
   rankM: number | null;
   rankW: number | null;
@@ -879,7 +949,7 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
   const { rows: results } = await pool.query(
     `SELECT tr.place, tr.game_pts, tr.rating_pts, tr.wins, tr.diff, tr.balls, tr.rating_type,
             tr.rating_pool,
-            t.name AS tournament_name, t.date AS tournament_date, t.format,
+            t.id AS tournament_id, t.name AS tournament_name, t.date AS tournament_date, t.format,
             COALESCE(t.level, '') AS tournament_level
      FROM tournament_results tr
      JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
@@ -916,7 +986,7 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
     const pts = ratingPointsForPlace(Number(r.place), pool);
     if (pts > bestPts) {
       bestPts = pts;
-      bestTournament = { name: r.tournament_name, date: toIsoDate(r.tournament_date), place: Number(r.place), pts };
+      bestTournament = { id: r.tournament_id ? String(r.tournament_id) : undefined, name: r.tournament_name, date: toIsoDate(r.tournament_date), place: Number(r.place), pts };
     }
   }
 
