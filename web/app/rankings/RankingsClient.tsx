@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import type { LeaderboardEntry, MedalEntry, RatingType } from '@/lib/types';
+import type { LeaderboardEntry, MedalEntry, RatingType, TournamentFormatFilter } from '@/lib/types';
 import PlayerPhoto from '@/components/ui/PlayerPhoto';
 import type { RankingCounts } from '@/lib/queries';
 
@@ -170,9 +170,9 @@ function MedalItem({ entry }: { entry: MedalEntry }) {
     { label: 'LIGHT', value: entry.lightWins, className: 'border-[#6ABF69]/50 bg-[#6ABF69]/10 text-[#6ABF69]' },
   ].filter((chip) => chip.value > 0);
   const formatChips = [
-    { label: 'KOTC', icon: '👑', value: entry.kotcWins },
-    { label: 'Thai', icon: '🏖️', value: entry.thaiWins },
-    { label: 'Double', icon: '⚡', value: entry.iptWins },
+    { label: 'KOTC', icon: '👑', value: entry.kotcWins, className: 'border-[#FFD700]/50 bg-[#FFD700]/10 text-[#FFD700]' },
+    { label: 'Thai', icon: '🏖️', value: entry.thaiWins, className: 'border-white/20 bg-white/[.04] text-text-secondary' },
+    { label: 'Дабл Трабл', icon: '⚡', value: entry.iptWins, className: 'border-[#4DA8DA]/50 bg-[#4DA8DA]/10 text-[#4DA8DA]' },
   ].filter((chip) => chip.value > 0);
 
   return (
@@ -222,9 +222,9 @@ function MedalItem({ entry }: { entry: MedalEntry }) {
           ) : null}
 
           {formatChips.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-text-secondary">
+            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
               {formatChips.map((chip) => (
-                <span key={chip.label} className="rounded-full border border-white/10 bg-white/[.04] px-2 py-0.5">
+                <span key={chip.label} className={`rounded-full border px-2 py-0.5 font-bold tracking-wide ${chip.className}`}>
                   {chip.icon} {chip.label} ×{chip.value}
                 </span>
               ))}
@@ -246,42 +246,44 @@ interface RankingsClientProps {
 
 export default function RankingsClient({ initialEntries, initialType, counts }: RankingsClientProps) {
   const [type, setType] = useState<RatingType>(initialType);
+  const [format, setFormat] = useState<TournamentFormatFilter>('all');
   const [entries, setEntries] = useState<LeaderboardEntry[]>(initialEntries);
   const [medalEntries, setMedalEntries] = useState<MedalEntry[]>([]);
-  const [medalsType, setMedalsType] = useState<RatingType | null>(null);
+  const [medalsLoaded, setMedalsLoaded] = useState<{ type: RatingType; format: TournamentFormatFilter } | null>(null);
   const [loading, setLoading] = useState(false);
   const [medalsLoading, setMedalsLoading] = useState(false);
   const [sort, setSort] = useState<SortMode>('pts');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    if (type === initialType) {
+    if (type === initialType && format === 'all') {
       setEntries(initialEntries);
       return;
     }
     setLoading(true);
-    fetch(`/api/leaderboard?type=${type}&limit=100`)
+    fetch(`/api/leaderboard?type=${type}&limit=100&format=${format}`)
       .then((r) => r.json())
       .then((data: LeaderboardEntry[]) => setEntries(data))
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
-  }, [type, initialType, initialEntries]);
+  }, [type, format, initialType, initialEntries]);
 
   useEffect(() => {
-    if (sort !== 'medals' || medalsType === type) return;
+    if (sort !== 'medals') return;
+    if (medalsLoaded?.type === type && medalsLoaded?.format === format) return;
     setMedalsLoading(true);
-    fetch(`/api/leaderboard-medals?type=${type}&limit=100`)
+    fetch(`/api/leaderboard-medals?type=${type}&limit=100&format=${format}`)
       .then((r) => r.json())
       .then((data: MedalEntry[]) => {
         setMedalEntries(data);
-        setMedalsType(type);
+        setMedalsLoaded({ type, format });
       })
       .catch(() => {
         setMedalEntries([]);
-        setMedalsType(type);
+        setMedalsLoaded({ type, format });
       })
       .finally(() => setMedalsLoading(false));
-  }, [sort, type, medalsType]);
+  }, [sort, type, format, medalsLoaded]);
 
   const filtered = useMemo(() => {
     let list = entries;
@@ -305,6 +307,12 @@ export default function RankingsClient({ initialEntries, initialType, counts }: 
     { value: 'M', label: 'М', icon: '🏋️', count: counts.men },
     { value: 'W', label: 'Ж', icon: '👩', count: counts.women },
     { value: 'Mix', label: 'Микст', icon: '🤝', count: counts.mix },
+  ];
+
+  const formatTabs: { value: TournamentFormatFilter; label: string; icon: string; activeClass: string; hoverColor: string }[] = [
+    { value: 'all',  label: 'Все',        icon: '🌐', activeClass: 'bg-white/10 border-white/25 text-white',                      hoverColor: 'hover:text-white' },
+    { value: 'kotc', label: 'KOTC',       icon: '👑', activeClass: 'bg-[#FFD700]/10 border-[#FFD700]/40 text-[#FFD700]',          hoverColor: 'hover:text-[#FFD700]' },
+    { value: 'dt',   label: 'Дабл Трабл', icon: '⚡', activeClass: 'bg-[#4DA8DA]/10 border-[#4DA8DA]/40 text-[#4DA8DA]',          hoverColor: 'hover:text-[#4DA8DA]' },
   ];
 
   const sortTabs: { value: SortMode; label: string; icon: string }[] = [
@@ -335,13 +343,13 @@ export default function RankingsClient({ initialEntries, initialType, counts }: 
       </div>
 
       {/* Gender tabs */}
-      <div className="flex gap-1 bg-white/[.04] p-1 rounded-xl border border-[#2a2a40] mb-4">
+      <div className="flex gap-1 bg-white/[.04] p-1 rounded-xl border border-[#2a2a40] mb-3">
         {genderTabs.map((tab) => {
           const isActive = tab.value === type;
           return (
             <button
               key={tab.value}
-              onClick={() => { setType(tab.value); setSearch(''); }}
+              onClick={() => { setType(tab.value); setSearch(''); setFormat('all'); }}
               className={`flex-1 py-2 rounded-lg font-bold text-sm uppercase tracking-wide transition-all ${
                 isActive
                   ? 'bg-brand text-[#111] shadow-[0_3px_10px_rgba(255,90,0,0.25)]'
@@ -349,6 +357,26 @@ export default function RankingsClient({ initialEntries, initialType, counts }: 
               }`}
             >
               {tab.icon} {tab.label} ({tab.count})
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Format filter */}
+      <div className="flex gap-2 mb-4">
+        {formatTabs.map((tab) => {
+          const isActive = tab.value === format;
+          return (
+            <button
+              key={tab.value}
+              onClick={() => setFormat(tab.value)}
+              className={`flex-1 py-1.5 px-3 rounded-full border text-xs font-bold uppercase tracking-wider transition-all ${
+                isActive
+                  ? tab.activeClass
+                  : `bg-transparent border-[#2a2a44] text-text-secondary ${tab.hoverColor}`
+              }`}
+            >
+              {tab.icon} {tab.label}
             </button>
           );
         })}

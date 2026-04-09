@@ -1,5 +1,5 @@
 import { getPool } from './db';
-import type { LeaderboardEntry, MedalEntry, Player, Tournament, RatingType, Team, RatingHistoryEntry } from './types';
+import type { LeaderboardEntry, MedalEntry, Player, Tournament, RatingType, TournamentFormatFilter, Team, RatingHistoryEntry } from './types';
 import {
   applyTournamentOverride,
   applyTournamentOverrides,
@@ -153,13 +153,21 @@ async function fetchPartnerRequestCounts(
  */
 export async function fetchLeaderboard(
   type: RatingType = 'M',
-  limit = 50
+  limit = 50,
+  format: TournamentFormatFilter = 'all'
 ): Promise<LeaderboardEntry[]> {
   if (!process.env.DATABASE_URL) return [];
   const pool = getPool();
 
   const valuesRows = RATING_POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
   const eff = sqlEffectiveRatingPointsExpr('tr');
+
+  const formatClause =
+    format === 'kotc'
+      ? `AND (LOWER(COALESCE(t.format, '')) = 'kotc' OR LOWER(COALESCE(t.format, '')) LIKE '%king%')`
+      : format === 'dt'
+      ? `AND (LOWER(COALESCE(t.format, '')) LIKE '%ipt%' OR LOWER(COALESCE(t.format, '')) LIKE '%double%' OR LOWER(COALESCE(t.format, '')) LIKE '%trouble%')`
+      : '';
 
   const { rows } = await pool.query(
     `WITH pts(place, pts) AS (VALUES ${valuesRows})
@@ -184,7 +192,7 @@ export async function fetchLeaderboard(
        END AS top_level
      FROM tournament_results tr
      JOIN players p ON p.id = tr.player_id AND p.status = 'active'
-     LEFT JOIN tournaments t ON t.id = tr.tournament_id
+     JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished' ${formatClause}
      LEFT JOIN pts lk ON lk.place = tr.place
      WHERE tr.rating_type = $1
      GROUP BY p.id, p.name, p.gender, p.photo_url
@@ -213,12 +221,20 @@ export async function fetchLeaderboard(
 
 export async function fetchMedalsLeaderboard(
   type: RatingType = 'M',
-  limit = 100
+  limit = 100,
+  format: TournamentFormatFilter = 'all'
 ): Promise<MedalEntry[]> {
   if (!process.env.DATABASE_URL) return [];
   const pool = getPool();
 
   const safeLimit = Math.max(1, Math.min(100, Math.trunc(Number(limit) || 100)));
+
+  const formatClause =
+    format === 'kotc'
+      ? `AND (LOWER(COALESCE(t.format, '')) = 'kotc' OR LOWER(COALESCE(t.format, '')) LIKE '%king%')`
+      : format === 'dt'
+      ? `AND (LOWER(COALESCE(t.format, '')) LIKE '%ipt%' OR LOWER(COALESCE(t.format, '')) LIKE '%double%' OR LOWER(COALESCE(t.format, '')) LIKE '%trouble%')`
+      : '';
 
   const { rows } = await pool.query(
     `SELECT
@@ -244,7 +260,7 @@ export async function fetchMedalsLeaderboard(
        ) THEN 1 END)::int AS ipt_wins
      FROM tournament_results tr
      JOIN players p ON p.id = tr.player_id AND p.status = 'active'
-     JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
+     JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished' ${formatClause}
      WHERE tr.rating_type = $1
      GROUP BY p.id, p.name, p.photo_url, p.gender
      HAVING COUNT(CASE WHEN tr.place = 1 THEN 1 END) > 0
@@ -548,6 +564,7 @@ export async function fetchRankingCounts(): Promise<RankingCounts> {
       count(DISTINCT player_id)::int AS total
     FROM tournament_results tr
     JOIN players p ON p.id = tr.player_id AND p.status = 'active'
+    JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
   `);
   const r = rows[0];
   return { men: r?.men ?? 0, women: r?.women ?? 0, mix: r?.mix ?? 0, total: r?.total ?? 0 };
