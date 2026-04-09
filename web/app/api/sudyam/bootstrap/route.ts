@@ -10,6 +10,7 @@ import {
   isThaiJudgeError,
 } from "@/lib/thai-live";
 import { THAI_STRUCTURAL_DRIFT_LOCKED_CODE } from "@/lib/thai-judge-config";
+import { bootstrapKotcNextR1, isKotcNextError } from "@/lib/kotc-next";
 
 export const dynamic = "force-dynamic";
 
@@ -45,12 +46,16 @@ export async function POST(req: NextRequest) {
   if (!tournamentId) {
     return NextResponse.json({ error: "tournamentId is required" }, { status: 400 });
   }
-  if (format !== "thai") {
-    return NextResponse.json({ error: "Thai bootstrap POST only supports Thai tournaments" }, { status: 400 });
+  if (format !== "thai" && format !== "kotc") {
+    return NextResponse.json({ error: "Bootstrap POST only supports Thai or KOTC tournaments" }, { status: 400 });
   }
 
   try {
-    await bootstrapThaiJudgeState(tournamentId, { seed: seed >= 1 ? seed : undefined });
+    if (format === "thai") {
+      await bootstrapThaiJudgeState(tournamentId, { seed: seed >= 1 ? seed : undefined });
+    } else {
+      await bootstrapKotcNextR1(tournamentId, { seed: seed >= 1 ? seed : undefined });
+    }
     const payload = await resolveSudyamBootstrap(tournamentId, format);
     return NextResponse.json(payload);
   } catch (error) {
@@ -63,6 +68,10 @@ export async function POST(req: NextRequest) {
         code ? { error: error.message, code } : { error: error.message },
         { status: error.status },
       );
+    }
+    if (isKotcNextError(error)) {
+      const body = error.code ? { error: error.message, code: error.code } : { error: error.message };
+      return NextResponse.json(body, { status: error.status });
     }
     console.error("[SUDYAM] bootstrap.post:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

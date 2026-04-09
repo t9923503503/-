@@ -4,7 +4,10 @@ import { getTournamentFormatCode } from './admin-tournament-db';
 import {
   buildLegacyIptTournamentState,
   buildLegacyPlayerDbState,
+  isKotcAdminFormat,
   isIptMixedFormat,
+  normalizeKotcAdminSettings,
+  type KotcJudgeModule,
 } from './admin-legacy-sync';
 import type {
   AdminPlayer,
@@ -31,6 +34,11 @@ type TournamentCapabilities = {
   externalId: boolean;
   gameState: boolean;
   syncedAt: boolean;
+  kotcJudgeModule: boolean;
+  kotcJudgeBootstrapSig: boolean;
+  kotcRaundCount: boolean;
+  kotcRaundTimerMinutes: boolean;
+  kotcPpc: boolean;
 };
 
 type PlayerCapabilities = {
@@ -255,6 +263,24 @@ function toUiTime(value: unknown): string {
 
 function mapTournament(row: JsonObject | null, participantCount = 0): AdminTournament {
   const source = row ?? {};
+  const baseSettings =
+    source.settings && typeof source.settings === 'object'
+      ? (source.settings as Record<string, unknown>)
+      : {};
+  const format = String(source.format ?? '');
+  const kotc =
+    isKotcAdminFormat(format)
+      ? normalizeKotcAdminSettings({
+          ...baseSettings,
+          kotcJudgeModule: source.kotc_judge_module ?? baseSettings.kotcJudgeModule,
+          kotcJudgeBootstrapSignature:
+            source.kotc_judge_bootstrap_sig ?? baseSettings.kotcJudgeBootstrapSignature,
+          kotcRaundCount: source.kotc_raund_count ?? baseSettings.kotcRaundCount,
+          kotcRaundTimerMinutes:
+            source.kotc_raund_timer_minutes ?? baseSettings.kotcRaundTimerMinutes,
+          kotcPpc: source.kotc_ppc ?? baseSettings.kotcPpc,
+        })
+      : null;
   return {
     id: String(source.id ?? ''),
     name: String(source.name ?? ''),
@@ -268,10 +294,12 @@ function mapTournament(row: JsonObject | null, participantCount = 0): AdminTourn
     status: String(source.status ?? 'open'),
     participantCount,
     photoUrl: String(source.photo_url ?? ''),
-    settings:
-      source.settings && typeof source.settings === 'object'
-        ? (source.settings as Record<string, unknown>)
-        : {},
+    settings: kotc ? { ...baseSettings, ...kotc } : baseSettings,
+    kotcJudgeModule: (kotc?.kotcJudgeModule ?? null) as KotcJudgeModule | null,
+    kotcJudgeBootstrapSig: kotc?.kotcJudgeBootstrapSignature ?? null,
+    kotcRaundCount: kotc?.raundCount ?? null,
+    kotcRaundTimerMinutes: kotc?.raundTimerMinutes ?? null,
+    kotcPpc: kotc?.ppc ?? null,
   };
 }
 
@@ -388,6 +416,11 @@ async function getTournamentCapabilities(): Promise<TournamentCapabilities> {
     externalId: await probeColumn('tournaments', 'external_id'),
     gameState: await probeColumn('tournaments', 'game_state'),
     syncedAt: await probeColumn('tournaments', 'synced_at'),
+    kotcJudgeModule: await probeColumn('tournaments', 'kotc_judge_module'),
+    kotcJudgeBootstrapSig: await probeColumn('tournaments', 'kotc_judge_bootstrap_sig'),
+    kotcRaundCount: await probeColumn('tournaments', 'kotc_raund_count'),
+    kotcRaundTimerMinutes: await probeColumn('tournaments', 'kotc_raund_timer_minutes'),
+    kotcPpc: await probeColumn('tournaments', 'kotc_ppc'),
   };
 }
 
@@ -695,7 +728,36 @@ function buildTournamentSelect(caps: TournamentCapabilities): string {
     'status',
     ...(caps.photoUrl ? ['photo_url'] : []),
     ...(caps.settings ? ['settings'] : []),
+    ...(caps.kotcJudgeModule ? ['kotc_judge_module'] : []),
+    ...(caps.kotcJudgeBootstrapSig ? ['kotc_judge_bootstrap_sig'] : []),
+    ...(caps.kotcRaundCount ? ['kotc_raund_count'] : []),
+    ...(caps.kotcRaundTimerMinutes ? ['kotc_raund_timer_minutes'] : []),
+    ...(caps.kotcPpc ? ['kotc_ppc'] : []),
   ].join(',');
+}
+
+function applyKotcTournamentPayload(
+  payload: JsonObject,
+  input: Partial<AdminTournament>,
+  caps: TournamentCapabilities,
+) {
+  if (!caps.kotcJudgeModule && !caps.kotcJudgeBootstrapSig && !caps.kotcRaundCount && !caps.kotcRaundTimerMinutes && !caps.kotcPpc) {
+    return;
+  }
+  if (!isKotcAdminFormat(input.format)) {
+    if (caps.kotcJudgeModule) payload.kotc_judge_module = null;
+    if (caps.kotcJudgeBootstrapSig) payload.kotc_judge_bootstrap_sig = null;
+    if (caps.kotcRaundCount) payload.kotc_raund_count = null;
+    if (caps.kotcRaundTimerMinutes) payload.kotc_raund_timer_minutes = null;
+    if (caps.kotcPpc) payload.kotc_ppc = null;
+    return;
+  }
+  const normalized = normalizeKotcAdminSettings(input.settings);
+  if (caps.kotcJudgeModule) payload.kotc_judge_module = normalized.kotcJudgeModule;
+  if (caps.kotcJudgeBootstrapSig) payload.kotc_judge_bootstrap_sig = normalized.kotcJudgeBootstrapSignature;
+  if (caps.kotcRaundCount) payload.kotc_raund_count = normalized.raundCount;
+  if (caps.kotcRaundTimerMinutes) payload.kotc_raund_timer_minutes = normalized.raundTimerMinutes;
+  if (caps.kotcPpc) payload.kotc_ppc = normalized.ppc;
 }
 
 async function fetchTournamentRow(id: string): Promise<JsonObject | null> {
@@ -755,6 +817,7 @@ export async function createTournament(
   };
   if (caps.photoUrl) payload.photo_url = String(input.photoUrl || '').trim() || null;
   if (caps.settings) payload.settings = input.settings ?? {};
+  applyKotcTournamentPayload(payload, input, caps);
   if (caps.formatCode) {
     const formatCode = getTournamentFormatCode(String(input.format || ''));
     if (formatCode) payload.format_code = formatCode;
@@ -795,6 +858,7 @@ export async function updateTournament(
   };
   if (caps.photoUrl) payload.photo_url = String(input.photoUrl || '').trim() || null;
   if (caps.settings) payload.settings = input.settings ?? {};
+  applyKotcTournamentPayload(payload, input, caps);
   if (caps.formatCode) {
     const formatCode = getTournamentFormatCode(String(input.format || ''));
     if (formatCode) payload.format_code = formatCode;

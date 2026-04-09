@@ -3,6 +3,17 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  KOTC_ADMIN_DEFAULT_PPC,
+  KOTC_ADMIN_DEFAULT_RAUNDS,
+  KOTC_ADMIN_DEFAULT_TIMER,
+  KOTC_ADMIN_FORMAT,
+  KOTC_ADMIN_MAX_PPC,
+  KOTC_ADMIN_MAX_RAUNDS,
+  KOTC_ADMIN_MAX_TIMER,
+  KOTC_ADMIN_MIN_PPC,
+  KOTC_ADMIN_MIN_RAUNDS,
+  KOTC_ADMIN_MIN_TIMER,
+  getKotcSeatCount,
   THAI_ADMIN_COURTS,
   THAI_ADMIN_FORMAT,
   THAI_ADMIN_MIN_COURTS,
@@ -18,12 +29,16 @@ import {
   type ThaiVariant,
   getThaiDivisionLabel,
   getThaiSeatCount,
+  isKotcAdminFormat,
   isThaiAdminFormat,
+  normalizeKotcAdminSettings,
+  normalizeKotcJudgeModule,
   normalizeThaiAdminSettings,
   normalizeThaiRosterMode,
   normalizeThaiRulesPreset,
   normalizeThaiTourCount,
   normalizeThaiVariant,
+  type KotcJudgeModule,
   validateThaiRoster,
 } from '@/lib/admin-legacy-sync';
 import { buildSudyamLaunchUrl, getSudyamFormatForTournament } from '@/lib/sudyam-launch';
@@ -56,6 +71,11 @@ type TournamentSettings = {
   thaiRulesPreset: ThaiRulesPreset;
   iptPointLimit: number;
   iptFinishType: 'hard' | 'balance';
+  kotcJudgeModule: KotcJudgeModule;
+  kotcJudgeBootstrapSignature: string | null;
+  kotcPpc: number;
+  kotcRaundCount: number;
+  kotcRaundTimerMinutes: number;
 };
 
 type Row = {
@@ -71,6 +91,11 @@ type Row = {
   status: string;
   participantCount: number;
   settings?: TournamentSettings;
+  kotcJudgeModule?: KotcJudgeModule | null;
+  kotcJudgeBootstrapSig?: string | null;
+  kotcRaundCount?: number | null;
+  kotcRaundTimerMinutes?: number | null;
+  kotcPpc?: number | null;
 };
 
 type Player = {
@@ -93,6 +118,11 @@ type RosterParticipant = {
   gender: 'M' | 'W';
 };
 
+type LaunchTarget = {
+  href: string;
+  label: string;
+};
+
 const defaultSettings: TournamentSettings = {
   courts: THAI_ADMIN_COURTS,
   playersPerCourt: 4,
@@ -111,6 +141,11 @@ const defaultSettings: TournamentSettings = {
   thaiRulesPreset: 'legacy',
   iptPointLimit: 21,
   iptFinishType: 'hard',
+  kotcJudgeModule: 'next',
+  kotcJudgeBootstrapSignature: null,
+  kotcPpc: KOTC_ADMIN_DEFAULT_PPC,
+  kotcRaundCount: KOTC_ADMIN_DEFAULT_RAUNDS,
+  kotcRaundTimerMinutes: KOTC_ADMIN_DEFAULT_TIMER,
 };
 
 function createEmptyForm(): Row {
@@ -174,6 +209,31 @@ function normalizeThaiSettings(
   };
 }
 
+function normalizeKotcSettings(
+  settings?: Partial<TournamentSettings>,
+  participantCount?: number,
+  fallbackModule: KotcJudgeModule = 'next',
+): TournamentSettings {
+  const base = normalizeSettings(settings);
+  const kotcSettings = normalizeKotcAdminSettings(
+    {
+      ...base,
+      kotcJudgeModule: base.kotcJudgeModule ?? fallbackModule,
+    },
+    participantCount,
+  );
+  return {
+    ...base,
+    courts: kotcSettings.courts,
+    playersPerCourt: kotcSettings.playersPerCourt,
+    kotcJudgeModule: normalizeKotcJudgeModule(base.kotcJudgeModule, fallbackModule),
+    kotcJudgeBootstrapSignature: kotcSettings.kotcJudgeBootstrapSignature,
+    kotcPpc: kotcSettings.ppc,
+    kotcRaundCount: kotcSettings.raundCount,
+    kotcRaundTimerMinutes: kotcSettings.raundTimerMinutes,
+  };
+}
+
 function getThaiVariantLabel(variant: ThaiVariant): string {
   switch (variant) {
     case 'MN':
@@ -216,6 +276,39 @@ function buildJudgeLaunchUrl(row: Pick<Row, 'id' | 'format'>): string {
     tournamentId: row.id,
     format,
   });
+}
+
+function buildKotcNextControlUrl(tournamentId: string): string {
+  return `/sudyam/kotcn/${encodeURIComponent(tournamentId)}`;
+}
+
+function getPrimaryLaunchTarget(row: Pick<Row, 'id' | 'format' | 'settings'>): LaunchTarget | null {
+  if (!row.id) return null;
+  if (isThaiAdminFormat(row.format)) {
+    const normalized = normalizeThaiSettings(row.settings, undefined, THAI_JUDGE_MODULE_LEGACY);
+    if (normalized.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT) {
+      return {
+        href: `/admin/tournaments/${encodeURIComponent(row.id)}/thai-live`,
+        label: 'Thai Tournament Control →',
+      };
+    }
+  }
+  if (isKotcAdminFormat(row.format)) {
+    const normalized = normalizeKotcSettings(row.settings, undefined, 'legacy');
+    if (normalized.kotcJudgeModule === 'next') {
+      return {
+        href: buildKotcNextControlUrl(row.id),
+        label: 'KOTC Next Control →',
+      };
+    }
+  }
+
+  const judgeUrl = buildJudgeLaunchUrl(row);
+  if (!judgeUrl) return null;
+  return {
+    href: judgeUrl,
+    label: 'Open in Sudyam',
+  };
 }
 
 function getErrorText(error: unknown, fallback: string): string {
@@ -353,12 +446,13 @@ export default function AdminTournamentsPage() {
   const [selectedDraftIndex, setSelectedDraftIndex] = useState<number | null>(null);
   const [confirmClearCourtIndex, setConfirmClearCourtIndex] = useState<number | null>(null);
   const [message, setMessage] = useState('');
-  const [judgeLaunchUrl, setJudgeLaunchUrl] = useState('');
+  const [launchTarget, setLaunchTarget] = useState<LaunchTarget | null>(null);
   const [loading, setLoading] = useState(false);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [rosterError, setRosterError] = useState('');
   const isEdit = useMemo(() => Boolean(form.id), [form.id]);
   const isThaiFormat = useMemo(() => isThaiAdminFormat(form.format), [form.format]);
+  const isKotcFormat = useMemo(() => isKotcAdminFormat(form.format), [form.format]);
   const isExactThaiFormat = useMemo(() => isExactThaiTournamentFormat(form.format), [form.format]);
   const settings = useMemo(() => normalizeSettings(form.settings), [form.settings]);
   const thaiSettings = useMemo(
@@ -372,9 +466,29 @@ export default function AdminTournamentsPage() {
         : null,
     [draftPlayers.length, form.settings, isEdit, isThaiFormat]
   );
-  const seatCount = isThaiFormat ? getThaiSeatCount(thaiSettings?.courts ?? THAI_ADMIN_COURTS) : settings.courts * settings.playersPerCourt;
+  const kotcSettings = useMemo(
+    () =>
+      isKotcFormat
+        ? normalizeKotcSettings(
+            form.settings,
+            draftPlayers.length,
+            isEdit ? 'legacy' : 'next',
+          )
+        : null,
+    [draftPlayers.length, form.settings, isEdit, isKotcFormat],
+  );
+  const playersPerCourt = isThaiFormat
+    ? THAI_ADMIN_PLAYERS_PER_COURT
+    : isKotcFormat
+      ? kotcSettings?.playersPerCourt ?? settings.playersPerCourt
+      : settings.playersPerCourt;
+  const seatCount = isThaiFormat
+    ? getThaiSeatCount(thaiSettings?.courts ?? THAI_ADMIN_COURTS)
+    : isKotcFormat
+      ? getKotcSeatCount(kotcSettings?.courts ?? settings.courts, kotcSettings?.kotcPpc ?? settings.kotcPpc)
+      : settings.courts * playersPerCourt;
   const autoCapacity = seatCount;
-  const participantLimit = isThaiFormat ? seatCount : Math.max(Number(form.capacity || 0), 0) || autoCapacity;
+  const participantLimit = isThaiFormat || isKotcFormat ? seatCount : Math.max(Number(form.capacity || 0), 0) || autoCapacity;
   const reservePlayers = draftPlayers.slice(seatCount);
   const rosterOverflow = draftPlayers.length > participantLimit;
   const thaiMenCount = useMemo(() => draftPlayers.filter((player) => player && player.gender === 'M').length, [draftPlayers]);
@@ -418,7 +532,7 @@ export default function AdminTournamentsPage() {
     setPlayerSearch('');
     setPlayerGenderFilter('all');
     setRosterError('');
-    setJudgeLaunchUrl('');
+    setLaunchTarget(null);
     setConfirmClearCourtIndex(null);
   }
 
@@ -435,6 +549,19 @@ export default function AdminTournamentsPage() {
           settings: {
             ...nextSettings,
             ...nextThaiSettings,
+          },
+        };
+      }
+      if (isKotcAdminFormat(current.format)) {
+        const fallbackModule = current.id ? 'legacy' : 'next';
+        const nextKotcSettings = normalizeKotcSettings(nextSettings, draftPlayers.length, fallbackModule);
+        return {
+          ...current,
+          format: KOTC_ADMIN_FORMAT,
+          capacity: getKotcSeatCount(nextKotcSettings.courts, nextKotcSettings.kotcPpc),
+          settings: {
+            ...nextSettings,
+            ...nextKotcSettings,
           },
         };
       }
@@ -472,6 +599,33 @@ export default function AdminTournamentsPage() {
           settings: {
             ...nextSettings,
             ...nextThaiSettings,
+          },
+        };
+      }
+      if (isKotcAdminFormat(format)) {
+        const kotcSeedSettings: Partial<TournamentSettings> =
+          current.format === KOTC_ADMIN_FORMAT
+            ? nextSettings
+            : {
+                ...nextSettings,
+                kotcJudgeModule: 'next',
+                kotcJudgeBootstrapSignature: null,
+                kotcPpc: KOTC_ADMIN_DEFAULT_PPC,
+                kotcRaundCount: KOTC_ADMIN_DEFAULT_RAUNDS,
+                kotcRaundTimerMinutes: KOTC_ADMIN_DEFAULT_TIMER,
+              };
+        const nextKotcSettings = normalizeKotcSettings(
+          kotcSeedSettings,
+          draftPlayers.length,
+          'next',
+        );
+        return {
+          ...current,
+          format: KOTC_ADMIN_FORMAT,
+          capacity: getKotcSeatCount(nextKotcSettings.courts, nextKotcSettings.kotcPpc),
+          settings: {
+            ...nextSettings,
+            ...nextKotcSettings,
           },
         };
       }
@@ -552,13 +706,47 @@ export default function AdminTournamentsPage() {
     });
   }, [draftPlayers.length, isThaiFormat]);
 
+  useEffect(() => {
+    if (!isKotcFormat) return;
+    setForm((current) => {
+      const currentSettings = normalizeSettings(current.settings);
+      const nextSettings = normalizeKotcSettings(
+        current.settings,
+        draftPlayers.filter(Boolean).length,
+        current.id ? 'legacy' : 'next',
+      );
+      const nextCapacity = getKotcSeatCount(nextSettings.courts, nextSettings.kotcPpc);
+
+      if (
+        current.format === KOTC_ADMIN_FORMAT &&
+        current.capacity === nextCapacity &&
+        currentSettings.courts === nextSettings.courts &&
+        currentSettings.playersPerCourt === nextSettings.playersPerCourt &&
+        currentSettings.kotcJudgeModule === nextSettings.kotcJudgeModule &&
+        currentSettings.kotcJudgeBootstrapSignature === nextSettings.kotcJudgeBootstrapSignature &&
+        currentSettings.kotcPpc === nextSettings.kotcPpc &&
+        currentSettings.kotcRaundCount === nextSettings.kotcRaundCount &&
+        currentSettings.kotcRaundTimerMinutes === nextSettings.kotcRaundTimerMinutes
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        format: KOTC_ADMIN_FORMAT,
+        capacity: nextCapacity,
+        settings: nextSettings,
+      };
+    });
+  }, [draftPlayers.length, isKotcFormat]);
+
   async function startEdit(row: Row) {
     setMessage('');
     setRosterError('');
     setSelectedDraftIndex(null);
     setPlayerGenderFilter('all');
     setRosterLoading(true);
-    setJudgeLaunchUrl(buildJudgeLaunchUrl(row));
+    setLaunchTarget(getPrimaryLaunchTarget(row));
     if (isThaiAdminFormat(row.format)) {
       const nextSettings = normalizeThaiSettings(
         row.settings,
@@ -570,6 +758,18 @@ export default function AdminTournamentsPage() {
         format: THAI_ADMIN_FORMAT,
         division: getThaiDivisionLabel(nextSettings.thaiVariant),
         capacity: getThaiSeatCount(nextSettings.courts),
+        settings: nextSettings,
+      });
+    } else if (isKotcAdminFormat(row.format)) {
+      const nextSettings = normalizeKotcSettings(
+        row.settings,
+        row.participantCount || row.capacity,
+        row.kotcJudgeModule ?? 'legacy',
+      );
+      setForm({
+        ...row,
+        format: KOTC_ADMIN_FORMAT,
+        capacity: getKotcSeatCount(nextSettings.courts, nextSettings.kotcPpc),
         settings: nextSettings,
       });
     } else {
@@ -726,8 +926,8 @@ export default function AdminTournamentsPage() {
     setConfirmClearCourtIndex(null);
     setDraftPlayers((current) => {
       const next = [...current];
-      const start = courtIndex * settings.playersPerCourt;
-      for (let i = 0; i < settings.playersPerCourt; i++) {
+      const start = courtIndex * playersPerCourt;
+      for (let i = 0; i < playersPerCourt; i++) {
         next[start + i] = undefined as unknown as DraftPlayer;
       }
       while (next.length > 0 && !next[next.length - 1]) {
@@ -766,7 +966,12 @@ export default function AdminTournamentsPage() {
             ...settings,
             ...thaiSettings,
           }
-        : settings;
+        : isKotcFormat && kotcSettings
+          ? {
+              ...settings,
+              ...kotcSettings,
+            }
+          : settings;
     const payloadSettings: Record<string, unknown> = { ...mergedSettings };
     if (!isExactThaiFormat) {
       delete payloadSettings.thaiJudgeModule;
@@ -811,12 +1016,19 @@ export default function AdminTournamentsPage() {
     const savedId = typeof data === 'object' && data && 'id' in data ? String((data as Row).id || '') : '';
     const savedFormat =
       typeof data === 'object' && data && 'format' in data ? String((data as Row).format || '') : form.format;
-    const nextJudgeLaunchUrl = savedId
-      ? buildJudgeLaunchUrl({ id: savedId, format: savedFormat || form.format })
-      : '';
+    const nextLaunchTarget = savedId
+      ? getPrimaryLaunchTarget({
+          id: savedId,
+          format: savedFormat || form.format,
+          settings:
+            typeof data === 'object' && data && 'settings' in data
+              ? (((data as Row).settings ?? mergedSettings) as TournamentSettings)
+              : (mergedSettings as TournamentSettings),
+        })
+      : null;
     resetComposer();
-    if (nextJudgeLaunchUrl) {
-      setJudgeLaunchUrl(nextJudgeLaunchUrl);
+    if (nextLaunchTarget) {
+      setLaunchTarget(nextLaunchTarget);
       setMessage('Сохранено');
       await load();
       return;
@@ -868,7 +1080,12 @@ export default function AdminTournamentsPage() {
             ...settings,
             ...thaiSettings,
           }
-        : settings;
+        : isKotcFormat && kotcSettings
+          ? {
+              ...settings,
+              ...kotcSettings,
+            }
+          : settings;
     const payloadSettings: Record<string, unknown> = { ...mergedSettings };
     if (!isExactThaiFormat) {
       delete payloadSettings.thaiJudgeModule;
@@ -914,9 +1131,16 @@ export default function AdminTournamentsPage() {
       typeof result === 'object' && result && 'format' in result
         ? String((result as Row).format || '')
         : form.format;
-    const nextJudgeLaunchUrl = savedId
-      ? buildJudgeLaunchUrl({ id: savedId, format: savedFormat || form.format })
-      : '';
+    const nextLaunchTarget = savedId
+      ? getPrimaryLaunchTarget({
+          id: savedId,
+          format: savedFormat || form.format,
+          settings:
+            typeof result === 'object' && result && 'settings' in result
+              ? (((result as Row).settings ?? mergedSettings) as TournamentSettings)
+              : (mergedSettings as TournamentSettings),
+        })
+      : null;
 
     await load();
 
@@ -959,10 +1183,10 @@ export default function AdminTournamentsPage() {
             ? ((result as Row).settings ?? (mergedSettings as TournamentSettings))
             : (mergedSettings as TournamentSettings),
       };
-      setJudgeLaunchUrl(nextJudgeLaunchUrl);
+      setLaunchTarget(nextLaunchTarget);
       await startEdit(nextRow);
     } else {
-      setJudgeLaunchUrl('');
+      setLaunchTarget(null);
     }
 
     setMessage('Сохранено');
@@ -1002,7 +1226,7 @@ export default function AdminTournamentsPage() {
             </thead>
             <tbody>
               {rows.map((row) => {
-                const judgeUrl = buildJudgeLaunchUrl(row);
+                const launch = getPrimaryLaunchTarget(row);
                 return (
                   <tr key={row.id} className="border-b border-white/5">
                   <td className="py-2 pr-3">{row.name}</td>
@@ -1025,14 +1249,13 @@ export default function AdminTournamentsPage() {
                     >
                       Edit
                     </button>
-                    {judgeUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => void startEdit(row)}
+                    {launch ? (
+                      <Link
+                        href={launch.href}
                         className="px-2 py-1 rounded border border-brand/50 text-brand text-xs"
                       >
                         {isThaiAdminFormat(row.format) ? 'Управлять' : 'Sudyam'}
-                      </button>
+                      </Link>
                     ) : null}
                     <button
                       type="button"
@@ -1201,6 +1424,85 @@ export default function AdminTournamentsPage() {
           </div>
         ) : null}
 
+        {isKotcFormat ? (
+          <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
+            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">KOTC Next</h3>
+
+            <div>
+              <label className="text-xs text-text-secondary">Judge module</label>
+              <Seg
+                options={[
+                  { key: 'next', label: 'Next' },
+                  { key: 'legacy', label: 'Legacy' },
+                ]}
+                value={kotcSettings?.kotcJudgeModule ?? settings.kotcJudgeModule}
+                onChange={(value) => updateSettings({ kotcJudgeModule: value as KotcJudgeModule })}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-xs text-text-secondary">Пар на корт</label>
+              <Stepper
+                value={kotcSettings?.kotcPpc ?? settings.kotcPpc}
+                onChange={(value) => updateSettings({ kotcPpc: value })}
+                min={KOTC_ADMIN_MIN_PPC}
+                max={KOTC_ADMIN_MAX_PPC}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-xs text-text-secondary">Раундов на корт</label>
+              <Stepper
+                value={kotcSettings?.kotcRaundCount ?? settings.kotcRaundCount}
+                onChange={(value) => updateSettings({ kotcRaundCount: value })}
+                min={KOTC_ADMIN_MIN_RAUNDS}
+                max={KOTC_ADMIN_MAX_RAUNDS}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-xs text-text-secondary">Таймер раунда</label>
+              <Stepper
+                value={kotcSettings?.kotcRaundTimerMinutes ?? settings.kotcRaundTimerMinutes}
+                onChange={(value) => updateSettings({ kotcRaundTimerMinutes: value })}
+                min={KOTC_ADMIN_MIN_TIMER}
+                max={KOTC_ADMIN_MAX_TIMER}
+                suffix=" мин"
+              />
+            </div>
+
+            <div className="rounded-lg border border-brand/20 bg-brand/5 px-3 py-2 text-xs text-text-secondary">
+              KOTC Next: {settings.courts} корт(а), по {kotcSettings?.kotcPpc ?? settings.kotcPpc} пар на корт,
+              {` `}{playersPerCourt} игроков на площадку, {kotcSettings?.kotcRaundCount ?? settings.kotcRaundCount} раунд(а) по
+              {` `}{kotcSettings?.kotcRaundTimerMinutes ?? settings.kotcRaundTimerMinutes} мин.
+            </div>
+
+            {kotcSettings?.kotcJudgeModule === 'next' ? (
+              form.id ? (
+                <div className="flex flex-col gap-2 rounded-xl border border-brand/30 bg-brand/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-text-secondary">
+                    Операторский контроль KOTC Next открывается на отдельной странице Sudyam.
+                  </p>
+                  <Link
+                    href={buildKotcNextControlUrl(form.id)}
+                    className="shrink-0 rounded-lg border border-brand bg-brand/20 px-4 py-2.5 text-center text-sm font-semibold text-brand hover:bg-brand/30"
+                  >
+                    KOTC Next Control →
+                  </Link>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-text-secondary">
+                  Сохраните турнир, затем станет доступна ссылка на KOTC Next Control.
+                </div>
+              )
+            ) : (
+              <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-text-secondary">
+                Legacy KOTC открывается через обычный Sudyam launcher.
+              </div>
+            )}
+          </div>
+        ) : null}
+
         <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Формат турнира</h3>
 
@@ -1287,20 +1589,20 @@ export default function AdminTournamentsPage() {
               {isThaiFormat ? 'Игроков на Thai-корт:' : 'Игроков на корт:'}
             </span>
             <div className="flex gap-1">
-              {(isThaiFormat ? [THAI_ADMIN_PLAYERS_PER_COURT] : [4, 5, 6]).map((value) => (
+              {(isThaiFormat ? [THAI_ADMIN_PLAYERS_PER_COURT] : isKotcFormat ? [playersPerCourt] : [4, 5, 6]).map((value) => (
                 <button
                   key={value}
                   type="button"
                   onClick={() => {
-                    if (isThaiFormat) return;
+                    if (isThaiFormat || isKotcFormat) return;
                     updateSettings({ playersPerCourt: value });
                   }}
-                  disabled={isThaiFormat}
+                  disabled={isThaiFormat || isKotcFormat}
                   className={`w-10 h-10 rounded-lg border text-sm font-semibold transition-colors ${
-                    settings.playersPerCourt === value
+                    playersPerCourt === value
                       ? 'bg-brand/20 text-brand border-brand/50'
                       : 'bg-white/5 text-text-primary/60 border-white/10 hover:border-white/30'
-                  } ${isThaiFormat ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  } ${isThaiFormat || isKotcFormat ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {value}
                 </button>
@@ -1317,10 +1619,10 @@ export default function AdminTournamentsPage() {
             <span className="text-sm text-text-primary/80">Вместимость:</span>
             <input
               type="number"
-              min={isThaiFormat ? autoCapacity : 4}
+              min={isThaiFormat || isKotcFormat ? autoCapacity : 4}
               value={form.capacity || autoCapacity}
               onChange={(e) => setForm((current) => ({ ...current, capacity: Number(e.target.value || 0) }))}
-              readOnly={isThaiFormat}
+              readOnly={isThaiFormat || isKotcFormat}
               className="w-24 px-2 py-1 rounded-lg bg-surface border border-white/20 text-center text-sm"
             />
           </div>
@@ -1667,21 +1969,13 @@ export default function AdminTournamentsPage() {
             {message}
           </p>
         ) : null}
-        {judgeLaunchUrl &&
-        !(
-          isEdit &&
-          isThaiFormat &&
-          thaiSettings?.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT &&
-          Boolean(form.id)
-        ) ? (
-          <a
-            href={judgeLaunchUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+        {launchTarget ? (
+          <Link
+            href={launchTarget.href}
             className="px-4 py-3 rounded-xl border border-brand/40 bg-brand/10 text-brand-light text-sm font-semibold"
           >
-            Open in Sudyam
-          </a>
+            {launchTarget.label}
+          </Link>
         ) : null}
       </form>
     </div>

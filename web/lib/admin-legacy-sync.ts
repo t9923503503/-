@@ -1,5 +1,6 @@
 export const THAI_ADMIN_FORMAT = 'Thai';
 export const IPT_MIXED_FORMAT = 'IPT Mixed';
+export const KOTC_ADMIN_FORMAT = 'King of the Court';
 
 export const THAI_ADMIN_MIN_COURTS = 1;
 export const THAI_ADMIN_MAX_COURTS = Number.MAX_SAFE_INTEGER;
@@ -19,6 +20,21 @@ export const IPT_MIXED_SEAT_COUNT = IPT_MIXED_PLAYERS_PER_COURT;
 export const IPT_MIXED_POINT_LIMIT_MIN = 9;
 export const IPT_MIXED_POINT_LIMIT_DEFAULT = 21;
 export const IPT_MIXED_POINT_LIMIT_MAX = 21;
+
+export const KOTC_JUDGE_MODULES = ['legacy', 'next'] as const;
+export type KotcJudgeModule = (typeof KOTC_JUDGE_MODULES)[number];
+export const KOTC_ADMIN_MIN_COURTS = 1;
+export const KOTC_ADMIN_MAX_COURTS = 4;
+export const KOTC_ADMIN_DEFAULT_COURTS = 2;
+export const KOTC_ADMIN_MIN_PPC = 3;
+export const KOTC_ADMIN_MAX_PPC = 5;
+export const KOTC_ADMIN_DEFAULT_PPC = 4;
+export const KOTC_ADMIN_MIN_RAUNDS = 1;
+export const KOTC_ADMIN_MAX_RAUNDS = 4;
+export const KOTC_ADMIN_DEFAULT_RAUNDS = 2;
+export const KOTC_ADMIN_MIN_TIMER = 9;
+export const KOTC_ADMIN_MAX_TIMER = 20;
+export const KOTC_ADMIN_DEFAULT_TIMER = 10;
 
 export const THAI_VARIANTS = ['MF', 'MN', 'MM', 'WW'] as const;
 export type ThaiVariant = (typeof THAI_VARIANTS)[number];
@@ -116,12 +132,22 @@ export function isIptMixedFormat(format: unknown): boolean {
   return String(format ?? '').trim().toLowerCase() === IPT_MIXED_FORMAT.toLowerCase();
 }
 
+export function isKotcAdminFormat(format: unknown): boolean {
+  return String(format ?? '').trim().toLowerCase() === KOTC_ADMIN_FORMAT.toLowerCase();
+}
+
 export function getThaiSeatCount(courts: number): number {
   return clamp(Math.floor(Number(courts) || 0), THAI_ADMIN_MIN_COURTS, THAI_ADMIN_MAX_COURTS) * THAI_ADMIN_SEAT_COUNT;
 }
 
 export function getIptMixedSeatCount(courts: number): number {
   return clamp(Math.floor(Number(courts) || 0), IPT_MIXED_MIN_COURTS, IPT_MIXED_MAX_COURTS) * IPT_MIXED_SEAT_COUNT;
+}
+
+export function getKotcSeatCount(courts: number, ppc = KOTC_ADMIN_DEFAULT_PPC): number {
+  const normalizedCourts = clamp(Math.floor(Number(courts) || 0), KOTC_ADMIN_MIN_COURTS, KOTC_ADMIN_MAX_COURTS);
+  const normalizedPpc = clamp(Math.floor(Number(ppc) || 0), KOTC_ADMIN_MIN_PPC, KOTC_ADMIN_MAX_PPC);
+  return normalizedCourts * normalizedPpc * 2;
 }
 
 function inferCourtCount(participantCount: unknown, fallback: number): number {
@@ -134,6 +160,19 @@ function inferCourtCount(participantCount: unknown, fallback: number): number {
 
 function inferIptCourtCount(participantCount: unknown, fallback: number): number {
   return inferCourtCount(participantCount, fallback);
+}
+
+function inferKotcCourtCount(participantCount: unknown, ppc: number, fallback: number): number {
+  const parsed = Math.floor(Number(participantCount) || 0);
+  if (parsed > 0) {
+    const playersPerCourt = Math.max(1, ppc * 2);
+    return clamp(
+      Math.ceil(parsed / playersPerCourt),
+      KOTC_ADMIN_MIN_COURTS,
+      KOTC_ADMIN_MAX_COURTS,
+    );
+  }
+  return clamp(fallback, KOTC_ADMIN_MIN_COURTS, KOTC_ADMIN_MAX_COURTS);
 }
 
 export function getThaiDivisionLabel(variant: unknown): string {
@@ -165,6 +204,50 @@ export function normalizeThaiAdminSettings(settings?: Record<string, unknown>, p
       THAI_ADMIN_POINT_LIMIT_MIN,
       THAI_ADMIN_POINT_LIMIT_MAX,
     ),
+  };
+}
+
+export function normalizeKotcJudgeModule(value: unknown, fallback: KotcJudgeModule = 'next'): KotcJudgeModule {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'legacy') return 'legacy';
+  if (normalized === 'next') return 'next';
+  return fallback;
+}
+
+export function normalizeKotcJudgeBootstrapSignature(value: unknown): string | null {
+  const raw = String(value ?? '').trim();
+  return raw || null;
+}
+
+export function normalizeKotcAdminSettings(settings?: Record<string, unknown>, participantCount?: unknown) {
+  const source = settings ?? {};
+  const ppc = clamp(
+    toFiniteInt(source.kotcPpc ?? source.ppc, KOTC_ADMIN_DEFAULT_PPC),
+    KOTC_ADMIN_MIN_PPC,
+    KOTC_ADMIN_MAX_PPC,
+  );
+  const fallbackCourts = inferKotcCourtCount(participantCount, ppc, KOTC_ADMIN_DEFAULT_COURTS);
+  const courts = clamp(
+    toFiniteInt(source.courts, fallbackCourts),
+    KOTC_ADMIN_MIN_COURTS,
+    KOTC_ADMIN_MAX_COURTS,
+  );
+  return {
+    courts,
+    playersPerCourt: ppc * 2,
+    ppc,
+    raundCount: clamp(
+      toFiniteInt(source.kotcRaundCount ?? source.raundCount, KOTC_ADMIN_DEFAULT_RAUNDS),
+      KOTC_ADMIN_MIN_RAUNDS,
+      KOTC_ADMIN_MAX_RAUNDS,
+    ),
+    raundTimerMinutes: clamp(
+      toFiniteInt(source.kotcRaundTimerMinutes ?? source.raundTimerMinutes, KOTC_ADMIN_DEFAULT_TIMER),
+      KOTC_ADMIN_MIN_TIMER,
+      KOTC_ADMIN_MAX_TIMER,
+    ),
+    kotcJudgeModule: normalizeKotcJudgeModule(source.kotcJudgeModule),
+    kotcJudgeBootstrapSignature: normalizeKotcJudgeBootstrapSignature(source.kotcJudgeBootstrapSignature),
   };
 }
 

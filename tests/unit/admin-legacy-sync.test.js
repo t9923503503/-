@@ -5,10 +5,15 @@ import {
   IPT_MIXED_FORMAT,
   IPT_MIXED_POINT_LIMIT_MAX,
   IPT_MIXED_POINT_LIMIT_MIN,
+  KOTC_ADMIN_FORMAT,
   THAI_ADMIN_FORMAT,
+  getKotcSeatCount,
   getIptMixedSeatCount,
   getThaiDivisionLabel,
   getThaiSeatCount,
+  isKotcAdminFormat,
+  normalizeKotcAdminSettings,
+  normalizeKotcJudgeModule,
   normalizeThaiAdminSettings,
   normalizeThaiRosterMode,
   validateIptMixedRoster,
@@ -185,6 +190,47 @@ describe('admin legacy IPT sync helpers', () => {
 
     expect(getThaiSeatCount(6)).toBe(48);
     expect(validateThaiRoster(maleRoster48, { courts: 6, thaiVariant: 'MM', tourCount: 12 })).toBeNull();
+  });
+
+  it('normalizes KOTC admin settings for Next and infers seat count from ppc', () => {
+    expect(
+      normalizeKotcAdminSettings({
+        courts: 2,
+        kotcPpc: 5,
+        kotcRaundCount: 4,
+        kotcRaundTimerMinutes: 18,
+        kotcJudgeModule: 'legacy',
+        kotcJudgeBootstrapSignature: ' sig-1 ',
+      })
+    ).toEqual({
+      courts: 2,
+      playersPerCourt: 10,
+      ppc: 5,
+      raundCount: 4,
+      raundTimerMinutes: 18,
+      kotcJudgeModule: 'legacy',
+      kotcJudgeBootstrapSignature: 'sig-1',
+    });
+
+    expect(
+      normalizeKotcAdminSettings({
+        kotcPpc: 3,
+      }, 18)
+    ).toMatchObject({
+      courts: 3,
+      playersPerCourt: 6,
+      ppc: 3,
+      raundCount: 2,
+      raundTimerMinutes: 10,
+      kotcJudgeModule: 'next',
+      kotcJudgeBootstrapSignature: null,
+    });
+
+    expect(getKotcSeatCount(3, 5)).toBe(30);
+    expect(normalizeKotcJudgeModule('legacy')).toBe('legacy');
+    expect(normalizeKotcJudgeModule('next', 'legacy')).toBe('next');
+    expect(normalizeKotcJudgeModule(undefined, 'legacy')).toBe('legacy');
+    expect(isKotcAdminFormat(KOTC_ADMIN_FORMAT)).toBe(true);
   });
 
   it('builds a playerdb snapshot for legacy sync', () => {

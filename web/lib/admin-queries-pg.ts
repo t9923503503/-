@@ -6,7 +6,10 @@ import { enrichTournamentRuntimeState, resolveTournamentStatus } from './tournam
 import {
   buildLegacyIptTournamentState,
   buildLegacyPlayerDbState,
+  isKotcAdminFormat,
   isIptMixedFormat,
+  normalizeKotcAdminSettings,
+  type KotcJudgeModule,
 } from './admin-legacy-sync';
 import {
   effectiveRatingPtsFromStored,
@@ -29,6 +32,11 @@ export interface AdminTournament {
   participantCount: number;
   photoUrl: string;
   settings: Record<string, unknown>;
+  kotcJudgeModule?: KotcJudgeModule | null;
+  kotcJudgeBootstrapSig?: string | null;
+  kotcRaundCount?: number | null;
+  kotcRaundTimerMinutes?: number | null;
+  kotcPpc?: number | null;
 }
 
 export interface AdminTournamentParticipantInput {
@@ -115,7 +123,75 @@ function toIsoDate(value: unknown): string {
   return String(value ?? '');
 }
 
+function mergeKotcSettings(
+  format: string,
+  settings: Record<string, unknown>,
+  row: Record<string, unknown>,
+): {
+  settings: Record<string, unknown>;
+  kotcJudgeModule: KotcJudgeModule | null;
+  kotcJudgeBootstrapSig: string | null;
+  kotcRaundCount: number | null;
+  kotcRaundTimerMinutes: number | null;
+  kotcPpc: number | null;
+} {
+  if (!isKotcAdminFormat(format)) {
+    return {
+      settings,
+      kotcJudgeModule: null,
+      kotcJudgeBootstrapSig: null,
+      kotcRaundCount: null,
+      kotcRaundTimerMinutes: null,
+      kotcPpc: null,
+    };
+  }
+
+  const rawSettings = {
+    ...settings,
+    kotcJudgeModule: row.kotc_judge_module ?? settings.kotcJudgeModule,
+    kotcJudgeBootstrapSignature: row.kotc_judge_bootstrap_sig ?? settings.kotcJudgeBootstrapSignature,
+    kotcRaundCount: row.kotc_raund_count ?? settings.kotcRaundCount,
+    kotcRaundTimerMinutes: row.kotc_raund_timer_minutes ?? settings.kotcRaundTimerMinutes,
+    kotcPpc: row.kotc_ppc ?? settings.kotcPpc,
+  };
+  const normalized = normalizeKotcAdminSettings(rawSettings);
+  return {
+    settings: {
+      ...settings,
+      ...normalized,
+    },
+    kotcJudgeModule: normalized.kotcJudgeModule,
+    kotcJudgeBootstrapSig: normalized.kotcJudgeBootstrapSignature,
+    kotcRaundCount: normalized.raundCount,
+    kotcRaundTimerMinutes: normalized.raundTimerMinutes,
+    kotcPpc: normalized.ppc,
+  };
+}
+
+function getKotcColumnPayload(input: Partial<AdminTournament>): Record<string, unknown> {
+  if (!isKotcAdminFormat(input.format)) {
+    return {
+      kotc_judge_module: null,
+      kotc_judge_bootstrap_sig: null,
+      kotc_raund_count: null,
+      kotc_raund_timer_minutes: null,
+      kotc_ppc: null,
+    };
+  }
+  const normalized = normalizeKotcAdminSettings(input.settings);
+  return {
+    kotc_judge_module: normalized.kotcJudgeModule,
+    kotc_judge_bootstrap_sig: normalized.kotcJudgeBootstrapSignature,
+    kotc_raund_count: normalized.raundCount,
+    kotc_raund_timer_minutes: normalized.raundTimerMinutes,
+    kotc_ppc: normalized.ppc,
+  };
+}
+
 function mapTournament(row: Record<string, unknown>): AdminTournament {
+  const baseSettings =
+    typeof row.settings === 'object' && row.settings !== null ? (row.settings as Record<string, unknown>) : {};
+  const kotc = mergeKotcSettings(String(row.format ?? ''), baseSettings, row);
   return enrichTournamentRuntimeState({
     id: String(row.id ?? ''),
     name: String(row.name ?? ''),
@@ -129,7 +205,12 @@ function mapTournament(row: Record<string, unknown>): AdminTournament {
     status: String(row.status ?? 'open'),
     participantCount: Number(row.participant_count ?? 0),
     photoUrl: String(row.photo_url ?? ''),
-    settings: (typeof row.settings === 'object' && row.settings !== null ? row.settings : {}) as Record<string, unknown>,
+    settings: kotc.settings,
+    kotcJudgeModule: kotc.kotcJudgeModule,
+    kotcJudgeBootstrapSig: kotc.kotcJudgeBootstrapSig,
+    kotcRaundCount: kotc.kotcRaundCount,
+    kotcRaundTimerMinutes: kotc.kotcRaundTimerMinutes,
+    kotcPpc: kotc.kotcPpc,
   });
 }
 
@@ -524,11 +605,17 @@ export async function createTournament(
     await client.query('BEGIN');
     const id = String(input.id || randomUUID());
     const settingsJson = input.settings ? JSON.stringify(input.settings) : '{}';
+    const kotcColumns = getKotcColumnPayload(input);
     const { rows } = await client.query(
       `INSERT INTO tournaments
-        (id, name, date, time, location, format, division, level, capacity, status, photo_url, settings)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-       RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url, settings`,
+        (
+          id, name, date, time, location, format, division, level, capacity, status, photo_url, settings,
+          kotc_judge_module, kotc_judge_bootstrap_sig, kotc_raund_count, kotc_raund_timer_minutes, kotc_ppc
+        )
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       RETURNING
+         id, name, date, time, location, format, division, level, capacity, status, photo_url, settings,
+         kotc_judge_module, kotc_judge_bootstrap_sig, kotc_raund_count, kotc_raund_timer_minutes, kotc_ppc`,
       [
         id,
         String(input.name || '').trim(),
@@ -542,6 +629,11 @@ export async function createTournament(
         String(input.status || 'open'),
         String(input.photoUrl || '') || null,
         settingsJson,
+        kotcColumns.kotc_judge_module,
+        kotcColumns.kotc_judge_bootstrap_sig,
+        kotcColumns.kotc_raund_count,
+        kotcColumns.kotc_raund_timer_minutes,
+        kotcColumns.kotc_ppc,
       ]
     );
     const participantCount = await replaceTournamentParticipantsTx(client, id, input.participants);
@@ -566,11 +658,18 @@ export async function updateTournament(
   try {
     await client.query('BEGIN');
     const settingsJson = input.settings ? JSON.stringify(input.settings) : '{}';
+    const kotcColumns = getKotcColumnPayload(input);
     const { rows } = await client.query(
       `UPDATE tournaments
-       SET name=$2, date=$3, time=$4, location=$5, format=$6, division=$7, level=$8, capacity=$9, status=$10, photo_url=$11, settings=$12
+       SET
+         name=$2, date=$3, time=$4, location=$5, format=$6, division=$7, level=$8, capacity=$9, status=$10,
+         photo_url=$11, settings=$12,
+         kotc_judge_module=$13, kotc_judge_bootstrap_sig=$14, kotc_raund_count=$15,
+         kotc_raund_timer_minutes=$16, kotc_ppc=$17
        WHERE id=$1
-       RETURNING id, name, date, time, location, format, division, level, capacity, status, photo_url, settings`,
+       RETURNING
+         id, name, date, time, location, format, division, level, capacity, status, photo_url, settings,
+         kotc_judge_module, kotc_judge_bootstrap_sig, kotc_raund_count, kotc_raund_timer_minutes, kotc_ppc`,
       [
         id,
         String(input.name || '').trim(),
@@ -584,6 +683,11 @@ export async function updateTournament(
         String(input.status || 'open'),
         String(input.photoUrl || '') || null,
         settingsJson,
+        kotcColumns.kotc_judge_module,
+        kotcColumns.kotc_judge_bootstrap_sig,
+        kotcColumns.kotc_raund_count,
+        kotcColumns.kotc_raund_timer_minutes,
+        kotcColumns.kotc_ppc,
       ]
     );
     const data = rows[0];

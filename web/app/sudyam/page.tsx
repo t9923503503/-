@@ -125,6 +125,9 @@ export default async function SudyamPage({
   }
 
   if (payload.format === "kotc") {
+    if (!launch.forceLegacy && payload.kotcJudgeModule === "next") {
+      redirect(`/sudyam/kotcn/${encodeURIComponent(payload.tournamentId)}`);
+    }
     return (
       <KotcLiveLayout
         legacyIframeSrc={legacyIframeSrc}

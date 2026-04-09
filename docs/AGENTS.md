@@ -6,6 +6,7 @@
 2. [`STATUS.md`](../STATUS.md) — чеклист, CHANGELOG, блокировки.
 3. [`CLAUDE.md`](../CLAUDE.md) — обязательные архитектурные правила.
 4. При смене поведения деплоя или локального запуска — [`docs/DEVELOPMENT.md`](DEVELOPMENT.md), [`docs/DEPLOY.md`](DEPLOY.md).
+5. Для KOTC Next использовать отдельную доску координации: [`docs/KOTC_NEXT_AI_PLAN.md`](KOTC_NEXT_AI_PLAN.md).
 
 ## Главное архитектурное правило
 
