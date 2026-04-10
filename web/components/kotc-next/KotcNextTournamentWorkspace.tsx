@@ -23,7 +23,9 @@ export function KotcNextTournamentWorkspace({
     initialData.kotcJudgeBlockedReason ? 'blocked' : 'idle',
   );
   const [message, setMessage] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] = useState<'preview_r2_seed' | 'confirm_r2_seed' | 'bootstrap_r2' | null>(null);
+  const [pendingAction, setPendingAction] = useState<
+    'preview_r2_seed' | 'confirm_r2_seed' | 'bootstrap_r2' | 'finish_r1' | 'finish_r2' | null
+  >(null);
   const [r2SeedDraft, setR2SeedDraft] = useState<KotcNextR2SeedZone[] | null>(
     initialData.kotcOperatorState?.r2SeedDraft ?? null,
   );
@@ -39,7 +41,13 @@ export function KotcNextTournamentWorkspace({
   }, [initialData]);
 
   async function runKotcAction(
-    action: 'bootstrap_r1' | 'preview_r2_seed' | 'confirm_r2_seed' | 'bootstrap_r2',
+    action:
+      | 'bootstrap_r1'
+      | 'preview_r2_seed'
+      | 'confirm_r2_seed'
+      | 'bootstrap_r2'
+      | 'finish_r1'
+      | 'finish_r2',
     options?: { zones?: KotcNextR2SeedZone[] },
   ) {
     if (!activeData.tournamentId) return;
@@ -89,7 +97,7 @@ export function KotcNextTournamentWorkspace({
       setPendingAction(null);
       setR2SeedLoading(false);
       if (action === 'bootstrap_r1') {
-        setPhase(activeData.kotcJudgeBlockedReason ? 'blocked' : 'idle');
+        setPhase('idle');
       }
     }
   }
@@ -107,6 +115,7 @@ export function KotcNextTournamentWorkspace({
         pendingAction,
         r2SeedDraft,
         r2SeedLoading,
+        onAction: (action) => void runKotcAction(action),
         onOpenR2Seed: () => void runKotcAction('preview_r2_seed'),
         onConfirmR2Seed: (zones) => void runKotcAction('confirm_r2_seed', { zones }),
       }}

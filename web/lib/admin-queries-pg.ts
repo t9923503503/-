@@ -13,9 +13,9 @@ import {
 } from './admin-legacy-sync';
 import {
   effectiveRatingPtsFromStored,
-  ratingPointsForPlace,
   type RatingPool,
 } from './rating-points';
+import { sanitizeServerImageUrl } from './server-image-url';
 import { augmentArchiveTournamentWithThaiBoard } from './thai-archive-meta';
 
 export interface AdminTournament {
@@ -204,7 +204,7 @@ function mapTournament(row: Record<string, unknown>): AdminTournament {
     capacity: Number(row.capacity ?? 0),
     status: String(row.status ?? 'open'),
     participantCount: Number(row.participant_count ?? 0),
-    photoUrl: String(row.photo_url ?? ''),
+    photoUrl: sanitizeServerImageUrl(row.photo_url),
     settings: kotc.settings,
     kotcJudgeModule: kotc.kotcJudgeModule,
     kotcJudgeBootstrapSig: kotc.kotcJudgeBootstrapSig,
@@ -229,7 +229,7 @@ function mapPlayer(row: Record<string, unknown>): AdminPlayer {
     wins: Number(row.wins ?? 0),
     totalPts: Number(row.total_pts ?? 0),
     tournamentsPlayed: Number(row.tournaments_played ?? 0),
-    photoUrl: String(row.photo_url ?? ''),
+    photoUrl: sanitizeServerImageUrl(row.photo_url),
     birthDate: toIsoDate(row.birth_date),
     heightCm: row.height_cm == null ? null : Number(row.height_cm),
     weightKg: row.weight_kg == null ? null : Number(row.weight_kg),
@@ -285,7 +285,7 @@ function playerDbPayload(input: Partial<AdminPlayer>): Record<string, unknown> {
   };
 }
 
-async function getTournamentTableColumnsTx(client: PoolClient): Promise<Set<string>> {
+export async function getTournamentTableColumnsTx(client: PoolClient): Promise<Set<string>> {
   if (tournamentsColumnCache) return tournamentsColumnCache;
   const { rows } = await client.query(
     `
@@ -298,11 +298,34 @@ async function getTournamentTableColumnsTx(client: PoolClient): Promise<Set<stri
   return tournamentsColumnCache;
 }
 
+function buildDynamicInsertSql(
+  tableName: string,
+  payload: Record<string, unknown>,
+  returningColumns?: string,
+): { sql: string; values: unknown[] } {
+  const entries = Object.entries(payload);
+  if (!entries.length) {
+    throw new Error(`Cannot build INSERT for ${tableName} without payload`);
+  }
+
+  const columns = entries.map(([column]) => column);
+  const values = entries.map(([, value]) => value);
+  const placeholders = columns.map((_, index) => `$${index + 1}`);
+
+  return {
+    sql: `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders.join(', ')})${
+      returningColumns ? ` RETURNING ${returningColumns}` : ''
+    }`,
+    values,
+  };
+}
+
 function buildDynamicUpdateSql(
   tableName: string,
   idColumn: string,
   idValue: string,
-  updates: Record<string, unknown>
+  updates: Record<string, unknown>,
+  returningColumns?: string,
 ): { sql: string; values: unknown[] } | null {
   const entries = Object.entries(updates);
   if (entries.length === 0) return null;
@@ -314,9 +337,78 @@ function buildDynamicUpdateSql(
   });
 
   return {
-    sql: `UPDATE ${tableName} SET ${assignments.join(', ')} WHERE ${idColumn} = $1`,
+    sql: `UPDATE ${tableName} SET ${assignments.join(', ')} WHERE ${idColumn} = $1${
+      returningColumns ? ` RETURNING ${returningColumns}` : ''
+    }`,
     values,
   };
+}
+
+function buildTournamentReturningSql(columns: Set<string>): string {
+  return [
+    'id',
+    'name',
+    'date',
+    'time',
+    'location',
+    'format',
+    'division',
+    'level',
+    'capacity',
+    'status',
+    ...(columns.has('photo_url') ? ['photo_url'] : []),
+    ...(columns.has('settings') ? ['settings'] : []),
+    ...(columns.has('kotc_judge_module') ? ['kotc_judge_module'] : []),
+    ...(columns.has('kotc_judge_bootstrap_sig') ? ['kotc_judge_bootstrap_sig'] : []),
+    ...(columns.has('kotc_raund_count') ? ['kotc_raund_count'] : []),
+    ...(columns.has('kotc_raund_timer_minutes') ? ['kotc_raund_timer_minutes'] : []),
+    ...(columns.has('kotc_ppc') ? ['kotc_ppc'] : []),
+  ].join(', ');
+}
+
+function buildTournamentWritePayload(
+  columns: Set<string>,
+  id: string,
+  input: Partial<AdminTournament>,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    id,
+    name: String(input.name || '').trim(),
+    date: String(input.date || '').trim(),
+    time: normalizeTournamentDbTime(input.time),
+    location: String(input.location || ''),
+    format: String(input.format || ''),
+    division: String(input.division || ''),
+    level: String(input.level || ''),
+    capacity: Number(input.capacity || 0),
+    status: String(input.status || 'open'),
+  };
+
+  if (columns.has('photo_url')) {
+    payload.photo_url = String(input.photoUrl || '') || null;
+  }
+  if (columns.has('settings')) {
+    payload.settings = input.settings ? JSON.stringify(input.settings) : '{}';
+  }
+
+  const kotcColumns = getKotcColumnPayload(input);
+  if (columns.has('kotc_judge_module')) {
+    payload.kotc_judge_module = kotcColumns.kotc_judge_module;
+  }
+  if (columns.has('kotc_judge_bootstrap_sig')) {
+    payload.kotc_judge_bootstrap_sig = kotcColumns.kotc_judge_bootstrap_sig;
+  }
+  if (columns.has('kotc_raund_count')) {
+    payload.kotc_raund_count = kotcColumns.kotc_raund_count;
+  }
+  if (columns.has('kotc_raund_timer_minutes')) {
+    payload.kotc_raund_timer_minutes = kotcColumns.kotc_raund_timer_minutes;
+  }
+  if (columns.has('kotc_ppc')) {
+    payload.kotc_ppc = kotcColumns.kotc_ppc;
+  }
+
+  return payload;
 }
 
 async function listTournamentPlayersForLegacyTx(client: PoolClient, tournamentId: string): Promise<AdminPlayer[]> {
@@ -478,13 +570,20 @@ export async function listTournaments(query = ''): Promise<AdminTournament[]> {
   const hasFilter = term.length > 0;
   const { rows } = await pool.query(
     `
-      SELECT t.*, COUNT(tp.id) FILTER (WHERE COALESCE(tp.is_waitlist, false) = false)::int AS participant_count
+      SELECT
+        t.*,
+        COALESCE(tp_counts.participant_count, 0)::int AS participant_count
       FROM tournaments t
-      LEFT JOIN tournament_participants tp ON tp.tournament_id = t.id
+      LEFT JOIN (
+        SELECT
+          tournament_id,
+          COUNT(*) FILTER (WHERE COALESCE(is_waitlist, false) = false)::int AS participant_count
+        FROM tournament_participants
+        GROUP BY tournament_id
+      ) tp_counts ON tp_counts.tournament_id = t.id
       ${hasFilter
         ? "WHERE COALESCE(t.name, '') <> '__playerdb__' AND (t.name ILIKE $1 OR t.location ILIKE $1 OR t.status ILIKE $1)"
         : "WHERE COALESCE(t.name, '') <> '__playerdb__'"}
-      GROUP BY t.id
       ORDER BY t.date DESC, t.time DESC
       LIMIT 200
     `,
@@ -604,38 +703,13 @@ export async function createTournament(
   try {
     await client.query('BEGIN');
     const id = String(input.id || randomUUID());
-    const settingsJson = input.settings ? JSON.stringify(input.settings) : '{}';
-    const kotcColumns = getKotcColumnPayload(input);
-    const { rows } = await client.query(
-      `INSERT INTO tournaments
-        (
-          id, name, date, time, location, format, division, level, capacity, status, photo_url, settings,
-          kotc_judge_module, kotc_judge_bootstrap_sig, kotc_raund_count, kotc_raund_timer_minutes, kotc_ppc
-        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-       RETURNING
-         id, name, date, time, location, format, division, level, capacity, status, photo_url, settings,
-         kotc_judge_module, kotc_judge_bootstrap_sig, kotc_raund_count, kotc_raund_timer_minutes, kotc_ppc`,
-      [
-        id,
-        String(input.name || '').trim(),
-        String(input.date || '').trim(),
-        normalizeTournamentDbTime(input.time),
-        String(input.location || ''),
-        String(input.format || ''),
-        String(input.division || ''),
-        String(input.level || ''),
-        Number(input.capacity || 0),
-        String(input.status || 'open'),
-        String(input.photoUrl || '') || null,
-        settingsJson,
-        kotcColumns.kotc_judge_module,
-        kotcColumns.kotc_judge_bootstrap_sig,
-        kotcColumns.kotc_raund_count,
-        kotcColumns.kotc_raund_timer_minutes,
-        kotcColumns.kotc_ppc,
-      ]
+    const columns = await getTournamentTableColumnsTx(client);
+    const insert = buildDynamicInsertSql(
+      'tournaments',
+      buildTournamentWritePayload(columns, id, input),
+      buildTournamentReturningSql(columns),
     );
+    const { rows } = await client.query(insert.sql, insert.values);
     const participantCount = await replaceTournamentParticipantsTx(client, id, input.participants);
     const created = { ...mapTournament(rows[0] ?? {}), participantCount };
     await syncLegacyTournamentSnapshotTx(client, created);
@@ -657,39 +731,22 @@ export async function updateTournament(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const settingsJson = input.settings ? JSON.stringify(input.settings) : '{}';
-    const kotcColumns = getKotcColumnPayload(input);
-    const { rows } = await client.query(
-      `UPDATE tournaments
-       SET
-         name=$2, date=$3, time=$4, location=$5, format=$6, division=$7, level=$8, capacity=$9, status=$10,
-         photo_url=$11, settings=$12,
-         kotc_judge_module=$13, kotc_judge_bootstrap_sig=$14, kotc_raund_count=$15,
-         kotc_raund_timer_minutes=$16, kotc_ppc=$17
-       WHERE id=$1
-       RETURNING
-         id, name, date, time, location, format, division, level, capacity, status, photo_url, settings,
-         kotc_judge_module, kotc_judge_bootstrap_sig, kotc_raund_count, kotc_raund_timer_minutes, kotc_ppc`,
-      [
-        id,
-        String(input.name || '').trim(),
-        String(input.date || '').trim(),
-        normalizeTournamentDbTime(input.time),
-        String(input.location || ''),
-        String(input.format || ''),
-        String(input.division || ''),
-        String(input.level || ''),
-        Number(input.capacity || 0),
-        String(input.status || 'open'),
-        String(input.photoUrl || '') || null,
-        settingsJson,
-        kotcColumns.kotc_judge_module,
-        kotcColumns.kotc_judge_bootstrap_sig,
-        kotcColumns.kotc_raund_count,
-        kotcColumns.kotc_raund_timer_minutes,
-        kotcColumns.kotc_ppc,
-      ]
+    const columns = await getTournamentTableColumnsTx(client);
+    const update = buildDynamicUpdateSql(
+      'tournaments',
+      'id',
+      id,
+      (() => {
+        const { id: _ignored, ...payload } = buildTournamentWritePayload(columns, id, input);
+        return payload;
+      })(),
+      buildTournamentReturningSql(columns),
     );
+    if (!update) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    const { rows } = await client.query(update.sql, update.values);
     const data = rows[0];
     if (!data) {
       await client.query('ROLLBACK');
@@ -720,11 +777,18 @@ export async function getTournamentById(id: string): Promise<AdminTournament | n
   const pool = getPool();
   const { rows } = await pool.query(
     `
-      SELECT t.*, COUNT(tp.id) FILTER (WHERE COALESCE(tp.is_waitlist, false) = false)::int AS participant_count
+      SELECT
+        t.*,
+        COALESCE(tp_counts.participant_count, 0)::int AS participant_count
       FROM tournaments t
-      LEFT JOIN tournament_participants tp ON tp.tournament_id = t.id
+      LEFT JOIN (
+        SELECT
+          tournament_id,
+          COUNT(*) FILTER (WHERE COALESCE(is_waitlist, false) = false)::int AS participant_count
+        FROM tournament_participants
+        GROUP BY tournament_id
+      ) tp_counts ON tp_counts.tournament_id = t.id
       WHERE t.id = $1
-      GROUP BY t.id
       LIMIT 1
     `,
     [id]
@@ -1446,6 +1510,7 @@ export async function upsertTournamentResults(
     gender: 'M' | 'W';
     placement: number;
     points: number;
+    ratingPts?: number;
     ratingPool?: RatingPool;
   }>,
 ): Promise<number> {
@@ -1472,7 +1537,11 @@ export async function upsertTournamentResults(
       const place = normalizeTournamentResultPlace(r.placement);
       if (place <= 0) continue;
       const poolKind: RatingPool = r.ratingPool === 'novice' ? 'novice' : 'pro';
-      const ratingPts = ratingPointsForPlace(place, poolKind);
+      const ratingPts = effectiveRatingPtsFromStored(
+        place,
+        poolKind,
+        r.ratingPts != null ? Number(r.ratingPts) : undefined,
+      );
       const ratingPoolDb = poolKind === 'novice' ? 'novice' : null;
       const ratingType = ratingTypeFromDivision(division, gender);
       await client.query(

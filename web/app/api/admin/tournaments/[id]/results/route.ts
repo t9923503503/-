@@ -12,6 +12,12 @@ function normalizePlacement(value: unknown): number {
   return Math.max(0, Math.trunc(parsed));
 }
 
+function normalizeRatingPts(value: unknown): number | undefined {
+  const parsed = Number(value ?? Number.NaN);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return parsed;
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -33,6 +39,7 @@ export async function POST(
           gender: String(r.gender ?? 'M') === 'W' ? ('W' as const) : ('M' as const),
           placement: normalizePlacement(r.placement),
           points: Number(r.points ?? 0),
+          ratingPts: normalizeRatingPts(r.ratingPts ?? r.rating_pts),
           ratingPool: poolRaw === 'novice' ? ('novice' as const) : ('pro' as const),
         };
       })

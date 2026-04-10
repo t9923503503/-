@@ -10,6 +10,7 @@ import {
   resolveTournamentStatus,
 } from '../../web/lib/tournament-status.ts';
 import { localPosterForTournamentId } from '../../web/lib/tournament-poster.ts';
+import { sanitizeServerImageUrl } from '../../web/lib/server-image-url.ts';
 import { shouldHideTournamentFromPublic } from '../../web/lib/queries.ts';
 
 const NOW = new Date(2026, 3, 2, 12, 0, 0);
@@ -243,9 +244,18 @@ describe('calendar helpers', () => {
     expect(morning).not.toBe(anotherClub);
   });
 
-  it('uses the editorial photo for the finished Double Trouble tournament card', () => {
+  it('returns editorial posters for tournaments with local artwork', () => {
     expect(localPosterForTournamentId('a19522bb-864e-4520-8182-61e035c27894')).toBe(
       '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/hero.jpg'
     );
+    expect(localPosterForTournamentId('eb07361d-8af2-45e4-8ed6-be26a45af14e')).toBe(
+      '/images/tournaments/eb07361d-8af2-45e4-8ed6-be26a45af14e/poster.jpg'
+    );
+  });
+
+  it('drops missing local image paths but keeps existing local and remote URLs', () => {
+    expect(sanitizeServerImageUrl('/images/pravila/kotc.svg')).toBe('/images/pravila/kotc.svg');
+    expect(sanitizeServerImageUrl('/images/users/user_6.jpg')).toBe('');
+    expect(sanitizeServerImageUrl('https://example.com/avatar')).toBe('https://example.com/avatar');
   });
 });

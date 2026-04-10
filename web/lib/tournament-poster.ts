@@ -3,10 +3,17 @@ import type { Tournament } from '@/lib/types';
 const LOCAL_TOURNAMENT_POSTERS: Record<string, string> = {
   'a19522bb-864e-4520-8182-61e035c27894':
     '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/hero.jpg',
+  'eb07361d-8af2-45e4-8ed6-be26a45af14e':
+    '/images/tournaments/eb07361d-8af2-45e4-8ed6-be26a45af14e/poster.jpg',
 };
 
 export function localPosterForTournamentId(id: string): string {
   return LOCAL_TOURNAMENT_POSTERS[id] ?? '';
+}
+
+export function absoluteLocalPosterForTournamentId(id: string): string {
+  const src = localPosterForTournamentId(id);
+  return src ? `https://lpvolley.ru${src}` : '';
 }
 
 /** True if URL looks like a direct image asset (not Yandex Disk / Google Drive HTML). */

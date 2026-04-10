@@ -28,6 +28,13 @@ export async function POST(req: NextRequest) {
       const status = input.status;
 
       const before = await getTournamentById(tournamentId);
+      if (status === 'finished') {
+        const { isThaiNextTournamentForRatingSync, syncThaiStandingsToTournamentResultsOrThrowBadRequest } =
+          await import('@/lib/thai-live/sync-tournament-results');
+        if (isThaiNextTournamentForRatingSync(before)) {
+          await syncThaiStandingsToTournamentResultsOrThrowBadRequest(tournamentId);
+        }
+      }
       const updated = await applyTournamentStatusOverride({ tournamentId, status });
       if (!updated) return NextResponse.json({ error: 'Tournament not found' }, { status: 404 });
 

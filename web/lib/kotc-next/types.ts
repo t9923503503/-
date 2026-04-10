@@ -131,6 +131,16 @@ export interface KotcNextOperatorRoundView {
   courts: KotcNextCourtOperatorView[];
 }
 
+export type KotcNextSpectatorCourtView = Omit<KotcNextCourtOperatorView, 'pinCode' | 'judgeUrl'>;
+
+export interface KotcNextSpectatorRoundView {
+  roundId: string;
+  roundNo: number;
+  roundType: KotcNextRoundType;
+  status: KotcNextRoundStatus;
+  courts: KotcNextSpectatorCourtView[];
+}
+
 export interface KotcNextR2SeedZone {
   zone: KotcNextZoneKey;
   pairRefs: Array<{ courtNo: number; pairIdx: number; pairLabel: string; kingWins: number; takeovers: number }>;
@@ -185,8 +195,9 @@ export interface KotcNextSpectatorPayload
     KotcNextOperatorState,
     | 'canBootstrapR1' | 'canFinishR1' | 'canPreviewR2Seed'
     | 'canConfirmR2Seed' | 'canBootstrapR2' | 'canFinishR2'
-    | 'r2SeedDraft'
+    | 'r2SeedDraft' | 'rounds'
   > {
+  rounds: KotcNextSpectatorRoundView[];
   funStats: KotcNextFunStats | null;
   viewSource: 'live' | 'snapshot';
   snapshotCapturedAt: string | null;

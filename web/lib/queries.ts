@@ -13,9 +13,9 @@ import { sortTournamentsForCalendar } from './calendar';
 import {
   RATING_POINTS_TABLE,
   effectiveRatingPtsFromStored,
-  ratingPointsForPlace,
   sqlEffectiveRatingPointsExpr,
 } from './rating-points';
+import { sanitizeServerImageUrl } from './server-image-url';
 import { resolveThaiSpectatorBoardUrlForArchive } from './thai-archive-meta';
 
 const PLAYER_DB_EXTERNAL_ID = '__playerdb__';
@@ -101,7 +101,7 @@ function mapTournamentRow(row: Record<string, unknown>): Tournament {
     waitlistCount: Number(row.waitlist_count ?? 0),
     partnerRequestCount: Number(row.partner_request_count ?? 0),
     prize: String(row.prize ?? ''),
-    photoUrl: String(row.photo_url ?? ''),
+    photoUrl: sanitizeServerImageUrl(row.photo_url),
     formatCode: String(row.format_code ?? ''),
     description:
       row.description != null && String(row.description).trim().length > 0
@@ -167,6 +167,8 @@ export async function fetchLeaderboard(
       ? `AND (LOWER(COALESCE(t.format, '')) = 'kotc' OR LOWER(COALESCE(t.format, '')) LIKE '%king%')`
       : format === 'dt'
       ? `AND (LOWER(COALESCE(t.format, '')) LIKE '%ipt%' OR LOWER(COALESCE(t.format, '')) LIKE '%double%' OR LOWER(COALESCE(t.format, '')) LIKE '%trouble%')`
+      : format === 'thai'
+      ? `AND (LOWER(COALESCE(t.format, '')) = 'thai' OR LOWER(COALESCE(t.format, '')) LIKE '%thai%')`
       : '';
 
   const { rows } = await pool.query(
@@ -214,7 +216,7 @@ export async function fetchLeaderboard(
     silver: Number(row.silver ?? 0),
     bronze: Number(row.bronze ?? 0),
     lastSeen: toIsoDate(row.last_seen),
-    photoUrl: row.photo_url ?? '',
+    photoUrl: sanitizeServerImageUrl(row.photo_url),
     topLevel: row.top_level ?? 'light',
   }));
 }
@@ -234,6 +236,8 @@ export async function fetchMedalsLeaderboard(
       ? `AND (LOWER(COALESCE(t.format, '')) = 'kotc' OR LOWER(COALESCE(t.format, '')) LIKE '%king%')`
       : format === 'dt'
       ? `AND (LOWER(COALESCE(t.format, '')) LIKE '%ipt%' OR LOWER(COALESCE(t.format, '')) LIKE '%double%' OR LOWER(COALESCE(t.format, '')) LIKE '%trouble%')`
+      : format === 'thai'
+      ? `AND (LOWER(COALESCE(t.format, '')) = 'thai' OR LOWER(COALESCE(t.format, '')) LIKE '%thai%')`
       : '';
 
   const { rows } = await pool.query(
@@ -273,7 +277,7 @@ export async function fetchMedalsLeaderboard(
     rank: i + 1,
     playerId: row.id,
     name: row.name,
-    photoUrl: row.photo_url ?? '',
+    photoUrl: sanitizeServerImageUrl(row.photo_url),
     gender: row.gender,
     gold: Number(row.gold ?? 0),
     silver: Number(row.silver ?? 0),
@@ -351,7 +355,7 @@ export async function fetchPlayer(id: string): Promise<Player | null> {
     wins: totalWins || (data.wins ?? 0),
     totalPts: ratingM + ratingW + ratingMix || (data.total_pts ?? 0),
     lastSeen: lastSeen || (data.last_seen ? toIsoDate(data.last_seen) : ''),
-    photoUrl: data.photo_url ?? '',
+    photoUrl: sanitizeServerImageUrl(data.photo_url),
     city: data.city ?? '',
     level: data.level ?? '',
     bio: data.bio ?? '',
@@ -719,9 +723,10 @@ export async function fetchPlayerMatches(
       playerName: r.player_name,
       place: Number(r.place ?? 0),
       gamePts: Number(r.game_pts ?? 0),
-      ratingPts: ratingPointsForPlace(
+      ratingPts: effectiveRatingPtsFromStored(
         Number(r.place ?? 0),
         r.rating_pool === 'novice' ? 'novice' : 'pro',
+        r.rating_pts != null ? Number(r.rating_pts) : undefined,
       ),
       gender: (r.gender ?? 'M') as 'M' | 'W',
       tournamentId: tid,
@@ -994,7 +999,11 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
   const bestPlace = places.length ? Math.min(...places) : 0;
   const totalRatingPts = results.reduce((s, r) => {
     const pool = r.rating_pool === 'novice' ? 'novice' : 'pro';
-    return s + ratingPointsForPlace(Number(r.place), pool);
+    return s + effectiveRatingPtsFromStored(
+      Number(r.place),
+      pool,
+      r.rating_pts != null ? Number(r.rating_pts) : undefined,
+    );
   }, 0);
   const avgRatingPts = totalTournaments ? +(totalRatingPts / totalTournaments).toFixed(1) : 0;
   const totalWins = results.reduce((s, r) => s + Number(r.wins || 0), 0);
@@ -1008,7 +1017,11 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
   let bestPts = -Infinity;
   for (const r of results) {
     const pool = r.rating_pool === 'novice' ? 'novice' : 'pro';
-    const pts = ratingPointsForPlace(Number(r.place), pool);
+    const pts = effectiveRatingPtsFromStored(
+      Number(r.place),
+      pool,
+      r.rating_pts != null ? Number(r.rating_pts) : undefined,
+    );
     if (pts > bestPts) {
       bestPts = pts;
       bestTournament = { id: r.tournament_id ? String(r.tournament_id) : undefined, name: r.tournament_name, date: toIsoDate(r.tournament_date), place: Number(r.place), pts };
@@ -1086,7 +1099,11 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
     if (!key) continue;
     const b = formatStats[key];
     b.total++;
-    b.rating += ratingPointsForPlace(Number(r.place), r.rating_pool === 'novice' ? 'novice' : 'pro');
+    b.rating += effectiveRatingPtsFromStored(
+      Number(r.place),
+      r.rating_pool === 'novice' ? 'novice' : 'pro',
+      r.rating_pts != null ? Number(r.rating_pts) : undefined,
+    );
     if (Number(r.place) === 1) b.gold++;
   }
 
@@ -1137,7 +1154,7 @@ export async function fetchTournamentResults(tournamentId: string): Promise<Tour
     return {
       playerId: r.player_id,
       playerName: r.player_name,
-      playerPhotoUrl: r.player_photo_url ?? '',
+      playerPhotoUrl: sanitizeServerImageUrl(r.player_photo_url),
       place,
       gamePts: Number(r.game_pts ?? 0),
       ratingPts,

@@ -204,6 +204,15 @@ export async function PUT(req: NextRequest) {
     }
 
     const before = await getTournamentById(id);
+    const wasFinished = String(before?.status || '').toLowerCase() === 'finished';
+    const nowFinished = String(input.status || '').toLowerCase() === 'finished';
+    if (!wasFinished && nowFinished) {
+      const { isThaiNextTournamentForRatingSync, syncThaiStandingsToTournamentResultsOrThrowBadRequest } =
+        await import('@/lib/thai-live/sync-tournament-results');
+      if (isThaiNextTournamentForRatingSync(input)) {
+        await syncThaiStandingsToTournamentResultsOrThrowBadRequest(id);
+      }
+    }
     const updated = await updateTournament(id, input);
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
@@ -217,8 +226,6 @@ export async function PUT(req: NextRequest) {
       afterState: updated,
       reason: input.reason,
     });
-    const wasFinished = String(before?.status || '').toLowerCase() === 'finished';
-    const nowFinished = String(updated.status || '').toLowerCase() === 'finished';
     if (!wasFinished && nowFinished) {
       const { persistThaiSpectatorBoardSnapshot } = await import('@/lib/thai-spectator');
       void persistThaiSpectatorBoardSnapshot(id).catch(() => {});

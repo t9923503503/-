@@ -64,8 +64,8 @@
 |------|-------------|--------|-------------|
 | РђРіРµРЅС‚ A вЂ” Backend Core + API | Codex | DONE | 2026-04-09, backend KOTC Next завершён: core/service/spectator/print/API, judge/admin/public routes, Sudyam bootstrap |
 | РђРіРµРЅС‚ B вЂ” Admin UI | Codex | DONE | 2026-04-09, KOTC Next wired РІ Р°РґРјРёРЅРєРµ: client-safe normalize helper, persistence РІ `tournaments.kotc_*`, UI legacy/next + operator link, С‚РµСЃС‚С‹ |
-| РђРіРµРЅС‚ C вЂ” Judge + Operator + Spectator UI |  | TODO | РџРѕРєР° API РЅРµ РіРѕС‚РѕРІРѕ вЂ” РґРѕРїСѓСЃС‚РёРј РІСЂРµРјРµРЅРЅС‹Р№ mock snapshot |
-| РЁР°Рі 2 вЂ” РРЅС‚РµРіСЂР°С†РёСЏ / Smoke |  | TODO | Р’С‹РїРѕР»РЅСЏС‚СЊ РїРѕСЃР»Рµ `DONE` РїРѕ A/B/C |
+| РђРіРµРЅС‚ C вЂ” Judge + Operator + Spectator UI | Codex | DONE | 2026-04-09, judge/operator/spectator UI собраны: `/kotc-next/judge/[pin]`, `/sudyam/kotcn/[id]`, `/live/kotcn/[id]`, real action/snapshot endpoints |
+| РЁР°Рі 2 вЂ” РРЅС‚РµРіСЂР°С†РёСЏ / Smoke | Codex | TODO | 2026-04-09, добавлен `tests/unit/kotc-next-integration-source-contract.test.js` и выровнен Sudyam action contract; полный DB/manual smoke всё ещё требуется |
 
 ## РђРіРµРЅС‚ A вЂ” Backend Core + API
 
@@ -142,13 +142,13 @@
 
 | # | Р¤Р°Р№Р» | Р§С‚Рѕ РґРµР»Р°РµС‚ | РСЃРїРѕР»РЅРёС‚РµР»СЊ | РЎС‚Р°С‚СѓСЃ | РљРѕРјРјРµРЅС‚Р°СЂРёР№ |
 |---|------|------------|-------------|--------|-------------|
-| 1 | `web/components/kotc-next/KotcNextJudgeScreen.tsx` | СЃСѓРґРµР№СЃРєРёР№ СЌРєСЂР°РЅ: king/challenger/queue, 2 action buttons, undo, timer, finish, localStorage draft |  | TODO |  |
-| 2 | `web/components/kotc-next/KotcNextOperatorPanel.tsx` | operator panel: bootstrap/finish/confirm, court grid, PIN, QR, standings, spectator link |  | TODO |  |
-| 3 | `web/components/kotc-next/KotcNextR2SeedEditor.tsx` | СЂРµРґР°РєС‚РѕСЂ Р·РѕРЅ R2 СЃ СЂСѓС‡РЅС‹Рј РїРµСЂРµРјРµС‰РµРЅРёРµРј Рё Р°РІС‚РѕРїРѕСЃРµРІРѕРј |  | TODO |  |
-| 4 | `web/components/kotc-next/KotcNextSpectatorBoard.tsx` | SSR spectator board: standings, Р·РѕРЅС‹, fun stats |  | TODO |  |
-| 5 | `web/app/kotc-next/judge/[tournamentId]/page.tsx` | PIN РІС…РѕРґ + Р·Р°РіСЂСѓР·РєР° snapshot + render `JudgeScreen` |  | TODO |  |
-| 6 | `web/app/sudyam/kotcn/[id]/page.tsx` | SSR operator page + `OperatorPanel` |  | TODO |  |
-| 7 | `web/app/live/kotcn/[id]/page.tsx` | SSR spectator page + auto-refresh 10 sec |  | TODO |  |
+| 1 | `web/components/kotc-next/KotcNextJudgeScreen.tsx` | СЃСѓРґРµР№СЃРєРёР№ СЌРєСЂР°РЅ: king/challenger/queue, 2 action buttons, undo, timer, finish, localStorage draft | Codex | DONE | 2026-04-09, добавлен judge screen с live timer/action flow, undo, standings и local draft persistence |
+| 2 | `web/components/kotc-next/KotcNextOperatorPanel.tsx` | operator panel: bootstrap/finish/confirm, court grid, PIN, QR, standings, spectator link | Codex | DONE | 2026-04-09, собран reusable operator panel с картами кортов, QR/PIN и live standings |
+| 3 | `web/components/kotc-next/KotcNextR2SeedEditor.tsx` | СЂРµРґР°РєС‚РѕСЂ Р·РѕРЅ R2 СЃ СЂСѓС‡РЅС‹Рј РїРµСЂРµРјРµС‰РµРЅРёРµРј Рё Р°РІС‚РѕРїРѕСЃРµРІРѕРј | Codex | DONE | 2026-04-09, добавлен editor с ручным перекидом пар между зонами перед confirm R2 |
+| 4 | `web/components/kotc-next/KotcNextSpectatorBoard.tsx` | SSR spectator board: standings, Р·РѕРЅС‹, fun stats | Codex | DONE | 2026-04-09, public board рендерит stage/fun stats/courts/finals и auto-refresh через router.refresh |
+| 5 | `web/app/kotc-next/judge/[pin]/page.tsx` | PIN-judge page: SSR snapshot + render `JudgeScreen` | Codex | DONE | 2026-04-09, canonical judge page подключена к `getKotcNextJudgeSnapshotByPin` и 404 handling |
+| 6 | `web/app/sudyam/kotcn/[id]/page.tsx` | SSR operator page + `OperatorPanel` | Codex | DONE | 2026-04-09, canonical KOTC Next operator page подключена и использует live Sudyam actions |
+| 7 | `web/app/live/kotcn/[id]/page.tsx` | SSR spectator page + auto-refresh 10 sec | Codex | DONE | 2026-04-09, spectator page использует `getKotcNextSpectatorPayload` |
 
 ### РљСЂРёС‚РµСЂРёРё РіРѕС‚РѕРІРЅРѕСЃС‚Рё C
 
@@ -162,6 +162,8 @@
 РСЃРїРѕР»РЅСЏРµС‚СЃСЏ РѕС‚РґРµР»СЊРЅС‹Рј Р°РіРµРЅС‚РѕРј С‚РѕР»СЊРєРѕ РїРѕСЃР»Рµ `DONE` РїРѕ A, B Рё C.
 
 ### РўСЂРµРєРµСЂ РёРЅС‚РµРіСЂР°С†РёРё
+
+Автоматизированный минимум уже есть: `tests/unit/kotc-next-integration-source-contract.test.js` проверяет wiring admin -> Sudyam -> judge -> spectator -> publish. Ниже остаётся живой smoke с реальными данными/БД.
 
 | # | РџСЂРѕРІРµСЂРєР° | РСЃРїРѕР»РЅРёС‚РµР»СЊ | РЎС‚Р°С‚СѓСЃ | РљРѕРјРјРµРЅС‚Р°СЂРёР№ |
 |---|----------|-------------|--------|-------------|
@@ -201,4 +203,4 @@
 
 | # | Р¤Р°Р№Р» | Р§С‚Рѕ РґРµР»Р°РµС‚ | РСЃРїРѕР»РЅРёС‚РµР»СЊ | РЎС‚Р°С‚СѓСЃ | РљРѕРјРјРµРЅС‚Р°СЂРёР№ |
 |---|------|------------|-------------|--------|-------------|
-| 6 | `web/app/sudyam/kotcn/[id]/page.tsx` | operator page | Agent C | BLOCKED | 2026-04-09, Р¶РґСѓ snapshot contract РѕС‚ Agent A |
+| 6 | `web/app/sudyam/kotcn/[id]/page.tsx` | operator page | Codex | DONE | 2026-04-09, подключена страница `web/app/sudyam/kotcn/[id]/page.tsx` + client workspace |

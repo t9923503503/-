@@ -101,7 +101,7 @@ export interface TournamentResult {
 }
 
 export type RatingType = 'M' | 'W' | 'Mix';
-export type TournamentFormatFilter = 'all' | 'kotc' | 'dt';
+export type TournamentFormatFilter = 'all' | 'kotc' | 'dt' | 'thai';
 
 export type TeamStatus = 'looking_for_partner' | 'confirmed' | 'waitlist' | 'withdrawn';
 

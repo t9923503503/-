@@ -43,6 +43,8 @@ export function effectiveRatingPtsFromStored(
 /** SQL-фрагмент: эффективные очки из места и rating_pool (pro по умолчанию). */
 export function sqlEffectiveRatingPointsExpr(trAlias = 'tr'): string {
   return `CASE
+    WHEN COALESCE(${trAlias}.rating_pts, 0) > 0
+    THEN ${trAlias}.rating_pts
     WHEN COALESCE(${trAlias}.rating_pool, 'pro') = 'novice'
     THEN ROUND(COALESCE(lk.pts, 1)::numeric / 2)::int
     ELSE COALESCE(lk.pts, 1)

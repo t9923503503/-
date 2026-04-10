@@ -20,9 +20,9 @@ import type {
 } from './admin-queries-pg';
 import {
   effectiveRatingPtsFromStored,
-  ratingPointsForPlace,
   type RatingPool,
 } from './rating-points';
+import { sanitizeServerImageUrl } from './server-image-url';
 import { augmentArchiveTournamentWithThaiBoard } from './thai-archive-meta';
 
 type JsonObject = Record<string, unknown>;
@@ -293,7 +293,7 @@ function mapTournament(row: JsonObject | null, participantCount = 0): AdminTourn
     capacity: Number(source.capacity ?? 0),
     status: String(source.status ?? 'open'),
     participantCount,
-    photoUrl: String(source.photo_url ?? ''),
+    photoUrl: sanitizeServerImageUrl(source.photo_url),
     settings: kotc ? { ...baseSettings, ...kotc } : baseSettings,
     kotcJudgeModule: (kotc?.kotcJudgeModule ?? null) as KotcJudgeModule | null,
     kotcJudgeBootstrapSig: kotc?.kotcJudgeBootstrapSignature ?? null,
@@ -319,7 +319,7 @@ function mapPlayer(row: JsonObject | null): AdminPlayer {
     wins: Number(source.wins ?? 0),
     totalPts: Number(source.total_pts ?? 0),
     tournamentsPlayed: Number(source.tournaments_played ?? 0),
-    photoUrl: String(source.photo_url ?? ''),
+    photoUrl: sanitizeServerImageUrl(source.photo_url),
     birthDate: toIsoDate(source.birth_date),
     heightCm: source.height_cm == null ? null : Number(source.height_cm),
     weightKg: source.weight_kg == null ? null : Number(source.weight_kg),
@@ -1436,6 +1436,7 @@ export async function upsertTournamentResults(
     gender: 'M' | 'W';
     placement: number;
     points: number;
+    ratingPts?: number;
     ratingPool?: RatingPool;
   }>,
 ): Promise<number> {
@@ -1453,7 +1454,11 @@ export async function upsertTournamentResults(
       gender: item.gender === 'W' ? 'W' : 'M',
       place,
       game_pts: Number(item.points || 0),
-      rating_pts: ratingPointsForPlace(place, pool),
+      rating_pts: effectiveRatingPtsFromStored(
+        place,
+        pool,
+        item.ratingPts != null ? Number(item.ratingPts) : undefined,
+      ),
       rating_type: tournament.division === 'Микст' ? 'Mix' : item.gender === 'W' ? 'W' : 'M',
       rating_pool: pool === 'novice' ? 'novice' : null,
     };

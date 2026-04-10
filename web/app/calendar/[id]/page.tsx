@@ -10,6 +10,10 @@ import {
 } from '@/lib/queries';
 import { isThaiAdminFormat } from '@/lib/admin-legacy-sync';
 import { getThaiSpectatorBoardPayload } from '@/lib/thai-spectator';
+import {
+  absoluteLocalPosterForTournamentId,
+  localPosterForTournamentId,
+} from '@/lib/tournament-poster';
 import { buildThaiSpectatorBoardUrl, buildTournamentMapsUrl } from '@/lib/tournament-links';
 
 export const dynamic = 'force-dynamic';
@@ -102,6 +106,29 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     description:
       tournament.description?.slice(0, 160) ||
       `Детали турнира ${tournament.name}. Статус записи, локация, участники и результаты.`,
+    ...(absoluteLocalPosterForTournamentId(tournament.id)
+      ? {
+          openGraph: {
+            title: tournament.name,
+            description:
+              tournament.description?.slice(0, 160) ||
+              `Детали турнира ${tournament.name}. Статус записи, локация, участники и результаты.`,
+            type: 'website',
+            locale: 'ru_RU',
+            images: [
+              {
+                url: absoluteLocalPosterForTournamentId(tournament.id),
+                width: 768,
+                height: 1024,
+              },
+            ],
+          },
+          twitter: {
+            card: 'summary_large_image' as const,
+            images: [absoluteLocalPosterForTournamentId(tournament.id)],
+          },
+        }
+      : {}),
   };
 }
 
@@ -120,6 +147,7 @@ export default async function TournamentPage({ params }: PageProps) {
   ]);
 
   const related = tournaments.filter((item) => item.id !== tournament.id).slice(0, 4);
+  const localPosterSrc = localPosterForTournamentId(tournament.id);
 
   // Finished tournament gets its own rich landing page
   if (tournament.status === 'finished') {
@@ -320,6 +348,16 @@ export default async function TournamentPage({ params }: PageProps) {
             <h2 className="font-heading text-2xl tracking-wide text-text-primary">
               Афиша турнира
             </h2>
+            {localPosterSrc ? (
+              <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                <img
+                  src={localPosterSrc}
+                  alt={`Афиша ${tournament.name}`}
+                  className="w-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+            ) : null}
             <p className="mt-4 whitespace-pre-line text-sm font-body leading-7 text-text-primary/85">
               {tournament.description}
             </p>

@@ -1,9 +1,37 @@
 import { normalizeThaiRulesPreset } from '@/lib/admin-legacy-sync';
 import { upsertTournamentResults, getTournamentById } from '@/lib/admin-queries';
 import { getPool } from '@/lib/db';
+import {
+  isExactThaiTournamentFormat,
+  normalizeThaiJudgeModule,
+  THAI_JUDGE_MODULE_LEGACY,
+  THAI_JUDGE_MODULE_NEXT,
+} from '@/lib/thai-judge-config';
 import { finalizeThaiStandingsRows } from './core';
 import { getThaiOperatorStateSummary } from './service';
 import type { ThaiOperatorRoundView, ThaiStandingsRow } from './types';
+
+export function isThaiNextTournamentForRatingSync(input: {
+  format?: unknown;
+  settings?: Record<string, unknown> | null;
+} | null | undefined): boolean {
+  if (!input || !isExactThaiTournamentFormat(input.format)) return false;
+  return (
+    normalizeThaiJudgeModule(input.settings?.thaiJudgeModule, THAI_JUDGE_MODULE_LEGACY) ===
+    THAI_JUDGE_MODULE_NEXT
+  );
+}
+
+export async function syncThaiStandingsToTournamentResultsOrThrowBadRequest(
+  tournamentId: string,
+): Promise<{ inserted: number; roundUsed: string }> {
+  try {
+    return await syncThaiStandingsToTournamentResults(tournamentId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`BadRequest: ${message}`);
+  }
+}
 
 async function loadPlayerGendersByTournament(tournamentId: string): Promise<Map<string, 'M' | 'W'>> {
   const pool = getPool();

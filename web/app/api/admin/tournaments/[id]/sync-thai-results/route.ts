@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireApiRole } from '@/lib/admin-auth';
 import { writeAuditLog } from '@/lib/admin-audit';
 import { adminErrorResponse } from '@/lib/admin-errors';
-import { syncThaiStandingsToTournamentResults } from '@/lib/thai-live/sync-tournament-results';
+import { syncThaiStandingsToTournamentResultsOrThrowBadRequest } from '@/lib/thai-live/sync-tournament-results';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params;
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
-    const { inserted, roundUsed } = await syncThaiStandingsToTournamentResults(id);
+    const { inserted, roundUsed } = await syncThaiStandingsToTournamentResultsOrThrowBadRequest(id);
 
     await writeAuditLog({
       actorId: auth.actor.id,

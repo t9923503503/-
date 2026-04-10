@@ -7,15 +7,14 @@ import {
   type KotcNextError,
 } from './service';
 import type {
-  KotcNextCourtOperatorView,
   KotcNextFunStats,
   KotcNextOperatorState,
+  KotcNextSpectatorCourtView,
   KotcNextSpectatorPayload,
+  KotcNextSpectatorRoundView,
 } from './types';
 
 export const KOTC_SPECTATOR_SNAPSHOT_COLUMN = 'kotc_spectator_snapshot';
-
-export type KotcNextSpectatorCourtView = Omit<KotcNextCourtOperatorView, 'pinCode' | 'judgeUrl'>;
 
 function sanitizeKotcNextOperatorStateForSpectators(
   state: KotcNextOperatorState,
@@ -33,13 +32,19 @@ function sanitizeKotcNextOperatorStateForSpectators(
     r2SeedDraft: _draft,
     ...rest
   } = state;
+  const rounds: KotcNextSpectatorRoundView[] = state.rounds.map((round) => ({
+    roundId: round.roundId,
+    roundNo: round.roundNo,
+    roundType: round.roundType,
+    status: round.status,
+    courts: round.courts.map(
+      ({ pinCode: _pin, judgeUrl: _judge, ...court }): KotcNextSpectatorCourtView => court,
+    ),
+  }));
 
   return {
     ...rest,
-    rounds: state.rounds.map((round) => ({
-      ...round,
-      courts: round.courts.map(({ pinCode: _pin, judgeUrl: _judge, ...court }) => court),
-    })),
+    rounds,
     finalResults: state.finalResults,
   };
 }

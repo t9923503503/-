@@ -35,5 +35,5 @@ export default function PlayerPhoto({
     );
   }
 
-  return <Image src={url} alt={alt} width={width} height={height} className={cls} />;
+  return <Image src={url} alt={alt} width={width} height={height} className={cls} unoptimized />;
 }

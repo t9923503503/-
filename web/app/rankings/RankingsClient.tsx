@@ -312,6 +312,7 @@ export default function RankingsClient({ initialEntries, initialType, counts }: 
   const formatTabs: { value: TournamentFormatFilter; label: string; icon: string; activeClass: string; hoverColor: string }[] = [
     { value: 'all',  label: 'Все',        icon: '🌐', activeClass: 'bg-white/10 border-white/25 text-white',                      hoverColor: 'hover:text-white' },
     { value: 'kotc', label: 'KOTC',       icon: '👑', activeClass: 'bg-[#FFD700]/10 border-[#FFD700]/40 text-[#FFD700]',          hoverColor: 'hover:text-[#FFD700]' },
+    { value: 'thai', label: 'THAI',       icon: '🏖️', activeClass: 'bg-[#F97316]/10 border-[#F97316]/40 text-[#FDBA74]',         hoverColor: 'hover:text-[#FDBA74]' },
     { value: 'dt',   label: 'Дабл Трабл', icon: '⚡', activeClass: 'bg-[#4DA8DA]/10 border-[#4DA8DA]/40 text-[#4DA8DA]',          hoverColor: 'hover:text-[#4DA8DA]' },
   ];
 

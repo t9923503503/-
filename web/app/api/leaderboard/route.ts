@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const type = (searchParams.get('type') ?? 'M') as RatingType;
   const limit = Math.min(Number(searchParams.get('limit') ?? 50), 100);
   const formatParam = searchParams.get('format') ?? 'all';
-  const format: TournamentFormatFilter = ['all', 'kotc', 'dt'].includes(formatParam)
+  const format: TournamentFormatFilter = ['all', 'kotc', 'dt', 'thai'].includes(formatParam)
     ? (formatParam as TournamentFormatFilter)
     : 'all';
 

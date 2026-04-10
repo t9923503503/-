@@ -1,5 +1,6 @@
 import { PoolClient } from 'pg';
 import { upsertTournamentResults } from '@/lib/admin-queries';
+import { getTournamentTableColumnsTx } from '@/lib/admin-queries-pg';
 import {
   normalizeKotcJudgeBootstrapSignature,
   normalizeKotcJudgeModule,
@@ -330,6 +331,7 @@ async function loadTournamentTx(
   tournamentId: string,
   options?: { forUpdate?: boolean },
 ): Promise<TournamentRow> {
+  const columns = await getTournamentTableColumnsTx(client);
   const res = await client.query(
     `
       SELECT
@@ -341,13 +343,13 @@ async function loadTournamentTx(
         format,
         division,
         status,
-        settings,
-        COALESCE(kotc_judge_module, 'legacy') AS kotc_judge_module,
-        kotc_judge_bootstrap_sig,
-        COALESCE(kotc_raund_count, 2) AS kotc_raund_count,
-        COALESCE(kotc_raund_timer_minutes, 10) AS kotc_raund_timer_minutes,
-        COALESCE(kotc_ppc, 4) AS kotc_ppc,
-        COALESCE(courts, 1) AS courts
+        ${columns.has('settings') ? 'settings' : 'NULL::jsonb AS settings'},
+        ${columns.has('kotc_judge_module') ? "COALESCE(kotc_judge_module, 'legacy') AS kotc_judge_module" : 'NULL::text AS kotc_judge_module'},
+        ${columns.has('kotc_judge_bootstrap_sig') ? 'kotc_judge_bootstrap_sig' : 'NULL::text AS kotc_judge_bootstrap_sig'},
+        ${columns.has('kotc_raund_count') ? 'COALESCE(kotc_raund_count, 2) AS kotc_raund_count' : 'NULL::int AS kotc_raund_count'},
+        ${columns.has('kotc_raund_timer_minutes') ? 'COALESCE(kotc_raund_timer_minutes, 10) AS kotc_raund_timer_minutes' : 'NULL::int AS kotc_raund_timer_minutes'},
+        ${columns.has('kotc_ppc') ? 'COALESCE(kotc_ppc, 4) AS kotc_ppc' : 'NULL::int AS kotc_ppc'},
+        ${columns.has('courts') ? 'COALESCE(courts, 1) AS courts' : 'NULL::int AS courts'}
       FROM tournaments
       WHERE id = $1
       LIMIT 1
@@ -366,10 +368,16 @@ async function loadTournamentTx(
       : {};
   const paramsBase = normalizeKotcAdminSettings({
     ...rawSettings,
-    courts: asInt(row.courts, 1),
-    kotcPpc: asInt(row.kotc_ppc, 4),
-    kotcRaundCount: asInt(row.kotc_raund_count, 2),
-    kotcRaundTimerMinutes: asInt(row.kotc_raund_timer_minutes, 10),
+    courts: asInt(row.courts, asInt(rawSettings.courts, 1)),
+    kotcPpc: asInt(row.kotc_ppc, asInt(rawSettings.kotcPpc ?? rawSettings.ppc, 4)),
+    kotcRaundCount: asInt(
+      row.kotc_raund_count,
+      asInt(rawSettings.kotcRaundCount ?? rawSettings.raundCount, 2),
+    ),
+    kotcRaundTimerMinutes: asInt(
+      row.kotc_raund_timer_minutes,
+      asInt(rawSettings.kotcRaundTimerMinutes ?? rawSettings.raundTimerMinutes, 10),
+    ),
   });
 
   return {
@@ -382,8 +390,12 @@ async function loadTournamentTx(
     division: String(row.division || ''),
     status: String(row.status || ''),
     settings: rawSettings,
-    kotcJudgeModule: normalizeKotcJudgeModule(row.kotc_judge_module, 'legacy'),
-    kotcJudgeBootstrapSig: normalizeKotcJudgeBootstrapSignature(row.kotc_judge_bootstrap_sig),
+    kotcJudgeModule: normalizeKotcJudgeModule(row.kotc_judge_module ?? rawSettings.kotcJudgeModule, 'legacy'),
+    kotcJudgeBootstrapSig: normalizeKotcJudgeBootstrapSignature(
+      row.kotc_judge_bootstrap_sig ??
+        rawSettings.kotcJudgeBootstrapSignature ??
+        rawSettings.kotcJudgeBootstrapSig,
+    ),
     courts: paramsBase.courts,
     params: {
       courts: paramsBase.courts,
@@ -1694,11 +1706,11 @@ export async function getKotcNextOperatorStateSummary(tournamentId: string): Pro
       r2SeedDraft: stage === 'r1_finished' && r1 ? await getKotcNextR2SeedDraft(normalizedId) : null,
       finalResults: r2?.status === 'finished' ? buildFinalResults(await loadAggregatePairRowsTx(client, r2)) : null,
       canBootstrapR1: !r1,
-      canFinishR1: Boolean(r1 && r1.status !== 'finished'),
+      canFinishR1: Boolean(r1 && r1.status === 'finished' && !r2),
       canPreviewR2Seed: Boolean(r1 && r1.status === 'finished' && !r2),
       canConfirmR2Seed: Boolean(r1 && r1.status === 'finished' && !r2),
       canBootstrapR2: Boolean(r1 && r1.status === 'finished' && !r2),
-      canFinishR2: Boolean(r2 && r2.status !== 'finished'),
+      canFinishR2: Boolean(r2 && r2.status === 'finished'),
     };
   });
 }

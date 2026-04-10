@@ -23,6 +23,7 @@ describe('rankings medals source contract', () => {
     expect(types).toContain('kotcWins: number;');
     expect(types).toContain('thaiWins: number;');
     expect(types).toContain('iptWins: number;');
+    expect(types).toContain("export type TournamentFormatFilter = 'all' | 'kotc' | 'dt' | 'thai';");
   });
 
   it('fetches medal aggregates in SQL without N+1 queries', () => {
@@ -37,17 +38,36 @@ describe('rankings medals source contract', () => {
     expect(queries).toContain('kotc_wins');
     expect(queries).toContain('thai_wins');
     expect(queries).toContain('ipt_wins');
+    expect(queries).toContain("format === 'thai'");
+    expect(queries).toContain("LOWER(COALESCE(t.format, '')) = 'thai'");
     expect(queries).toContain("JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'");
     expect(queries).toContain('END AS top_level');
+    expect(queries).toContain('effectiveRatingPtsFromStored(');
   });
 
   it('exposes a validated leaderboard medals API route', () => {
     const route = read('web/app/api/leaderboard-medals/route.ts');
+    const leaderboardRoute = read('web/app/api/leaderboard/route.ts');
 
     expect(route).toContain('fetchMedalsLeaderboard');
     expect(route).toContain("['M', 'W', 'Mix'].includes(type)");
+    expect(route).toContain("['all', 'kotc', 'dt', 'thai'].includes(formatParam)");
     expect(route).toContain("NextResponse.json({ error: 'Invalid type' }, { status: 400 })");
     expect(route).toContain('Math.max(1, Math.min(100');
+    expect(leaderboardRoute).toContain("['all', 'kotc', 'dt', 'thai'].includes(formatParam)");
+  });
+
+  it('keeps leaderboard and admin results publishing aligned on stored rating points', () => {
+    const ratingPoints = read('web/lib/rating-points.ts');
+    const adminResultsRoute = read('web/app/api/admin/tournaments/[id]/results/route.ts');
+    const adminPg = read('web/lib/admin-queries-pg.ts');
+    const adminPostgrest = read('web/lib/admin-postgrest.ts');
+
+    expect(ratingPoints).toContain('COALESCE(${trAlias}.rating_pts, 0) > 0');
+    expect(adminResultsRoute).toContain('normalizeRatingPts');
+    expect(adminResultsRoute).toContain('ratingPts: normalizeRatingPts');
+    expect(adminPg).toContain('r.ratingPts != null ? Number(r.ratingPts) : undefined');
+    expect(adminPostgrest).toContain('item.ratingPts != null ? Number(item.ratingPts) : undefined');
   });
 
   it('renders a medals tab with lazy loading and profile links', () => {
@@ -56,6 +76,8 @@ describe('rankings medals source contract', () => {
     expect(client).toContain("type SortMode = 'pts' | 'avg' | 'trn' | 'medals'");
     expect(client).toContain("label: 'МЕДАЛИ'");
     expect(client).toContain('/api/leaderboard-medals?type=${type}&limit=100');
+    expect(client).toContain("value: 'thai'");
+    expect(client).toContain("label: 'THAI'");
     expect(client).toContain('function MedalItem');
     expect(client).toContain('href={`/players/${entry.playerId}`}');
     expect(client).toContain('filteredMedals');

@@ -41,6 +41,20 @@ describe('Thai admin live source contract', () => {
     expect(route).toContain('confirmThaiR2Seed');
   });
 
+  it('auto-syncs Thai Next results into tournament_results when the tournament is finished', () => {
+    const tournamentsRoute = read('web/app/api/admin/tournaments/route.ts');
+    const overridesRoute = read('web/app/api/admin/overrides/route.ts');
+    const syncLib = read('web/lib/thai-live/sync-tournament-results.ts');
+    const control = read('web/components/thai-live/ThaiTournamentControlClient.tsx');
+
+    expect(syncLib).toContain('isThaiNextTournamentForRatingSync');
+    expect(syncLib).toContain('syncThaiStandingsToTournamentResultsOrThrowBadRequest');
+    expect(tournamentsRoute).toContain('syncThaiStandingsToTournamentResultsOrThrowBadRequest');
+    expect(overridesRoute).toContain('syncThaiStandingsToTournamentResultsOrThrowBadRequest');
+    expect(control).toContain('автоматически попадут в общий рейтинг и архив');
+    expect(control).toContain('Пересчитать Thai в рейтинг / архив');
+  });
+
   it('keeps Sudyam Thai workspace as a thin wrapper around the shared operator panel', () => {
     const workspace = read('web/components/sudyam/SudyamFormatWorkspace.tsx');
 

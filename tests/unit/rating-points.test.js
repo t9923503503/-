@@ -5,6 +5,7 @@ import {
   pointsForPlace,
   ratingPointsForPlace,
   RATING_POINTS_TABLE,
+  sqlEffectiveRatingPointsExpr,
 } from '../../web/lib/rating-points.ts';
 
 describe('rating-points', () => {
@@ -34,5 +35,13 @@ describe('rating-points', () => {
     expect(effectiveRatingPtsFromStored(1, 'pro', 0)).toBe(100);
     expect(effectiveRatingPtsFromStored(1, 'pro', null)).toBe(100);
     expect(effectiveRatingPtsFromStored(2, 'novice', undefined)).toBe(45);
+  });
+
+  it('sqlEffectiveRatingPointsExpr prefers stored rating_pts before place fallback', () => {
+    const sql = sqlEffectiveRatingPointsExpr('tr');
+
+    expect(sql).toContain("COALESCE(tr.rating_pts, 0) > 0");
+    expect(sql).toContain('THEN tr.rating_pts');
+    expect(sql).toContain("COALESCE(tr.rating_pool, 'pro') = 'novice'");
   });
 });

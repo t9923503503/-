@@ -18,9 +18,11 @@ export async function POST(req: NextRequest) {
   }
   if (
     action !== 'bootstrap_r1' &&
+    action !== 'finish_r1' &&
     action !== 'preview_r2_seed' &&
     action !== 'confirm_r2_seed' &&
-    action !== 'bootstrap_r2'
+    action !== 'bootstrap_r2' &&
+    action !== 'finish_r2'
   ) {
     return NextResponse.json({ error: 'Unsupported KOTC Next action' }, { status: 400 });
   }

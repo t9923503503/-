@@ -30,6 +30,14 @@ function formatVariant(variant: string | undefined): string {
   return 'MF';
 }
 
+function formatMetricValue(value: unknown): string {
+  if (value == null || value === '') return '-';
+  if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return '-';
+}
+
 function formatRaundStatus(status: string | undefined): string {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized === 'running') return 'LIVE';
@@ -61,10 +69,6 @@ function labelForPair(court: KotcNextCourtOperatorView, pairIdx: number): string
   return court.pairs.find((pair) => pair.pairIdx === pairIdx)?.label ?? `Pair ${pairIdx + 1}`;
 }
 
-function roundHasLiveCourt(state: KotcNextOperatorState | undefined) {
-  return state?.rounds.some((round) => round.courts.some((court) => court.status === 'live'));
-}
-
 export function KotcNextOperatorPanel({
   data,
   bootstrap,
@@ -80,9 +84,10 @@ export function KotcNextOperatorPanel({
     onRefresh: () => void;
   };
   actions: {
-    pendingAction: 'preview_r2_seed' | 'confirm_r2_seed' | 'bootstrap_r2' | null;
+    pendingAction: 'preview_r2_seed' | 'confirm_r2_seed' | 'bootstrap_r2' | 'finish_r1' | 'finish_r2' | null;
     r2SeedDraft: KotcNextR2SeedZone[] | null;
     r2SeedLoading: boolean;
+    onAction: (action: 'finish_r1' | 'finish_r2') => void;
     onOpenR2Seed: () => void;
     onConfirmR2Seed: (zones: KotcNextR2SeedZone[]) => void;
   };
@@ -141,13 +146,13 @@ export function KotcNextOperatorPanel({
           <div className="rounded-[18px] border border-white/8 bg-[#11111d] px-4 py-3">
             <div className="text-[10px] uppercase tracking-[0.28em] text-[#78809a]">Корты</div>
             <div className="mt-2 text-2xl font-black tracking-[0.06em] text-white">
-              {operatorState?.params.courts ?? data.bootstrapState.settings.courts ?? '-'}
+              {formatMetricValue(operatorState?.params.courts ?? data.bootstrapState.settings.courts)}
             </div>
           </div>
           <div className="rounded-[18px] border border-white/8 bg-[#11111d] px-4 py-3">
             <div className="text-[10px] uppercase tracking-[0.28em] text-[#78809a]">Пар на корт</div>
             <div className="mt-2 text-2xl font-black tracking-[0.06em] text-white">
-              {operatorState?.params.ppc ?? data.bootstrapState.settings.kotcPpc ?? '-'}
+              {formatMetricValue(operatorState?.params.ppc ?? data.bootstrapState.settings.kotcPpc)}
             </div>
           </div>
           <div className="rounded-[18px] border border-white/8 bg-[#11111d] px-4 py-3">
@@ -209,6 +214,26 @@ export function KotcNextOperatorPanel({
               {actions.r2SeedLoading ? 'Собираем зоны…' : 'Preview R2 zones'}
             </button>
           ) : null}
+          {operatorState?.canFinishR1 ? (
+            <button
+              type="button"
+              onClick={() => actions.onAction('finish_r1')}
+              disabled={actions.pendingAction === 'finish_r1'}
+              className="inline-flex rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-100 transition hover:border-red-300/50 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {actions.pendingAction === 'finish_r1' ? 'Finishing R1...' : '■ Finish R1'}
+            </button>
+          ) : null}
+          {operatorState?.canFinishR2 ? (
+            <button
+              type="button"
+              onClick={() => actions.onAction('finish_r2')}
+              disabled={actions.pendingAction === 'finish_r2'}
+              className="inline-flex rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-100 transition hover:border-red-300/50 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {actions.pendingAction === 'finish_r2' ? 'Finishing R2...' : '■ Finish R2'}
+            </button>
+          ) : null}
           {activeCourt ? (
             <a
               href={activeCourt.judgeUrl}
@@ -219,7 +244,7 @@ export function KotcNextOperatorPanel({
               Открыть активный корт
             </a>
           ) : null}
-          {roundHasLiveCourt(operatorState) && activeCourt ? (
+          {operatorState && data.tournamentId ? (
             <a
               href={`/live/kotcn/${encodeURIComponent(data.tournamentId)}`}
               target="_blank"
@@ -284,7 +309,7 @@ export function KotcNextOperatorPanel({
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
                           <div className="text-[10px] uppercase tracking-[0.3em] text-[#8f7c4a]">
-                            {round.roundType === 'r2' ? zoneLabel(court.label as never) : `Court ${court.label}`}
+                            {round.roundType === 'r2' ? court.label : `Court ${court.label}`}
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
                             <span className="rounded-full border border-[#4b3c15] bg-[#1b160d] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#ffd24a]">

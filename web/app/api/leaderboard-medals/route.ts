@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const parsedLimit = Number(searchParams.get('limit') ?? 100);
   const limit = Math.max(1, Math.min(100, Math.trunc(Number.isFinite(parsedLimit) ? parsedLimit : 100)));
   const formatParam = searchParams.get('format') ?? 'all';
-  const format: TournamentFormatFilter = ['all', 'kotc', 'dt'].includes(formatParam)
+  const format: TournamentFormatFilter = ['all', 'kotc', 'dt', 'thai'].includes(formatParam)
     ? (formatParam as TournamentFormatFilter)
     : 'all';
 

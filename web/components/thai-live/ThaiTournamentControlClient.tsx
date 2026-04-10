@@ -188,7 +188,7 @@ export function ThaiTournamentControlClient({ tournamentId }: { tournamentId: st
       if (!response.ok) {
         throw new Error(data.error || 'Не удалось обновить статус');
       }
-      setFinishCalendarMessage('Турнир отмечен как завершённый в календаре.');
+      setFinishCalendarMessage('Турнир отмечен как завершённый в календаре, Thai-итоги автоматически записаны в рейтинг и архив.');
       await loadThaiLive();
     } catch (error) {
       setFinishCalendarMessage(getErrorText(error, 'Ошибка'));
@@ -262,7 +262,7 @@ export function ThaiTournamentControlClient({ tournamentId }: { tournamentId: st
             <Link href="/admin/tournaments" className="text-brand hover:underline">
               списке турниров
             </Link>
-            .
+            . Для Thai Next в этот момент итоги последнего завершённого раунда автоматически попадут в общий рейтинг и архив.
           </p>
         </div>
       </div>
@@ -335,8 +335,9 @@ export function ThaiTournamentControlClient({ tournamentId }: { tournamentId: st
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
           <h2 className="text-sm font-semibold text-amber-100">Рейтинг и архив</h2>
           <p className="mt-1 text-xs text-text-secondary">
-            Итоги Thai не попадают в общий рейтинг сами. После завершения раунда нажмите, чтобы записать места и игровые
-            очки из последнего завершённого раунда (R2, если он завершён, иначе R1) в таблицу результатов.
+            Обычно Thai Next записывает итоги в общий рейтинг автоматически при переводе турнира в статус «завершён».
+            Эта кнопка нужна для ручной пересинхронизации после корректировки счёта или если хотите подготовить таблицу
+            результатов заранее по последнему завершённому раунду (R2, если он завершён, иначе R1).
           </p>
           <button
             type="button"
@@ -344,7 +345,7 @@ export function ThaiTournamentControlClient({ tournamentId }: { tournamentId: st
             onClick={() => void syncThaiResultsToRating()}
             className="mt-3 rounded-lg border border-amber-400/40 bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-50 hover:bg-amber-500/25 disabled:opacity-50"
           >
-            {syncRatingLoading ? 'Запись…' : 'Записать итоги в рейтинг / архив'}
+            {syncRatingLoading ? 'Запись…' : 'Пересчитать Thai в рейтинг / архив'}
           </button>
           {syncRatingMessage ? (
             <p
