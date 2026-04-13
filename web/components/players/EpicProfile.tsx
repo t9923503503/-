@@ -1,120 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { Player, TournamentResult, RatingHistoryEntry } from '@/lib/types';
 import PlayerPhoto from '@/components/ui/PlayerPhoto';
 import type { PlayerExtendedStats } from '@/lib/queries';
-
-/* ── Helpers ─────────────────────────────────────── */
-
-function placeEmoji(place: number) {
-  if (place === 1) return '\u{1F947}';
-  if (place === 2) return '\u{1F948}';
-  if (place === 3) return '\u{1F949}';
-  return `#${place}`;
-}
-
-function placeBorderClass(place: number) {
-  if (place === 1) return 'border-gold/60 bg-gold/10';
-  if (place === 2) return 'border-silver/60 bg-silver/10';
-  if (place === 3) return 'border-bronze/60 bg-bronze/10';
-  return 'border-white/10 bg-white/5';
-}
-
-function formatDate(d: string) {
-  if (!d) return '';
-  try {
-    return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
-  } catch { return d; }
-}
-
-function rankBadge(rank: number | null, label: string, color: string) {
-  if (!rank) return null;
-  return (
-    <div
-      className="flex items-center gap-2 rounded-xl px-3 py-2 border"
-      style={{ borderColor: `${color}55`, background: `${color}15` }}
-    >
-      <span className="font-heading text-2xl" style={{ color }}>#{rank}</span>
-      <span className="text-xs font-condensed uppercase tracking-wider text-text-secondary">{label}</span>
-    </div>
-  );
-}
-
-/* ── Stat Ring (circular progress) ─────────────── */
-
-function StatRing({ value, max, label, unit, color }: {
-  value: number; max: number; label: string; unit?: string; color: string;
-}) {
-  const pct = max > 0 ? Math.min(value / max, 1) : 0;
-  const r = 36;
-  const circ = 2 * Math.PI * r;
-  const offset = circ * (1 - pct);
-
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <svg width="88" height="88" viewBox="0 0 88 88" className="drop-shadow-lg">
-        <circle cx="44" cy="44" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="6" />
-        <circle
-          cx="44" cy="44" r={r} fill="none"
-          stroke={color} strokeWidth="6" strokeLinecap="round"
-          strokeDasharray={circ} strokeDashoffset={offset}
-          transform="rotate(-90 44 44)"
-          style={{ transition: 'stroke-dashoffset 1s ease' }}
-        />
-        <text x="44" y="40" textAnchor="middle" className="font-heading text-xl" fill="white"
-          style={{ fontSize: '20px', fontFamily: 'Bebas Neue' }}>
-          {value}{unit}
-        </text>
-        <text x="44" y="56" textAnchor="middle" fill="rgba(255,255,255,0.5)"
-          style={{ fontSize: '9px', fontFamily: 'Oswald', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-          {label}
-        </text>
-      </svg>
-    </div>
-  );
-}
-
-/* ── Medal Counter ──────────────────────────────── */
-
-function MedalCounter({ gold, silver, bronze }: { gold: number; silver: number; bronze: number }) {
-  return (
-    <div className="flex items-center gap-4">
-      {[
-        { count: gold, emoji: '\u{1F947}', label: 'Gold', glow: 'shadow-[0_0_12px_rgba(255,215,0,0.5)]' },
-        { count: silver, emoji: '\u{1F948}', label: 'Silver', glow: 'shadow-[0_0_12px_rgba(192,192,192,0.4)]' },
-        { count: bronze, emoji: '\u{1F949}', label: 'Bronze', glow: 'shadow-[0_0_12px_rgba(205,127,50,0.4)]' },
-      ].map(m => (
-        <div key={m.label} className={`flex items-center gap-1.5 rounded-xl px-3 py-2 bg-white/5 border border-white/10 ${m.count > 0 ? m.glow : ''}`}>
-          <span className="text-xl">{m.emoji}</span>
-          <span className="font-heading text-2xl text-text-primary">{m.count}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ── Form Guide (last 5 results) ─────────────── */
-
-function FormGuide({ placements }: { placements: number[] }) {
-  if (!placements.length) return null;
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs font-condensed uppercase tracking-widest text-text-secondary mr-1">Форма:</span>
-      {placements.map((p, i) => {
-        const bg = p === 1 ? 'bg-gold text-black' : p === 2 ? 'bg-silver text-black' : p === 3 ? 'bg-bronze text-white' : p <= 5 ? 'bg-brand/80 text-white' : 'bg-white/10 text-text-secondary';
-        return (
-          <span key={i} className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold ${bg}`}>
-            {p}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ── Main Component ─────────────────────────────── */
 
 interface EpicProfileProps {
   player: Player;
@@ -122,454 +12,644 @@ interface EpicProfileProps {
   matches: TournamentResult[];
   ratingHistory: RatingHistoryEntry[];
   backLink?: { href: string; label: string };
+  sharePath?: string;
 }
 
-const FORMAT_LABELS: Record<string, string> = {
-  KOTC: 'King of the Court',
-  Thai: 'Thai Next',
-  IPT: 'IPT',
+const FORMAT_META: Record<
+  string,
+  { label: string; shortLabel: string; icon: string; tone: string; badgeTone: string }
+> = {
+  KOTC: {
+    label: 'KOTC',
+    shortLabel: 'KOTC',
+    icon: '👑',
+    tone: 'border-[#8a6f11] bg-[#241d05] text-[#ffd400]',
+    badgeTone: 'border-[#8a6f11]/50 bg-[#241d05] text-[#ffd400]',
+  },
+  THAI: {
+    label: 'THAI',
+    shortLabel: 'THAI',
+    icon: '🏴',
+    tone: 'border-[#0f4c63] bg-[#0d1f29] text-[#26c6ff]',
+    badgeTone: 'border-[#0f4c63]/60 bg-[#0d1f29] text-[#26c6ff]',
+  },
+  IPT: {
+    label: 'ДАБЛ',
+    shortLabel: 'ДАБЛ',
+    icon: '⚡',
+    tone: 'border-[#3a3a3a] bg-[#171717] text-white',
+    badgeTone: 'border-white/15 bg-[#171717] text-white',
+  },
 };
 
-export default function EpicProfile({ player, stats, matches, ratingHistory, backLink }: EpicProfileProps) {
-  const mainRating = player.gender === 'M' ? player.ratingM : player.ratingW;
-  const mainRank = player.gender === 'M' ? stats.rankM : stats.rankW;
+function normalizeFormatCode(value: string) {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (normalized === 'THAI') return 'THAI';
+  if (normalized === 'KOTC') return 'KOTC';
+  if (normalized === 'IPT' || normalized === 'ДАБЛ' || normalized === 'DOUBLE') return 'IPT';
+  return normalized;
+}
+
+function formatDate(value: string) {
+  if (!value) return '';
+  try {
+    return new Date(value).toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+    });
+  } catch {
+    return value;
+  }
+}
+
+function levelTone(level: string) {
+  const normalized = String(level || '').trim().toLowerCase();
+  if (normalized === 'hard') {
+    return {
+      label: 'HARD',
+      color: 'text-[#ff4d43]',
+      card: 'border-[#ff4d43]/35 bg-[#2a1111]',
+    };
+  }
+  if (normalized === 'advanced' || normalized === 'advance') {
+    return {
+      label: 'ADV',
+      color: 'text-[#26c6ff]',
+      card: 'border-[#26c6ff]/35 bg-[#0d1f29]',
+    };
+  }
+  if (normalized === 'medium') {
+    return {
+      label: 'MED',
+      color: 'text-[#ffb100]',
+      card: 'border-[#ffb100]/35 bg-[#261b05]',
+    };
+  }
+  return {
+    label: 'LIGHT',
+    color: 'text-[#39d96c]',
+    card: 'border-[#39d96c]/35 bg-[#102114]',
+  };
+}
+
+function resolvePlayerLevel(player: Player, stats: PlayerExtendedStats) {
+  const primaryRating = player.gender === 'M' ? player.ratingM : player.ratingW;
+  if (primaryRating >= 170 || stats.gold >= 3) return 'hard';
+  if (primaryRating >= 120 || stats.topThreeRate >= 60) return 'advanced';
+  if (primaryRating >= 75 || stats.totalTournaments >= 3) return 'medium';
+  return 'light';
+}
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase();
+}
+
+function ResultBadge(place: number) {
+  if (place === 1) return { label: 'WIN', tone: 'bg-[#39d96c] text-white' };
+  if (place <= 3) return { label: 'TOP', tone: 'bg-[#ffb100] text-black' };
+  return { label: 'LOSS', tone: 'bg-[#ff4d43] text-white' };
+}
+
+function HeroStat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent: string;
+}) {
+  return (
+    <div className="rounded-[24px] border border-white/10 bg-black/35 px-4 py-4 backdrop-blur-sm">
+      <div className={`font-heading text-[42px] leading-none sm:text-5xl ${accent}`}>{value}</div>
+      <div className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/38">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({
+  token,
+  label,
+  value,
+  accent = false,
+}: {
+  token: string;
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className={`group rounded-[22px] border px-3.5 py-3.5 transition duration-200 ${
+        accent
+          ? 'border-[#39d96c]/30 bg-[#102114] shadow-[0_0_0_1px_rgba(57,217,108,0.06)]'
+          : 'border-white/8 bg-[#171717] hover:border-white/14'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <div
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-[11px] font-black uppercase tracking-[0.08em] ${
+            accent ? 'bg-[#39d96c] text-black' : 'bg-white/6 text-white/72'
+          }`}
+        >
+          {token}
+        </div>
+        <div className="min-w-0">
+          <div
+            className={`font-heading text-3xl leading-none transition-transform duration-200 group-hover:scale-[1.02] ${
+              accent ? 'text-[#39d96c]' : 'text-white'
+            }`}
+          >
+            {value}
+          </div>
+          <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/40">
+            {label}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FormatCard({
+  label,
+  subtitle,
+  active,
+}: {
+  label: string;
+  subtitle: string;
+  active: boolean;
+}) {
+  const meta = FORMAT_META[label] ?? FORMAT_META.IPT;
+
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-[22px] border px-3.5 py-3 transition ${
+        active ? meta.tone : 'border-white/6 bg-[#171717] text-white'
+      }`}
+    >
+      <div
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xl ${
+          active ? 'bg-black/15' : 'bg-white/5'
+        }`}
+      >
+        {meta.icon}
+      </div>
+      <div className="min-w-0">
+        <div className="text-base font-black uppercase leading-none">{meta.label}</div>
+        <div className="mt-1 text-sm text-white/52">{subtitle}</div>
+      </div>
+    </div>
+  );
+}
+
+function ProfileShareButton({
+  sharePath,
+  playerName,
+}: {
+  sharePath: string;
+  playerName: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleShare() {
+    if (typeof window === 'undefined') return;
+
+    const url = new URL(sharePath, window.location.origin).toString();
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `${playerName} | LPVOLLEY.RU`,
+          text: `Профиль игрока ${playerName}`,
+          url,
+        });
+        return;
+      }
+
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1800);
+      }
+    } catch {
+      // Ignore share cancellation and keep the page state stable.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleShare}
+      className="inline-flex items-center justify-center rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/72 transition hover:border-white/20 hover:text-white"
+    >
+      {copied ? 'Ссылка скопирована' : 'Поделиться профилем'}
+    </button>
+  );
+}
+
+export default function EpicProfile({
+  player,
+  stats,
+  matches,
+  ratingHistory,
+  backLink,
+  sharePath,
+}: EpicProfileProps) {
+  const primaryRating = player.gender === 'M' ? player.ratingM : player.ratingW;
+  const primaryRank = player.gender === 'M' ? stats.rankM : stats.rankW;
+  const computedLevel = resolvePlayerLevel(player, stats);
+  const levelMeta = levelTone(computedLevel);
+  const levelTarget =
+    computedLevel === 'hard'
+      ? 220
+      : computedLevel === 'advanced'
+        ? 170
+        : computedLevel === 'medium'
+          ? 120
+          : 70;
+  const progress = Math.max(8, Math.min(100, Math.round((primaryRating / levelTarget) * 100)));
 
   const [filterFormat, setFilterFormat] = useState<string>('all');
   const [filterLevel, setFilterLevel] = useState<string>('all');
 
   const availableFormats = useMemo(() => {
-    const seen = new Set<string>();
-    matches.forEach(m => { if (m.format) seen.add(m.format); });
-    return [...seen];
+    const formats = new Set<string>();
+    matches.forEach((match) => {
+      if (match.format) formats.add(normalizeFormatCode(String(match.format)));
+    });
+    return [...formats];
   }, [matches]);
 
   const availableLevels = useMemo(() => {
-    const order = ['hard', 'advanced', 'medium', 'light'];
-    const seen = new Set<string>();
-    matches.forEach(m => { if (m.level) seen.add(m.level.toLowerCase()); });
-    return order.filter(l => seen.has(l));
+    const levels = new Set<string>();
+    matches.forEach((match) => {
+      if (match.level) levels.add(String(match.level).toLowerCase());
+    });
+    return ['hard', 'advanced', 'medium', 'light'].filter((level) => levels.has(level));
   }, [matches]);
 
   const filteredMatches = useMemo(() => {
-    return matches.filter(m => {
-      const fmtOk = filterFormat === 'all' || (m.format ?? '') === filterFormat;
-      const lvlNorm = m.level ? m.level.toLowerCase() : '';
-      const lvlOk = filterLevel === 'all' || lvlNorm === filterLevel;
-      return fmtOk && lvlOk;
+    return matches.filter((match) => {
+      const matchFormat = normalizeFormatCode(String(match.format || ''));
+      const matchLevel = String(match.level || '').toLowerCase();
+      const passesFormat = filterFormat === 'all' || matchFormat === filterFormat;
+      const passesLevel = filterLevel === 'all' || matchLevel === filterLevel;
+      return passesFormat && passesLevel;
     });
-  }, [matches, filterFormat, filterLevel]);
+  }, [filterFormat, filterLevel, matches]);
+
+  const formatCards = [
+    { key: 'KOTC', total: stats.formatStats.kotc.total, rating: stats.formatStats.kotc.rating },
+    { key: 'THAI', total: stats.formatStats.thai.total, rating: stats.formatStats.thai.rating },
+    { key: 'IPT', total: stats.formatStats.double.total, rating: stats.formatStats.double.rating },
+  ];
+  const formatsWithData = formatCards.filter((formatCard) => formatCard.total > 0);
+  const activeFormat = [...(formatsWithData.length ? formatsWithData : formatCards)].sort(
+    (a, b) => b.rating - a.rating
+  )[0];
+  const activeFormatMeta = FORMAT_META[activeFormat.key] ?? FORMAT_META.IPT;
+  const historyBadge =
+    filteredMatches.length > 8 ? 'Последние 8' : ratingHistory.length ? `${ratingHistory.length} изм.` : null;
+
+  const statusBadges = [
+    primaryRank && primaryRank <= 10 ? 'В топ-10' : null,
+    stats.currentStreak.count >= 3 ? `Серия x${stats.currentStreak.count}` : null,
+    matches.length > 0 ? 'Активен' : null,
+  ].filter(Boolean).slice(0, 2) as string[];
+
+  const metrics = [
+    { token: 'WR', label: 'Win Rate', value: `${stats.winRate}%`, accent: true },
+    { token: 'T3', label: 'Топ-3', value: `${stats.topThreeRate}%` },
+    { token: 'CUP', label: 'Турниры', value: String(stats.totalTournaments) },
+    { token: 'WIN', label: 'Победы', value: String(stats.gold) },
+    { token: 'AVG', label: 'Ср. рейт', value: String(stats.avgRatingPts) },
+  ];
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-      {backLink && (
-        <Link href={backLink.href}
-          className="inline-flex items-center gap-2 text-text-secondary hover:text-brand transition-colors text-sm font-condensed">
+    <div className="mx-auto max-w-[980px] px-1 pb-5 pt-3 sm:px-2">
+      {backLink ? (
+        <Link
+          href={backLink.href}
+          className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-white/55 transition hover:text-white"
+        >
           {backLink.label}
         </Link>
-      )}
+      ) : null}
 
-      {/* ═══ HERO CARD ═══ */}
-      <section className="relative overflow-hidden rounded-3xl border border-brand/30"
-        style={{
-          background: 'radial-gradient(ellipse 120% 80% at 20% 30%, rgba(0,209,255,0.12), transparent 60%), radial-gradient(ellipse 100% 60% at 80% 70%, rgba(255,90,0,0.15), transparent 50%), var(--bg-panel)',
-        }}>
-        {/* Decorative dots */}
-        <div className="absolute inset-0 opacity-[0.06] pointer-events-none"
-          style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.4) 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+      <section className="overflow-hidden rounded-[32px] border border-white/6 bg-[#070707] shadow-[0_24px_70px_rgba(0,0,0,0.38)] sm:rounded-[36px]">
+        <div className="relative overflow-hidden border-b border-white/6">
+          {player.photoUrl ? (
+            <div className="absolute inset-0">
+              <PlayerPhoto
+                photoUrl={player.photoUrl}
+                alt={player.name}
+                width={1600}
+                height={960}
+                className="h-full w-full object-cover opacity-[0.18]"
+              />
+            </div>
+          ) : null}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(38,198,255,0.20),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(255,106,0,0.22),transparent_38%),linear-gradient(180deg,#111723_0%,#070707_78%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.06),rgba(0,0,0,0.28)_38%,rgba(0,0,0,0.62)_100%)]" />
 
-        <div className="relative p-6 md:p-10">
-          {/* Top row: name + rank */}
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                {player.photoUrl ? (
-                  <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 border-white/20 shadow-lg shrink-0">
+          <div className="relative z-10 px-5 py-5 sm:px-6 sm:py-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-white/68">
+                Профиль игрока
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {sharePath ? <ProfileShareButton sharePath={sharePath} playerName={player.name} /> : null}
+                <div className="rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-white/60">
+                  {player.gender === 'M' ? 'Мужской' : 'Женский'}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-end">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+                <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-full border border-white/15 bg-white/5 shadow-[0_10px_30px_rgba(0,0,0,0.35)] sm:h-32 sm:w-32">
+                  {player.photoUrl ? (
                     <PlayerPhoto
                       photoUrl={player.photoUrl}
                       alt={player.name}
-                      width={80}
-                      height={80}
+                      width={140}
+                      height={140}
+                      className="h-full w-full object-cover"
                     />
-                  </div>
-                ) : (
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-brand to-[#FFD700] flex items-center justify-center text-3xl font-heading text-white shadow-lg shrink-0">
-                    {player.name.charAt(0)}
-                  </div>
-                )}
-                <div>
-                  <h1 className="font-heading text-4xl md:text-5xl text-text-primary uppercase tracking-wider">
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,#ff8d3a,transparent_65%),linear-gradient(180deg,#1c2434_0%,#0b0b0e_100%)] text-4xl font-black text-white">
+                      {initials(player.name)}
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  {statusBadges.length ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {statusBadges.map((badge) => (
+                        <span
+                          key={badge}
+                          className="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/72"
+                        >
+                          {badge}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <h1 className="mt-3 truncate text-[clamp(42px,8vw,72px)] font-black uppercase leading-[0.92] tracking-[-0.05em] text-white">
                     {player.name}
                   </h1>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-bold uppercase ${player.gender === 'M' ? 'bg-[#00D1FF]/20 text-[#00D1FF]' : 'bg-[#FF69B4]/20 text-[#FF69B4]'}`}>
-                      {player.gender === 'M' ? 'M' : 'W'}
+                  <div className="mt-1 text-sm text-white/52 sm:text-base">
+                    {player.city || 'LP Volley'} {player.bio ? `· ${player.bio}` : ''}
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-full border px-3 py-1.5 text-sm font-bold ${levelMeta.card} ${levelMeta.color}`}
+                    >
+                      {levelMeta.label}
                     </span>
-                    {player.status === 'temporary' && (
-                      <span className="px-2 py-0.5 rounded text-xs bg-white/10 text-text-secondary">Temp</span>
-                    )}
-                    {stats.currentStreak.count >= 3 && (
-                      <span className="px-2 py-0.5 rounded text-xs bg-brand/20 text-brand font-bold animate-pulse">
-                        TOP-3 x{stats.currentStreak.count}
-                      </span>
-                    )}
+                    <span
+                      className={`rounded-full border px-3 py-1.5 text-sm font-bold ${activeFormatMeta.badgeTone}`}
+                    >
+                      {activeFormatMeta.icon} {activeFormatMeta.label}
+                    </span>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Main rank badge */}
-            {mainRank && (
-              <div className="flex flex-col items-center px-6 py-4 rounded-2xl border border-brand/40 bg-brand/10"
-                style={{ boxShadow: '0 0 30px rgba(255,90,0,0.2)' }}>
-                <span className="text-xs font-condensed uppercase tracking-widest text-brand/80">
-                  {player.gender === 'M' ? 'M' : 'W'} Ranking
-                </span>
-                <span className="font-heading text-5xl text-brand">#{mainRank}</span>
-                <span className="text-xs text-text-secondary mt-1">{mainRating} pts</span>
-              </div>
-            )}
-          </div>
-
-          {/* Medals + Form */}
-          <div className="mt-6 flex flex-col sm:flex-row sm:items-center gap-4 flex-wrap">
-            <MedalCounter gold={stats.gold} silver={stats.silver} bronze={stats.bronze} />
-            <FormGuide placements={stats.formLast5} />
-          </div>
-
-          {/* Rating ranks row */}
-          <div className="mt-6 flex flex-wrap gap-3">
-            {rankBadge(stats.rankM, 'M Rating', '#00D1FF')}
-            {rankBadge(stats.rankW, 'W Rating', '#FF69B4')}
-            {rankBadge(stats.rankMix, 'Mix Rating', '#FFD700')}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══ STAT RINGS ═══ */}
-      <section className="glass-panel rounded-2xl p-6 md:p-8 border border-white/10">
-        <h2 className="text-xs font-condensed uppercase tracking-widest text-text-secondary mb-6">
-          Ключевые показатели
-        </h2>
-        <div className="flex flex-wrap justify-center gap-6 md:gap-10">
-          <StatRing value={stats.totalTournaments} max={Math.max(stats.totalTournaments, 20)} label="Турниров" color="#00D1FF" />
-          <StatRing value={stats.topThreeRate} max={100} label="Top-3 %" unit="%" color="#FFD700" />
-          <StatRing value={stats.winRate} max={100} label="Win %" unit="%" color="#FF5A00" />
-          <StatRing value={stats.avgPlace} max={20} label="Avg Place" color="#6ABF69" />
-          <StatRing value={stats.totalRatingPts} max={Math.max(stats.totalRatingPts, 500)} label="Rating Pts" color="#f5a623" />
-        </div>
-      </section>
-
-      {/* ═══ RATINGS GRID ═══ */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {[
-          { label: 'M Rating', val: player.ratingM, t: player.tournamentsM, c: '#00D1FF', active: player.gender === 'M' },
-          { label: 'W Rating', val: player.ratingW, t: player.tournamentsW, c: '#FF69B4', active: player.gender === 'W' },
-          { label: 'Mix Rating', val: player.ratingMix, t: player.tournamentsMix, c: '#FFD700', active: false },
-        ].map(r => (
-          <div key={r.label} className={`glass-panel rounded-2xl p-5 border transition-all ${r.active ? 'border-brand/50 neon-fire' : 'border-white/10 hover:border-white/20'}`}>
-            <div className="text-xs font-condensed uppercase tracking-widest text-text-secondary">{r.label}</div>
-            <div className="font-heading text-4xl mt-2" style={{ color: r.c }}>{r.val}</div>
-            <div className="text-xs text-text-secondary mt-1">{r.t} {r.t === 1 ? 'турнир' : 'турниров'}</div>
-          </div>
-        ))}
-      </section>
-
-      {/* ═══ DETAILED STATS ═══ */}
-      <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { icon: '\u{1F3C6}', label: 'Побед', val: stats.gold },
-          { icon: '\u{1F4AA}', label: 'Лучшее место', val: stats.bestPlace || '-' },
-          { icon: '\u{1F525}', label: 'Сыграно партий', val: stats.totalWins },
-          { icon: '\u{26A1}', label: 'Средний рейтинг', val: stats.avgRatingPts },
-          { icon: '\u{1F3D0}', label: 'Очков (balls)', val: stats.totalBalls },
-          { icon: '\u{1F4CA}', label: 'Avg balls', val: stats.avgBalls },
-          { icon: '\u{1F3AF}', label: 'Avg place', val: stats.avgPlace },
-          { icon: '\u{1F31F}', label: 'Rating pts', val: stats.totalRatingPts },
-        ].map(s => (
-          <div key={s.label} className="glass-panel rounded-xl p-4 border border-white/10 hover:border-brand/30 transition-colors">
-            <div className="text-lg mb-1">{s.icon}</div>
-            <div className="font-heading text-2xl text-text-primary">{s.val}</div>
-            <div className="text-xs font-condensed uppercase tracking-wider text-text-secondary">{s.label}</div>
-          </div>
-        ))}
-      </section>
-
-      {/* ═══ BEST TOURNAMENT ═══ */}
-      {stats.bestTournament && (() => {
-        const bt = stats.bestTournament!;
-        const inner = (
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">{'\u{1F31F}'}</span>
-            <div>
-              <div className="text-xs font-condensed uppercase tracking-widest text-gold">Best Performance</div>
-              <div className="font-heading text-2xl text-text-primary mt-1">{bt.name}</div>
-              <div className="text-sm text-text-secondary mt-1">
-                {formatDate(bt.date)} {' \u{2022} '} Место: {placeEmoji(bt.place)} {' \u{2022} '} +{bt.pts} pts
+              <div className="grid grid-cols-2 gap-3">
+                <HeroStat label="Рейтинг" value={String(primaryRating)} accent="text-[#ff6a00]" />
+                <HeroStat
+                  label="Место"
+                  value={primaryRank ? `#${primaryRank}` : '—'}
+                  accent="text-[#ffd400]"
+                />
               </div>
             </div>
           </div>
-        );
-        return bt.id ? (
-          <Link href={`/calendar/${bt.id}`}>
-            <section className="glass-panel rounded-2xl p-6 border border-gold/30 neon-fire hover:scale-[1.01] transition-transform cursor-pointer">
-              {inner}
-            </section>
-          </Link>
-        ) : (
-          <section className="glass-panel rounded-2xl p-6 border border-gold/30 neon-fire">
-            {inner}
-          </section>
-        );
-      })()}
 
-      {/* ═══ PRIZES BY LEVEL ═══ */}
-      {(() => {
-        const lp = stats.levelPrizes;
-        const hasAny = lp.hard.total + lp.advanced.total + lp.medium.total + lp.light.total > 0;
-        if (!hasAny) return null;
-        const levels: Array<{ key: keyof typeof lp; label: string; color: string }> = [
-          { key: 'hard',     label: 'HARD',     color: '#FF5A00' },
-          { key: 'advanced', label: 'ADVANCED',  color: '#00D1FF' },
-          { key: 'medium',   label: 'MEDIUM',   color: '#FFD700' },
-          { key: 'light',    label: 'LIGHT',    color: '#6ABF69' },
-        ];
-        return (
-          <section>
-            <h2 className="font-heading text-3xl text-text-primary uppercase mb-5 tracking-wide flex items-center gap-3">
-              <span className="w-2 h-8 rounded-full bg-brand" />
-              Призы по уровням
-            </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {levels.filter(l => lp[l.key].total > 0).map(l => {
-                const b = lp[l.key];
-                return (
-                  <div key={l.key} className="glass-panel rounded-2xl p-4 border border-white/10 hover:border-white/20 transition-colors">
-                    <div className="text-xs font-condensed uppercase tracking-widest mb-3" style={{ color: l.color }}>
-                      {l.label}
-                    </div>
-                    <div className="flex items-center gap-2 mb-2">
-                      {b.gold   > 0 && <span className="flex items-center gap-1 text-sm font-bold"><span className="text-base">🥇</span>{b.gold}</span>}
-                      {b.silver > 0 && <span className="flex items-center gap-1 text-sm font-bold"><span className="text-base">🥈</span>{b.silver}</span>}
-                      {b.bronze > 0 && <span className="flex items-center gap-1 text-sm font-bold"><span className="text-base">🥉</span>{b.bronze}</span>}
-                    </div>
-                    <div className="text-xs text-text-secondary">{b.total} {b.total === 1 ? 'турнир' : 'турниров'}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        );
-      })()}
+          <div className="h-px w-full bg-gradient-to-r from-transparent via-white/14 to-transparent" />
+        </div>
 
-      {/* ═══ FORMAT RATINGS (KOTC / Double Trouble / Thai) ═══ */}
-      {(() => {
-        const fs = stats.formatStats;
-        const fmts: Array<{ key: keyof typeof fs; label: string; emoji: string; color: string }> = [
-          { key: 'kotc',   label: 'King of the Court', emoji: '👑', color: '#00D1FF' },
-          { key: 'double', label: 'Double Trouble',    emoji: '⚡', color: '#FF5A00' },
-          { key: 'thai',   label: 'Thai Next',         emoji: '🏖️', color: '#FFD700' },
-        ];
-        const active = fmts.filter(f => fs[f.key].total > 0);
-        if (active.length === 0) return null;
-        return (
-          <section>
-            <h2 className="font-heading text-3xl text-text-primary uppercase mb-5 tracking-wide flex items-center gap-3">
-              <span className="w-2 h-8 rounded-full bg-[#00D1FF]" />
-              Рейтинг по форматам
-            </h2>
-            <div className={`grid gap-4 ${active.length === 1 ? 'grid-cols-1 max-w-xs' : active.length === 2 ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-3'}`}>
-              {active.map(f => {
-                const b = fs[f.key];
-                return (
-                  <div key={f.key} className="glass-panel rounded-2xl p-5 border border-white/10 hover:border-white/20 transition-all"
-                    style={{ borderColor: `${f.color}30` }}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-2xl">{f.emoji}</span>
-                      <span className="text-xs font-condensed uppercase tracking-widest text-text-secondary">{f.label}</span>
-                    </div>
-                    <div className="font-heading text-4xl" style={{ color: f.color }}>{b.rating}</div>
-                    <div className="text-xs text-text-secondary mt-1">очков рейтинга</div>
-                    <div className="flex items-center gap-3 mt-3 text-sm text-text-secondary">
-                      <span>{b.total} {b.total === 1 ? 'турнир' : 'турниров'}</span>
-                      {b.gold > 0 && <span className="text-[#FFD700] font-bold">🥇 ×{b.gold}</span>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        );
-      })()}
-
-      {/* ═══ TOURNAMENT HISTORY (with placements) ═══ */}
-      <section>
-        <h2 className="font-heading text-3xl text-text-primary uppercase mb-4 tracking-wide flex items-center gap-3">
-          <span className="w-2 h-8 rounded-full bg-brand" />
-          История турниров
-        </h2>
-
-        {/* Filters */}
-        {(availableFormats.length > 1 || availableLevels.length > 1) && (
-          <div className="flex flex-wrap gap-2 mb-5">
-            {availableFormats.length > 1 && (
-              <div className="flex flex-wrap gap-1.5 items-center">
-                <span className="text-xs font-condensed uppercase text-text-secondary mr-1">Формат:</span>
-                {['all', ...availableFormats].map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setFilterFormat(f)}
-                    className={`px-3 py-1 rounded-lg text-xs font-medium border transition-colors ${filterFormat === f ? 'bg-brand text-white border-brand' : 'border-white/20 text-text-secondary hover:border-white/40'}`}
-                  >
-                    {f === 'all' ? 'Все' : (FORMAT_LABELS[f] ?? f)}
-                  </button>
+        <div className="grid gap-4 px-5 py-5 sm:px-6 sm:py-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-4">
+            <section className="rounded-[24px] border border-white/6 bg-[#111111] px-4 py-4">
+              <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/42">
+                Ключевые метрики
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {metrics.map((metric) => (
+                  <MetricCard
+                    key={metric.label}
+                    token={metric.token}
+                    label={metric.label}
+                    value={metric.value}
+                    accent={metric.accent}
+                  />
                 ))}
               </div>
-            )}
-            {availableLevels.length > 1 && (
-              <div className="flex flex-wrap gap-1.5 items-center">
-                <span className="text-xs font-condensed uppercase text-text-secondary mr-1">Уровень:</span>
-                {['all', ...availableLevels].map(l => {
-                  const levelColorMap: Record<string, string> = { hard: '#FF5A00', advanced: '#00D1FF', medium: '#FFD700', light: '#6ABF69' };
-                  const active = filterLevel === l;
-                  return (
-                    <button
-                      key={l}
-                      onClick={() => setFilterLevel(l)}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold uppercase border transition-colors ${active ? 'text-black border-transparent' : 'border-white/20 text-text-secondary hover:border-white/40'}`}
-                      style={active && l !== 'all' ? { background: levelColorMap[l], borderColor: levelColorMap[l] } : active ? { background: '#FF5A00', borderColor: '#FF5A00', color: '#fff' } : {}}
-                    >
-                      {l === 'all' ? 'Все' : l.toUpperCase()}
-                    </button>
-                  );
-                })}
+            </section>
+
+            <section className="rounded-[24px] border border-white/6 bg-[#111111] px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/42">
+                  История матчей
+                </div>
+                {historyBadge ? (
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/35">
+                    {historyBadge}
+                  </div>
+                ) : null}
               </div>
-            )}
-          </div>
-        )}
 
-        {filteredMatches.length === 0 ? (
-          <div className="glass-panel rounded-2xl p-8 text-center border border-white/10">
-            <div className="text-4xl mb-3">{'\u{1F3D0}'}</div>
-            <div className="text-text-secondary font-body">Нет турниров по выбранным фильтрам</div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredMatches.map((r, i) => {
-              const place = Number(r.place);
-              const levelNorm: Record<string, string> = {
-                advance: 'ADVANCED', advanced: 'ADVANCED',
-                hard: 'HARD', medium: 'MEDIUM', light: 'LIGHT',
-              };
-              const levelLabel = r.level ? (levelNorm[r.level.toLowerCase()] ?? r.level.toUpperCase()) : null;
-              const levelColor: Record<string, string> = {
-                HARD: '#FF5A00', ADVANCED: '#00D1FF', MEDIUM: '#FFD700', LIGHT: '#6ABF69',
-              };
-              const cardContent = (
-                <>
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold shrink-0 ${place <= 3 ? 'bg-white/10' : 'bg-white/5'}`}>
-                        {placeEmoji(place)}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-heading text-lg text-text-primary truncate">
-                          {r.tournamentName}
-                        </div>
-                        <div className="text-xs text-text-secondary font-condensed flex items-center gap-1.5 flex-wrap">
-                          {r.tournamentDate ? formatDate(String(r.tournamentDate)) : ''}
-                          {' \u{2022} '}
-                          {r.ratingType ?? ''}
-                          {levelLabel && (
-                            <>
-                              {' \u{2022} '}
-                              <span className="font-bold uppercase" style={{ color: levelColor[levelLabel] ?? '#aaa' }}>
-                                {levelLabel}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                        {r.thaiSpectatorBoardUrl ? (
-                          <span
-                            className="mt-1 inline-flex text-xs font-medium text-sky-300/95 underline decoration-sky-500/40 underline-offset-2 hover:text-sky-200"
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <Link href={r.thaiSpectatorBoardUrl}>Табло турнира (Thai)</Link>
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      {r.ratingPts > 0 && (
-                        <span className="text-brand font-bold text-sm">+{r.ratingPts}</span>
-                      )}
-                      <div className="flex flex-col items-end">
-                        <span className="font-heading text-xl text-text-primary">#{place}</span>
-                        {typeof r.wins === 'number' && r.wins > 0 && (
-                          <span className="text-xs text-text-secondary">{r.wins}W</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {/* Stats bar */}
-                  <div className="mt-3 flex gap-4 text-xs text-text-secondary">
-                    {r.gamePts > 0 && <span>Game: <span className="text-text-primary">{r.gamePts}</span></span>}
-                    {typeof r.balls === 'number' && r.balls > 0 && <span>Balls: <span className="text-text-primary">{r.balls}</span></span>}
-                    {typeof r.diff === 'number' && r.diff !== 0 && (
-                      <span>Diff: <span className={r.diff > 0 ? 'text-brand' : 'text-text-secondary'}>{r.diff > 0 ? `+${r.diff}` : r.diff}</span></span>
-                    )}
-                  </div>
-                </>
-              );
-              return r.tournamentId ? (
-                <Link key={`${r.tournamentId ?? i}`} href={`/calendar/${r.tournamentId}`}>
-                  <article className={`glass-panel rounded-2xl p-4 md:p-5 border transition-all hover:scale-[1.01] cursor-pointer ${placeBorderClass(place)}`}>
-                    {cardContent}
-                  </article>
-                </Link>
-              ) : (
-                <article key={`${r.tournamentId ?? i}-no`}
-                  className={`glass-panel rounded-2xl p-4 md:p-5 border transition-all hover:scale-[1.01] ${placeBorderClass(place)}`}>
-                  {cardContent}
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
+              {availableFormats.length > 1 || availableLevels.length > 1 ? (
+                <div className="-mx-1 mt-3 overflow-x-auto pb-1">
+                  <div className="flex min-w-max gap-2 px-1">
+                    {availableFormats.length > 1 ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setFilterFormat('all')}
+                          className={`rounded-full border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] ${
+                            filterFormat === 'all'
+                              ? 'border-[#ffd400] bg-[#241d05] text-[#ffd400]'
+                              : 'border-white/8 bg-[#171717] text-white/48'
+                          }`}
+                        >
+                          Все форматы
+                        </button>
+                        {availableFormats.map((format) => {
+                          const meta = FORMAT_META[normalizeFormatCode(format)] ?? FORMAT_META.IPT;
+                          return (
+                            <button
+                              key={format}
+                              type="button"
+                              onClick={() => setFilterFormat(format)}
+                              className={`rounded-full border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] ${
+                                filterFormat === format
+                                  ? meta.badgeTone
+                                  : 'border-white/8 bg-[#171717] text-white/48'
+                              }`}
+                            >
+                              {meta.shortLabel}
+                            </button>
+                          );
+                        })}
+                      </>
+                    ) : null}
 
-      {/* ═══ RATING HISTORY ═══ */}
-      {ratingHistory.length > 0 && (
-        <section>
-          <h2 className="font-heading text-3xl text-text-primary uppercase mb-5 tracking-wide flex items-center gap-3">
-            <span className="w-2 h-8 rounded-full bg-[#00D1FF]" />
-            История рейтинга
-          </h2>
-          <div className="space-y-2">
-            {ratingHistory.map(e => {
-              const positive = e.pointsChanged > 0;
-              return (
-                <div key={e.id} className="glass-panel rounded-xl p-4 border border-white/10 flex items-center justify-between gap-4 hover:border-white/20 transition-colors">
-                  <div className="min-w-0">
-                    <div className="font-body text-sm text-text-primary truncate">{e.tournamentName || 'Tournament'}</div>
-                    <div className="text-xs text-text-secondary">
-                      {e.formatCode} {' \u{2022} '} {e.createdAt ? String(e.createdAt).slice(0, 10) : ''}
-                      {e.place != null && <> {' \u{2022} '} #{e.place}</>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className={`font-bold text-sm ${positive ? 'text-brand' : e.pointsChanged < 0 ? 'text-text-secondary' : 'text-text-secondary'}`}>
-                      {positive ? '+' : ''}{e.pointsChanged}
-                    </span>
-                    <span className="text-xs text-text-secondary bg-white/5 rounded-lg px-2 py-1">
-                      {e.newTotalRating}
-                    </span>
+                    {availableLevels.length > 1 ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setFilterLevel('all')}
+                          className={`rounded-full border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] ${
+                            filterLevel === 'all'
+                              ? 'border-[#ff6a00] bg-[#241207] text-[#ff6a00]'
+                              : 'border-white/8 bg-[#171717] text-white/48'
+                          }`}
+                        >
+                          Все уровни
+                        </button>
+                        {availableLevels.map((level) => {
+                          const meta = levelTone(level);
+                          return (
+                            <button
+                              key={level}
+                              type="button"
+                              onClick={() => setFilterLevel(level)}
+                              className={`rounded-full border px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.12em] ${
+                                filterLevel === level
+                                  ? `${meta.card} ${meta.color}`
+                                  : 'border-white/8 bg-[#171717] text-white/48'
+                              }`}
+                            >
+                              {meta.label}
+                            </button>
+                          );
+                        })}
+                      </>
+                    ) : null}
                   </div>
                 </div>
-              );
-            })}
+              ) : null}
+
+              <div className="mt-4 space-y-3">
+                {filteredMatches.length ? (
+                  filteredMatches.slice(0, 8).map((match, index) => {
+                    const badge = ResultBadge(Number(match.place));
+                    const formatMeta =
+                      FORMAT_META[normalizeFormatCode(String(match.format || ''))] ?? FORMAT_META.IPT;
+                    const tone =
+                      Number(match.place) === 1
+                        ? 'border-[#1a5d2c] bg-[#0d2313]'
+                        : Number(match.place) <= 3
+                          ? 'border-[#6f520f] bg-[#231b07]'
+                          : 'border-[#5f1b1b] bg-[#231010]';
+                    const content = (
+                      <article
+                        className={`rounded-[22px] border px-3.5 py-3 transition hover:border-white/18 ${tone}`}
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                          <div className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-white/38 sm:w-[60px]">
+                            {formatDate(String(match.tournamentDate || '')) || '—'}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`inline-flex rounded-2xl px-3 py-1.5 text-[11px] font-black uppercase ${badge.tone}`}
+                            >
+                              {badge.label}
+                            </div>
+                            <div
+                              className={`inline-flex rounded-2xl border px-2.5 py-1 text-[11px] font-bold uppercase ${formatMeta.badgeTone}`}
+                            >
+                              {formatMeta.shortLabel}
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-base font-bold text-white">
+                              {match.tournamentName}
+                            </div>
+                            <div className="mt-0.5 text-xs text-white/40 sm:text-sm">
+                              {match.gamePts || 0}/{match.balls || 0} ·{' '}
+                              {String(match.ratingType || '').trim() || 'mix'}
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    );
+
+                    return match.tournamentId ? (
+                      <Link key={`${match.tournamentId}-${index}`} href={`/calendar/${match.tournamentId}`}>
+                        {content}
+                      </Link>
+                    ) : (
+                      <div key={`history-${index}`}>{content}</div>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-[22px] border border-dashed border-white/10 bg-[#171717] px-4 py-8 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5 text-2xl">
+                      🏐
+                    </div>
+                    <div className="mt-3 text-base font-semibold text-white">Пока нет сыгранных матчей</div>
+                    <div className="mt-1 text-sm text-white/40">Участвуйте в турнирах!</div>
+                  </div>
+                )}
+              </div>
+            </section>
           </div>
-        </section>
-      )}
+
+          <div className="space-y-4">
+            <section className="rounded-[24px] border border-white/6 bg-[#111111] px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/42">
+                  Уровень игры
+                </div>
+                <div className={`text-xl font-black uppercase ${levelMeta.color}`}>
+                  {levelMeta.label} PRO
+                </div>
+              </div>
+              <div className="mt-3 h-3 rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-[linear-gradient(90deg,#ffd400_0%,#ff6a00_72%,#ff4d43_100%)]"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <div className="mt-2 text-sm text-white/35">
+                {primaryRating} / {levelTarget} XP до следующего уровня
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-white/6 bg-[#111111] px-4 py-4">
+              <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/42">
+                Форматы
+              </div>
+              <div className="mt-3 space-y-2.5">
+                {formatCards.map((formatCard) => (
+                  <FormatCard
+                    key={formatCard.key}
+                    label={formatCard.key}
+                    subtitle={`${formatCard.total} побед · ${formatCard.rating} рейт.`}
+                    active={activeFormat.key === formatCard.key && formatCard.total > 0}
+                  />
+                ))}
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

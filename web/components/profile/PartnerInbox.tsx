@@ -13,7 +13,7 @@ type PartnerRequestItem = {
   direction: 'incoming' | 'outgoing';
 };
 
-export default function PartnerInbox() {
+export default function PartnerInbox({ embedded = false }: { embedded?: boolean }) {
   const [items, setItems] = useState<PartnerRequestItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -53,64 +53,60 @@ export default function PartnerInbox() {
     void load();
   }, []);
 
+  const rootClass = embedded
+    ? ''
+    : 'rounded-xl border border-white/10 bg-surface-light/20 p-4';
+
   if (loading) {
     return (
-      <section className="mt-8 glass-panel rounded-2xl p-6 border border-white/10">
-        <h2 className="font-heading text-2xl text-text-primary tracking-wide">
-          Запросы на пару
-        </h2>
-        <p className="mt-2 text-text-secondary font-body text-sm">Загрузка...</p>
+      <section className={rootClass}>
+        <h3 className="font-heading text-lg text-text-primary tracking-wide">Запросы на пару</h3>
+        <p className="mt-1.5 text-sm font-body text-text-secondary">Загрузка...</p>
       </section>
     );
   }
 
   return (
-    <section className="mt-8 glass-panel rounded-2xl p-6 border border-white/10">
-      <h2 className="font-heading text-2xl text-text-primary tracking-wide">
-        Запросы на пару
-      </h2>
-      {error ? (
-        <p className="mt-2 text-red-300 font-body text-sm">{error}</p>
-      ) : null}
+    <section className={rootClass}>
+      <h3 className="font-heading text-lg text-text-primary tracking-wide">Запросы на пару</h3>
+      {error ? <p className="mt-1.5 text-sm font-body text-red-300">{error}</p> : null}
       {items.length === 0 ? (
-        <p className="mt-2 text-text-secondary font-body text-sm">
-          Пока нет запросов.
-        </p>
+        <p className="mt-1.5 text-sm font-body text-text-secondary">Пока нет запросов.</p>
       ) : (
-        <div className="mt-4 grid gap-3">
+        <div className="mt-3 grid gap-2.5">
           {items.map((item) => (
             <div
               key={item.id}
-              className="rounded-lg border border-white/10 bg-surface-light/30 px-4 py-3"
+              className="rounded-lg border border-white/10 bg-surface-light/30 px-3.5 py-3"
             >
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="font-body text-text-primary font-semibold">
+                  <div className="font-body text-sm font-semibold text-text-primary">
                     {item.tournamentName || 'Турнир'}
                   </div>
-                  <div className="mt-1 text-xs text-text-secondary font-body">
+                  <div className="mt-1 text-xs font-body text-text-secondary">
                     {item.direction === 'incoming'
                       ? `От: ${item.requesterName}`
                       : `Кому: ${item.recipientName}`}
                   </div>
                 </div>
-                <span className="text-xs rounded-full px-2.5 py-1 bg-white/10 border border-white/15 text-text-secondary font-body">
+                <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-body text-text-secondary">
                   {item.status}
                 </span>
               </div>
               {item.direction === 'incoming' && item.status === 'pending' ? (
-                <div className="mt-3 flex items-center gap-2">
+                <div className="mt-2.5 flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => void respond(item.id, 'accept')}
-                    className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-body font-semibold hover:bg-emerald-500/30"
+                    className="inline-flex items-center justify-center rounded-lg border border-emerald-500/40 bg-emerald-500/20 px-3 py-1.5 text-xs font-body font-semibold text-emerald-300 hover:bg-emerald-500/30"
                   >
                     Подтвердить
                   </button>
                   <button
                     type="button"
                     onClick={() => void respond(item.id, 'reject')}
-                    className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-200 text-xs font-body font-semibold hover:bg-red-500/30"
+                    className="inline-flex items-center justify-center rounded-lg border border-red-500/40 bg-red-500/20 px-3 py-1.5 text-xs font-body font-semibold text-red-200 hover:bg-red-500/30"
                   >
                     Отклонить
                   </button>
