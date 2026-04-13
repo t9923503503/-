@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 type ResetNotice =
@@ -9,6 +10,7 @@ type ResetNotice =
   | null;
 
 export default function ResetPasswordForm({ token }: { token?: string }) {
+  const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -57,8 +59,15 @@ export default function ResetPasswordForm({ token }: { token?: string }) {
       setConfirmPassword("");
       setNotice({
         type: "success",
-        text: data?.message || "Пароль успешно изменён. Теперь можно войти в кабинет.",
+        text:
+          data?.message ||
+          "Пароль успешно изменён. Сейчас откроем личный кабинет.",
       });
+
+      window.setTimeout(() => {
+        router.push(typeof data?.redirectTo === "string" && data.redirectTo ? data.redirectTo : "/profile");
+        router.refresh();
+      }, 1200);
     } catch {
       setNotice({ type: "error", text: "Ошибка сети. Повторите попытку." });
     } finally {
@@ -96,7 +105,7 @@ export default function ResetPasswordForm({ token }: { token?: string }) {
         </div>
 
         <p className="mt-3 max-w-xl text-sm text-text-secondary">
-          Установите новый пароль для аккаунта LPVOLLEY.RU и затем войдите в личный кабинет.
+          Установите новый пароль для аккаунта LPVOLLEY.RU. После успешной смены мы автоматически откроем личный кабинет.
         </p>
 
         {!tokenValue ? (

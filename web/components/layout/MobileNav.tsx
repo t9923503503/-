@@ -65,15 +65,6 @@ export default function MobileNav({ links }: { links: NavLink[] }) {
               </li>
             ))}
             <li>
-              <div className="mt-2 flex gap-2">
-                <Link
-                  href="/court"
-                  onClick={() => setOpen(false)}
-                  className="inline-block rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-surface transition-colors hover:bg-brand/90"
-                >
-                  {"\u0421\u0443\u0434\u044c\u044f\u043c"}
-                </Link>
-              </div>
               <div onClick={() => setOpen(false)}>
                 <HeaderAccountEntry mobile />
               </div>

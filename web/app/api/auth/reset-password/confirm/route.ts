@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getPool } from '@/lib/db';
+import { createPlayerToken, setPlayerCookie } from '@/lib/player-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,7 +41,15 @@ export async function POST(req: Request) {
       [hash, user.id],
     );
 
-    return NextResponse.json({ ok: true, message: 'Пароль успешно изменён' });
+    const sessionToken = createPlayerToken(user.id, user.email);
+    const response = NextResponse.json({
+      ok: true,
+      message: 'Пароль успешно изменён',
+      redirectTo: '/profile',
+    });
+    setPlayerCookie(response, sessionToken, { persistent: true });
+
+    return response;
   } catch (err) {
     console.error('[api/auth/reset-password/confirm]', err);
     return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 });

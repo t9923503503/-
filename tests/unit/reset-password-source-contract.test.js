@@ -14,13 +14,16 @@ describe('reset password source contract', () => {
     expect(emailSource).not.toContain('/play/index.html?route=reset');
   });
 
-  it('keeps a public reset-password page wired to the confirm API', () => {
+  it('keeps a public reset-password page wired to the confirm API and profile redirect', () => {
     const pageSource = read('web/app/reset-password/page.tsx');
     const formSource = read('web/components/profile/ResetPasswordForm.tsx');
+    const confirmRouteSource = read('web/app/api/auth/reset-password/confirm/route.ts');
 
-    expect(pageSource).toContain("import ResetPasswordForm from \"@/components/profile/ResetPasswordForm\";");
+    expect(pageSource).toContain('ResetPasswordForm');
     expect(formSource).toContain('/api/auth/reset-password/confirm');
-    expect(formSource).toContain('tokenValue');
-    expect(formSource).toContain('Сохранить новый пароль');
+    expect(formSource).toContain('router.push');
+    expect(formSource).toContain('"/profile"');
+    expect(confirmRouteSource).toContain('setPlayerCookie');
+    expect(confirmRouteSource).toContain("redirectTo: '/profile'");
   });
 });

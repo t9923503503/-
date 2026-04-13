@@ -277,6 +277,7 @@ function getThaiSlotHint(variant: ThaiVariant, slotIndex: number): string | null
   }
   if (variant === 'MM') return 'Мужчина';
   if (variant === 'WW') return 'Женщина';
+  if (variant === 'MF') return slotIndex < 4 ? 'M' : 'Ж';
   return null;
 }
 
@@ -541,6 +542,21 @@ export default function AdminTournamentsPage() {
       .filter((player) => !term || player.name.toLowerCase().includes(term))
       , playerGenderFilter).slice(0, 40);
   }, [allPlayers, isThaiFormat, playerGenderFilter, playerSearch, registeredIds, thaiSettings]);
+
+  const isDirty = useMemo(() => {
+    return form.name !== '' || form.date !== '' || form.location !== '' || draftPlayers.some(Boolean);
+  }, [form.name, form.date, form.location, draftPlayers]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty && !message.includes('Сохранено')) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty, message]);
 
   function resetComposer() {
     setForm(createEmptyForm());
@@ -1306,13 +1322,33 @@ export default function AdminTournamentsPage() {
             {isEdit ? 'Редактировать турнир' : 'Новый турнир'}
           </h2>
 
-          <input
-            value={form.name}
-            onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
-            placeholder="Название"
-            className="px-3 py-2 rounded-lg bg-surface border border-white/20"
-            required
-          />
+          <div className="flex gap-2">
+            <input
+              value={form.name}
+              onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
+              placeholder="Название *"
+              className="flex-1 px-3 py-2 rounded-lg bg-surface border border-white/20"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const formatLabel = formats.find(f => f.key === form.format)?.label || form.format;
+                const divLabel =
+                  isThaiFormat && thaiSettings
+                    ? getThaiDivisionLabel(thaiSettings.thaiVariant)
+                    : divisions.find(d => d.key === form.division)?.label || form.division;
+                const lvlLabel = levels.find(l => l.key === form.level)?.label || form.level;
+                const dateParts = form.date.split('-');
+                const formattedDate = dateParts.length === 3 ? `${dateParts[2]}.${dateParts[1]}.${dateParts[0]}` : form.date;
+                const newName = `${formatLabel} ${divLabel} ${lvlLabel} ${formattedDate}`.trim();
+                setForm((current) => ({ ...current, name: newName }));
+              }}
+              className="px-3 py-2 rounded-lg border border-white/20 hover:border-brand text-xs text-text-secondary whitespace-nowrap"
+            >
+              Авто-название
+            </button>
+          </div>
 
           <div className="grid grid-cols-2 gap-2">
             <input
@@ -1320,20 +1356,23 @@ export default function AdminTournamentsPage() {
               value={form.date}
               onChange={(e) => setForm((current) => ({ ...current, date: e.target.value }))}
               className="px-3 py-2 rounded-lg bg-surface border border-white/20"
+              required
             />
             <input
               type="time"
               value={form.time}
               onChange={(e) => setForm((current) => ({ ...current, time: e.target.value }))}
               className="px-3 py-2 rounded-lg bg-surface border border-white/20"
+              required
             />
           </div>
 
           <input
             value={form.location}
             onChange={(e) => setForm((current) => ({ ...current, location: e.target.value }))}
-            placeholder="Локация"
+            placeholder="Локация *"
             className="px-3 py-2 rounded-lg bg-surface border border-white/20"
+            required
           />
         </div>
 
@@ -1704,33 +1743,35 @@ export default function AdminTournamentsPage() {
           )}
         </div>
 
-        <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
-          <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Таймеры</h3>
+        {isKotcFormat ? (
+          <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
+            <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Таймеры</h3>
 
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-text-primary/80">Корты (К1-К{settings.courts}):</span>
-            <Stepper
-              value={settings.timerCourts}
-              onChange={(value) => updateSettings({ timerCourts: value })}
-              min={2}
-              max={25}
-              suffix=" мин"
-            />
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-text-primary/80">Корты (К1-К{settings.courts}):</span>
+              <Stepper
+                value={settings.timerCourts}
+                onChange={(value) => updateSettings({ timerCourts: value })}
+                min={2}
+                max={25}
+                suffix=" мин"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-text-primary/80">Финалы:</span>
+              <Stepper
+                value={settings.timerFinals}
+                onChange={(value) => updateSettings({ timerFinals: value })}
+                min={2}
+                max={25}
+                suffix=" мин"
+              />
+            </div>
+
+            <div className="text-xs text-text-secondary text-center">Диапазон: 2-25 минут</div>
           </div>
-
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-text-primary/80">Финалы:</span>
-            <Stepper
-              value={settings.timerFinals}
-              onChange={(value) => updateSettings({ timerFinals: value })}
-              min={2}
-              max={25}
-              suffix=" мин"
-            />
-          </div>
-
-          <div className="text-xs text-text-secondary text-center">Диапазон: 2-25 минут</div>
-        </div>
+        ) : null}
 
         <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
@@ -1794,7 +1835,7 @@ export default function AdminTournamentsPage() {
                   <h4 className="font-semibold text-text-primary">Корт {courtIndex + 1}</h4>
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-text-secondary">
-                      {isThaiFormat ? getThaiCourtHint(thaiSettings?.thaiVariant ?? 'MF') : `${settings.playersPerCourt} мест`}
+                      {isThaiFormat ? getThaiCourtHint(thaiSettings?.thaiVariant ?? 'MF') : form.division === 'Микст' ? `${settings.playersPerCourt} мест · ${Math.floor(settings.playersPerCourt / 2)}M / ${Math.ceil(settings.playersPerCourt / 2)}Ж` : `${settings.playersPerCourt} мест`}
                     </span>
                     <button
                       type="button"
@@ -1814,8 +1855,11 @@ export default function AdminTournamentsPage() {
                     const draftIndex = courtIndex * settings.playersPerCourt + slotIndex;
                     const player = draftPlayers[draftIndex];
                     const selected = selectedDraftIndex === draftIndex;
-                    const expectedGender =
+                    let expectedGender =
                       isThaiFormat && thaiSettings ? getThaiSlotHint(thaiSettings.thaiVariant, slotIndex) : null;
+                    if (!expectedGender && form.division === 'Микст') {
+                      expectedGender = slotIndex < settings.playersPerCourt / 2 ? 'M' : 'Ж';
+                    }
                     return (
                       <div
                         key={draftIndex}
@@ -1842,7 +1886,12 @@ export default function AdminTournamentsPage() {
                         <div className="flex items-stretch gap-2">
                           <button
                             type="button"
-                            onClick={() => swapDraftPlayers(draftIndex)}
+                            onClick={() => {
+                              swapDraftPlayers(draftIndex);
+                              const exp = isThaiFormat && thaiSettings ? getThaiSlotHint(thaiSettings.thaiVariant, slotIndex) : (form.division === 'Микст' ? (slotIndex < settings.playersPerCourt / 2 ? 'M' : 'Ж') : null);
+                              if (exp === 'M' || exp === 'Мужчина') setPlayerGenderFilter('M');
+                              else if (exp === 'Ж' || exp === 'W' || exp === 'Женщина') setPlayerGenderFilter('W');
+                            }}
                             disabled={!player}
                             className="flex-1 px-3 py-2 text-left disabled:cursor-default disabled:opacity-60"
                           >
@@ -1947,9 +1996,15 @@ export default function AdminTournamentsPage() {
             </div>
           ) : null}
 
+          {draftPlayers.filter(Boolean).length > 0 && draftPlayers.filter(Boolean).length < seatCount ? (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              Внимание: не хватает {seatCount - draftPlayers.filter(Boolean).length} игроков для заполнения всех ожидаемых мест на кортах.
+            </div>
+          ) : null}
+
           {rosterOverflow ? (
             <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-              Игроков больше, чем capacity. Увеличьте capacity или уберите лишних игроков.
+              Игроков больше, чем вместимость. Увеличьте capacity или уберите лишних игроков.
             </div>
           ) : null}
 

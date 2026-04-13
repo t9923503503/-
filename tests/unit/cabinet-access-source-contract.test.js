@@ -14,10 +14,10 @@ describe('cabinet access source contract', () => {
     const heroPanel = read('web/components/landing/LandingHeroAccessPanel.tsx');
 
     expect(header).toContain('HeaderAccountEntry');
-    expect(header).toContain('href="/court"');
+    expect(header).not.toContain('href="/court"');
 
     expect(mobileNav).toContain('HeaderAccountEntry mobile');
-    expect(mobileNav).toContain('href="/court"');
+    expect(mobileNav).not.toContain('href="/court"');
 
     expect(landing).toContain("import LandingHeroAccessPanel from '@/components/landing/LandingHeroAccessPanel';");
     expect(landing).toContain('<LandingHeroAccessPanel />');

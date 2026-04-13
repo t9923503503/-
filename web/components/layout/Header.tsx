@@ -32,12 +32,6 @@ export default function Header() {
               {label}
             </Link>
           ))}
-          <Link
-            href="/court"
-            className="rounded-lg bg-brand px-4 py-1.5 text-sm font-semibold text-surface transition-colors hover:bg-brand/90"
-          >
-            {"\u0421\u0443\u0434\u044c\u044f\u043c"}
-          </Link>
           <HeaderAccountEntry />
         </nav>
 

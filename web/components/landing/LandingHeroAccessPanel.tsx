@@ -13,24 +13,34 @@ export default async function LandingHeroAccessPanel() {
   const subtitle = active ? getAccessSubtitle(summary) : 'Регистрация';
 
   return (
-    <div className="absolute right-4 top-4 z-10 md:right-6 md:top-6">
+    <div className="absolute right-4 top-4 z-10 md:hidden">
       <Link
         href="/cabinet"
-        className="group flex min-w-[220px] max-w-[280px] items-center justify-between gap-3 overflow-hidden rounded-[22px] border border-white/12 bg-[linear-gradient(135deg,rgba(255,206,56,0.98)_0%,rgba(255,206,56,0.98)_46%,rgba(0,103,144,0.98)_46%,rgba(0,103,144,0.98)_100%)] px-4 py-3 text-left shadow-[0_16px_40px_rgba(0,0,0,0.32)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_50px_rgba(0,0,0,0.38)]"
+        className="group flex max-w-[220px] items-center gap-3 rounded-2xl border border-white/10 bg-[#121722]/92 px-3.5 py-3 text-left shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-md transition-all duration-200 hover:border-brand/35 hover:bg-[#171d28]/96"
       >
-        <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-[0.22em] text-[#0b2030]/80">
-            {active ? 'Личный кабинет' : 'Аккаунт'}
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-brand/25 bg-brand/12 text-brand">
+          <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
+            <path
+              d="M10 2.5a4.25 4.25 0 1 1 0 8.5 4.25 4.25 0 0 1 0-8.5Zm0 10.75c3.25 0 5.89 1.63 5.89 3.64 0 .34-.28.61-.62.61H4.73a.61.61 0 0 1-.62-.61c0-2.01 2.64-3.64 5.89-3.64Z"
+              fill="currentColor"
+            />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[9px] uppercase tracking-[0.24em] text-white/52">
+            {active
+              ? '\u041b\u0438\u0447\u043d\u044b\u0439 \u043a\u0430\u0431\u0438\u043d\u0435\u0442'
+              : '\u0410\u043a\u043a\u0430\u0443\u043d\u0442'}
           </div>
-          <div className="mt-1 truncate text-sm font-black uppercase leading-tight tracking-[0.05em] text-white md:text-base">
+          <div className="mt-1 truncate text-[13px] font-semibold uppercase leading-tight tracking-[0.08em] text-white">
             {title}
           </div>
-          <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-white/88">
+          <div className="mt-1 truncate text-[10px] uppercase tracking-[0.18em] text-white/60">
             {subtitle}
           </div>
         </div>
-        <span className="rounded-full border border-white/30 bg-white/12 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white transition-colors group-hover:bg-white/18">
-          {active ? 'Открыть' : 'Вход'}
+        <span className="shrink-0 rounded-full border border-white/14 bg-white/6 px-2.5 py-1 text-[9px] uppercase tracking-[0.18em] text-white/80 transition-colors group-hover:border-brand/30 group-hover:text-white">
+          {active ? '\u041e\u0442\u043a\u0440\u044b\u0442\u044c' : '\u0412\u0445\u043e\u0434'}
         </span>
       </Link>
     </div>
