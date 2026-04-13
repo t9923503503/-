@@ -20,14 +20,44 @@ describe('KOTC Next judge source contract', () => {
 
   it('keeps judge actions, timer, undo and local draft wiring in the judge screen', () => {
     const screen = read('web/components/kotc-next/KotcNextJudgeScreen.tsx');
+    const service = read('web/lib/kotc-next/service.ts');
+    const types = read('web/lib/kotc-next/types.ts');
 
     expect(screen).toContain('/api/kotc-next/judge/');
+    expect(screen).toContain('/manual-pair');
+    expect(screen).toContain('/reset');
+    expect(screen).toContain("from 'next/link'");
     expect(screen).toContain("runAction('start')");
     expect(screen).toContain("runAction('king-point')");
     expect(screen).toContain("runAction('takeover')");
     expect(screen).toContain("runAction('undo')");
-    expect(screen).toContain("runAction('finish')");
+    expect(screen).toContain("runFinishAction()");
+    expect(screen).toContain('const confirmations = [');
+    expect(screen).toContain('for (const confirmationMessage of confirmations)');
+    expect(screen).toContain("type JudgeSound = 'score' | 'error';");
+    expect(screen).toContain('const audioContextRef = useRef<AudioContext | null>(null);');
+    expect(screen).toContain("playJudgeSound('score')");
+    expect(screen).toContain("playJudgeSound('error')");
+    expect(screen).toContain("runManualPairAction('king', 'prev')");
+    expect(screen).toContain("runManualPairAction('challenger', 'next')");
+    expect(screen).toContain('window.confirm');
+    expect(screen).toContain("runResetRaundAction()");
     expect(screen).toContain('localStorage.setItem');
     expect(screen).toContain('formatRemaining');
+    expect(screen).toContain('snapshot.roundNav.map');
+    expect(screen).toContain('selectedRoundNav.courts.map');
+    expect(screen).toContain('formatCourtTabLabel');
+    expect(screen).toContain('roundTabClasses');
+    expect(screen).toContain('courtTabClasses');
+
+    expect(service).toContain('async function loadJudgeRoundNavTx');
+    expect(service).toContain('judgeRoundLabel');
+    expect(service).toContain('roundNav, courtNav');
+    expect(service).toContain('judgeUrl: court ? judgeUrlForPin(court.pinCode) : null');
+
+    expect(types).toContain('export interface KotcNextJudgeCourtNavItem');
+    expect(types).toContain('export interface KotcNextJudgeRoundNavItem');
+    expect(types).toContain('roundNav: KotcNextJudgeRoundNavItem[];');
+    expect(types).toContain('courtNav: KotcNextJudgeCourtNavItem[];');
   });
 });

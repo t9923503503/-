@@ -21,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru">
+    <html lang="ru" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -35,7 +35,10 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="bg-surface text-text-primary font-body antialiased min-h-screen flex flex-col">
+      <body
+        suppressHydrationWarning
+        className="bg-surface text-text-primary font-body antialiased min-h-screen flex flex-col"
+      >
         <SiteChrome>{children}</SiteChrome>
       </body>
     </html>

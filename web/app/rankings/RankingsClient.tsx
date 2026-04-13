@@ -1,43 +1,46 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { LeaderboardEntry, MedalEntry, RatingType, TournamentFormatFilter } from '@/lib/types';
 import PlayerPhoto from '@/components/ui/PlayerPhoto';
 import type { RankingCounts } from '@/lib/queries';
 
-/* ── helpers ───────────────────────────────────── */
-
 type SortMode = 'pts' | 'avg' | 'trn' | 'medals';
 
 function zoneMeta(level: string) {
-  const l = level.toLowerCase();
-  if (l === 'hard') return { cls: 'zone-hard', label: 'HARD', color: '#e94560', bg: 'rgba(233,69,96,.12)', border: 'rgba(233,69,96,.3)' };
-  if (l === 'advanced' || l === 'advance') return { cls: 'zone-advanced', label: 'ADVANCED', color: '#4DA8DA', bg: 'rgba(77,168,218,.12)', border: 'rgba(77,168,218,.3)' };
-  if (l === 'medium') return { cls: 'zone-medium', label: 'MEDIUM', color: '#FFD700', bg: 'rgba(255,215,0,.10)', border: 'rgba(255,215,0,.3)' };
-  return { cls: 'zone-lite', label: 'LIGHT', color: '#6ABF69', bg: 'rgba(106,191,105,.12)', border: 'rgba(106,191,105,.3)' };
+  const normalized = String(level || '').trim().toLowerCase();
+  if (normalized === 'hard') {
+    return { label: 'HARD', color: '#ff4d43', border: 'border-[#ff4d43]/45', chip: 'bg-[#2d1111] text-[#ff4d43]' };
+  }
+  if (normalized === 'advanced' || normalized === 'advance') {
+    return { label: 'ADV', color: '#26c6ff', border: 'border-[#26c6ff]/45', chip: 'bg-[#0d1f29] text-[#26c6ff]' };
+  }
+  if (normalized === 'medium') {
+    return { label: 'MED', color: '#ffb100', border: 'border-[#ffb100]/45', chip: 'bg-[#261b05] text-[#ffcf4d]' };
+  }
+  return { label: 'EASY', color: '#37d45d', border: 'border-[#37d45d]/45', chip: 'bg-[#0d2012] text-[#7cf293]' };
 }
 
 function sortEntries(entries: LeaderboardEntry[], mode: SortMode): LeaderboardEntry[] {
   const sorted = [...entries];
   if (mode === 'avg') {
-    sorted.sort((a, b) => {
-      const avgA = a.tournaments > 0 ? a.rating / a.tournaments : 0;
-      const avgB = b.tournaments > 0 ? b.rating / b.tournaments : 0;
-      return avgB - avgA;
+    sorted.sort((left, right) => {
+      const leftAvg = left.tournaments > 0 ? left.rating / left.tournaments : 0;
+      const rightAvg = right.tournaments > 0 ? right.rating / right.tournaments : 0;
+      return rightAvg - leftAvg;
     });
   } else if (mode === 'trn') {
-    sorted.sort((a, b) => b.tournaments - a.tournaments || b.rating - a.rating);
+    sorted.sort((left, right) => right.tournaments - left.tournaments || right.rating - left.rating);
   }
-  // mode === 'pts' — already sorted by rating from API
-  return sorted.map((e, i) => ({ ...e, rank: i + 1 }));
+  return sorted.map((entry, index) => ({ ...entry, rank: index + 1 }));
 }
 
 function sortLabel(mode: SortMode) {
   if (mode === 'avg') return 'СР.';
-  if (mode === 'trn') return 'ТУРН.';
+  if (mode === 'trn') return 'ТУР.';
   if (mode === 'medals') return 'ЗОЛ.';
-  return 'РЕЙТ.';
+  return 'РЕЙ.';
 }
 
 function sortValue(entry: LeaderboardEntry, mode: SortMode): string {
@@ -53,110 +56,243 @@ function hasMedals(entry: Pick<LeaderboardEntry, 'gold' | 'silver' | 'bronze'>):
   return entry.gold > 0 || entry.silver > 0 || entry.bronze > 0;
 }
 
-/* ── sub‑components ──────────────────────────────── */
+function getInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase();
+}
 
-function StatChip({ value, label, icon }: { value: number; label: string; icon: string }) {
+function CountCard({
+  value,
+  label,
+  accent,
+  outlined = false,
+}: {
+  value: number;
+  label: string;
+  accent: string;
+  outlined?: boolean;
+}) {
   return (
-    <div className="flex-1 bg-[#1a1a2e] border border-[#2a2a44] rounded-xl p-3 text-center min-w-0">
-      <div className="font-heading text-2xl text-brand leading-none">{value}</div>
-      <div className="text-[10px] text-text-secondary uppercase tracking-wider mt-1">{icon} {label}</div>
+    <div
+      className={`rounded-[28px] border px-4 py-5 ${
+        outlined ? 'border-[#7a4b00] bg-[#261701]' : 'border-white/6 bg-[#141414]'
+      }`}
+    >
+      <div className={`text-center font-heading text-5xl leading-none ${accent}`}>{value}</div>
+      <div className="mt-3 text-center text-[13px] font-medium uppercase tracking-[0.16em] text-white/45">
+        {label}
+      </div>
     </div>
   );
 }
 
-function Podium({ entries, sort }: { entries: LeaderboardEntry[]; sort: SortMode }) {
-  const [p1, p2, p3] = [entries[0], entries[1], entries[2]];
-  if (!p1) return null;
+function SegmentedButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-1 rounded-full border px-4 py-3 text-sm font-bold uppercase tracking-[0.08em] transition ${
+        active
+          ? 'border-[#ff6a00] bg-[#ff6a00] text-white shadow-[0_10px_35px_rgba(255,106,0,0.28)]'
+          : 'border-white/5 bg-[#181818] text-white/55 hover:text-white/75'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
 
-  const Pod = ({ p, place, medal }: { p: LeaderboardEntry; place: 'p1' | 'p2' | 'p3'; medal: string }) => {
-    const heights = { p1: 'h-[110px]', p2: 'h-[80px]', p3: 'h-[65px]' };
-    const gradients = {
-      p1: 'from-[rgba(255,215,0,0.2)] to-[rgba(255,215,0,0.05)] border-[rgba(255,215,0,0.35)]',
-      p2: 'from-[rgba(192,192,192,0.18)] to-[rgba(192,192,192,0.05)] border-[rgba(192,192,192,0.3)]',
-      p3: 'from-[rgba(205,127,50,0.18)] to-[rgba(205,127,50,0.05)] border-[rgba(205,127,50,0.3)]',
-    };
-    const textColors = { p1: 'text-[#FFD700]', p2: 'text-[#c0c0c0]', p3: 'text-[#cd7f32]' };
+function FilterPill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] transition ${
+        active
+          ? 'border-[#ff6a00] bg-[#1f1207] text-[#ff6a00]'
+          : 'border-white/5 bg-[#171717] text-white/45 hover:text-white/75'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
 
+function SortButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: string;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-1 rounded-[18px] border px-3 py-3 text-xs font-bold uppercase tracking-[0.08em] transition ${
+        active
+          ? 'border-[#ffd400] bg-[#1f1904] text-[#ffd400]'
+          : 'border-white/5 bg-[#151515] text-white/35 hover:text-white/65'
+      }`}
+    >
+      {icon} {label}
+    </button>
+  );
+}
+
+function PlayerAvatar({
+  name,
+  photoUrl,
+  sizeClass,
+}: {
+  name: string;
+  photoUrl: string;
+  sizeClass: string;
+}) {
+  if (photoUrl) {
     return (
-      <Link href={`/players/${p.playerId}`} className="flex flex-col items-center flex-1 max-w-[130px] group">
-        <div className={`flex flex-col items-center justify-end w-full rounded-t-lg border bg-gradient-to-b ${gradients[place]} ${heights[place]} px-2 py-2 transition-all group-hover:scale-105`}>
-          <span className="text-xl mb-1">{medal}</span>
-          <span className="text-[11px] font-bold text-white text-center truncate w-full">{p.name}</span>
-          <span className={`font-heading text-lg ${textColors[place]} leading-none`}>{sortValue(p, sort)}</span>
-          <span className="text-[8px] text-text-secondary uppercase tracking-wider">{sortLabel(sort)}</span>
-        </div>
-      </Link>
+      <div className={`overflow-hidden rounded-full border border-white/10 ${sizeClass}`}>
+        <PlayerPhoto photoUrl={photoUrl} alt={name} width={80} height={80} />
+      </div>
     );
-  };
+  }
 
   return (
-    <div className="flex items-end justify-center gap-2 py-4 mb-4">
-      {p2 && <Pod p={p2} place="p2" medal="🥈" />}
-      <Pod p={p1} place="p1" medal="🥇" />
-      {p3 && <Pod p={p3} place="p3" medal="🥉" />}
+    <div
+      className={`flex items-center justify-center rounded-full bg-[radial-gradient(circle_at_top,#444,#151515_72%)] text-lg font-black text-white ${sizeClass}`}
+    >
+      {getInitials(name)}
     </div>
   );
 }
 
-function PlayerItem({ entry, sort }: { entry: LeaderboardEntry; sort: SortMode }) {
-  const zn = zoneMeta(entry.topLevel);
-  const avg = entry.tournaments > 0 ? (entry.rating / entry.tournaments).toFixed(1) : '0';
-
-  const medalMap: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
-  const rankDisplay = medalMap[entry.rank] ?? String(entry.rank);
-  const rankColorClass = entry.rank === 1 ? 'text-[#FFD700]' : entry.rank === 2 ? 'text-[#c0c0c0]' : entry.rank === 3 ? 'text-[#cd7f32]' : 'text-text-secondary';
+function PodiumCard({
+  entry,
+  place,
+  sort,
+}: {
+  entry: LeaderboardEntry;
+  place: 1 | 2 | 3;
+  sort: SortMode;
+}) {
+  const tone =
+    place === 1
+      ? 'border-[#ffd400]/40 bg-[#261d03] text-[#ffd400]'
+      : place === 2
+        ? 'border-white/10 bg-[#1a1a1a] text-white'
+        : 'border-white/10 bg-[#191919] text-[#d79247]';
+  const imageWrap =
+    place === 1
+      ? 'h-28 w-28 border-[3px] border-[#ffd400]'
+      : 'h-20 w-20 border-2 border-white/10';
+  const rankWrap =
+    place === 1 ? 'h-[112px] bg-[#4f3c02]' : place === 2 ? 'h-[86px] bg-[#2a2a2d]' : 'h-[76px] bg-[#3a2308]';
 
   return (
     <Link
       href={`/players/${entry.playerId}`}
-      className="flex items-center gap-3 px-3 py-3 bg-[#16162a] border border-[#2a2a40] rounded-xl transition-all hover:border-[#3a3a5e] hover:bg-[#1a1a30] group"
-      style={{ borderLeftWidth: '3px', borderLeftColor: zn.color }}
+      className={`flex flex-1 flex-col items-center rounded-[32px] border px-4 pt-5 transition hover:-translate-y-1 ${tone}`}
     >
-      {entry.photoUrl ? (
-        <div className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-[#2a2a44]">
-          <PlayerPhoto photoUrl={entry.photoUrl} alt={entry.name} width={40} height={40} />
-        </div>
-      ) : (
-        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-brand/40 to-[#6366F1]/40 border border-[#2a2a44] flex items-center justify-center text-xs font-bold text-white/90">
-          {entry.name.charAt(0).toUpperCase()}
-        </div>
-      )}
-      {/* Rank */}
-      <div className={`flex-shrink-0 w-7 text-center font-heading text-base ${rankColorClass}`}>
-        {rankDisplay}
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="font-bold text-sm text-white truncate group-hover:text-brand transition-colors">
+      <PlayerAvatar name={entry.name} photoUrl={entry.photoUrl} sizeClass={imageWrap} />
+      <div className="mt-3 text-center">
+        <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">{place === 1 ? 'MVP' : 'Топ'}</div>
+        <div className="mt-2 text-[clamp(20px,3vw,34px)] font-black leading-none text-white">
           {entry.name}
         </div>
-        <div className="flex items-center gap-2 text-[10px] text-text-secondary mt-0.5 flex-wrap">
-          <span>🏆 {entry.tournaments} турн.</span>
+        <div className={`mt-3 font-heading text-5xl leading-none ${place === 1 ? 'text-[#ffd400]' : place === 2 ? 'text-white/90' : 'text-[#d79247]'}`}>
+          {sortValue(entry, sort)}
+        </div>
+        <div className="mt-1 text-xs uppercase tracking-[0.18em] text-white/45">{sortLabel(sort)}</div>
+      </div>
+      <div
+        className={`mt-5 flex w-full items-center justify-center rounded-t-[20px] border-t border-white/6 font-heading text-6xl leading-none ${rankWrap}`}
+      >
+        #{place}
+      </div>
+    </Link>
+  );
+}
+
+function Podium({ entries, sort }: { entries: LeaderboardEntry[]; sort: SortMode }) {
+  const [first, second, third] = [entries[0], entries[1], entries[2]];
+  if (!first) return null;
+
+  return (
+    <section className="mt-6">
+      <div className="mb-5 text-[14px] font-semibold uppercase tracking-[0.16em] text-white/42">Топ игроки</div>
+      <div className="grid grid-cols-3 items-end gap-4">
+        {second ? <PodiumCard entry={second} place={2} sort={sort} /> : <div />}
+        <PodiumCard entry={first} place={1} sort={sort} />
+        {third ? <PodiumCard entry={third} place={3} sort={sort} /> : <div />}
+      </div>
+    </section>
+  );
+}
+
+function PlayerItem({ entry, sort }: { entry: LeaderboardEntry; sort: SortMode }) {
+  const zone = zoneMeta(entry.topLevel);
+  const average = entry.tournaments > 0 ? (entry.rating / entry.tournaments).toFixed(1) : '0';
+
+  return (
+    <Link
+      href={`/players/${entry.playerId}`}
+      className={`flex items-center gap-3 rounded-[24px] border bg-[#121212] px-4 py-4 transition hover:border-white/14 hover:bg-[#171717] ${entry.rank === 1 ? 'border-[#5f490a]' : 'border-white/6'}`}
+    >
+      <div className={`w-8 text-center font-heading text-4xl leading-none ${entry.rank <= 3 ? 'text-[#d79247]' : 'text-white/78'}`}>
+        {entry.rank}
+      </div>
+
+      <PlayerAvatar name={entry.name} photoUrl={entry.photoUrl} sizeClass="h-14 w-14" />
+
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[18px] font-bold text-white">{entry.name}</div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/42">
+          <span>🏆 {entry.tournaments} тур.</span>
           <span>⚡ {entry.rating} рейт.</span>
-          <span>📊 {avg} ср.</span>
+          <span>📊 {average} ср.</span>
         </div>
         {hasMedals(entry) ? (
-          <div className="flex items-center gap-1.5 text-[10px] text-text-secondary mt-0.5">
-            {entry.gold > 0 ? <span>🥇{entry.gold}</span> : null}
-            {entry.silver > 0 ? <span>🥈{entry.silver}</span> : null}
-            {entry.bronze > 0 ? <span>🥉{entry.bronze}</span> : null}
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/55">
+            {entry.gold > 0 ? <span>🥇 {entry.gold}</span> : null}
+            {entry.silver > 0 ? <span>🥈 {entry.silver}</span> : null}
+            {entry.bronze > 0 ? <span>🥉 {entry.bronze}</span> : null}
           </div>
         ) : null}
       </div>
 
-      {/* Value */}
-      <div className="flex-shrink-0 text-right">
-        <div className="font-heading text-lg text-brand leading-none">{sortValue(entry, sort)}</div>
-        <div className="text-[9px] text-text-secondary uppercase tracking-wider">{sortLabel(sort)}</div>
-      </div>
-
-      {/* Zone badge */}
-      <div
-        className="flex-shrink-0 text-[9px] font-bold tracking-wide px-2 py-0.5 rounded"
-        style={{ background: zn.bg, color: zn.color, border: `1px solid ${zn.border}` }}
-      >
-        {zn.label}
+      <div className="flex flex-col items-end gap-2">
+        <div className={`font-heading text-6xl leading-none ${entry.rank === 1 ? 'text-[#ffd400]' : entry.rank <= 3 ? 'text-[#d79247]' : 'text-white'}`}>
+          {sortValue(entry, sort)}
+        </div>
+        <div className="text-[11px] uppercase tracking-[0.12em] text-white/38">{sortLabel(sort)}</div>
+        <div className={`rounded-[12px] border px-3 py-1 text-sm font-bold uppercase tracking-[0.12em] ${zone.border} ${zone.chip}`}>
+          {zone.label}
+        </div>
       </div>
     </Link>
   );
@@ -164,68 +300,57 @@ function PlayerItem({ entry, sort }: { entry: LeaderboardEntry; sort: SortMode }
 
 function MedalItem({ entry }: { entry: MedalEntry }) {
   const levelChips = [
-    { label: 'HARD', value: entry.hardWins, className: 'border-brand/50 bg-brand/15 text-orange-300' },
-    { label: 'ADVANCED', value: entry.advancedWins, className: 'border-[#00D1FF]/50 bg-[#00D1FF]/10 text-[#00D1FF]' },
-    { label: 'MEDIUM', value: entry.mediumWins, className: 'border-[#FFD700]/50 bg-[#FFD700]/10 text-[#FFD700]' },
-    { label: 'LIGHT', value: entry.lightWins, className: 'border-[#6ABF69]/50 bg-[#6ABF69]/10 text-[#6ABF69]' },
+    { label: 'HARD', value: entry.hardWins, className: 'border-[#ff4d43]/45 bg-[#2d1111] text-[#ff4d43]' },
+    { label: 'ADV', value: entry.advancedWins, className: 'border-[#26c6ff]/45 bg-[#0d1f29] text-[#26c6ff]' },
+    { label: 'MED', value: entry.mediumWins, className: 'border-[#ffb100]/45 bg-[#261b05] text-[#ffd25b]' },
+    { label: 'EASY', value: entry.lightWins, className: 'border-[#37d45d]/45 bg-[#0d2012] text-[#7cf293]' },
   ].filter((chip) => chip.value > 0);
+
   const formatChips = [
-    { label: 'KOTC', icon: '👑', value: entry.kotcWins, className: 'border-[#FFD700]/50 bg-[#FFD700]/10 text-[#FFD700]' },
-    { label: 'Thai', icon: '🏖️', value: entry.thaiWins, className: 'border-white/20 bg-white/[.04] text-text-secondary' },
-    { label: 'Дабл Трабл', icon: '⚡', value: entry.iptWins, className: 'border-[#4DA8DA]/50 bg-[#4DA8DA]/10 text-[#4DA8DA]' },
+    { label: 'KOTC', icon: '👑', value: entry.kotcWins, className: 'border-[#ffd400]/45 bg-[#261d03] text-[#ffd400]' },
+    { label: 'THAI', icon: '🏴', value: entry.thaiWins, className: 'border-white/10 bg-[#171717] text-white/72' },
+    { label: 'ДАБЛ', icon: '⚡', value: entry.iptWins, className: 'border-[#26c6ff]/45 bg-[#0d1f29] text-[#26c6ff]' },
   ].filter((chip) => chip.value > 0);
 
   return (
     <Link
       href={`/players/${entry.playerId}`}
-      className="block rounded-2xl border border-[#2a2a44] bg-[#16162a] p-4 transition-all hover:border-brand/45 hover:bg-[#1a1a30] group"
+      className="rounded-[24px] border border-white/6 bg-[#121212] p-4 transition hover:border-white/14 hover:bg-[#171717]"
     >
       <div className="flex items-start gap-3">
-        <div className="flex-shrink-0 w-11 text-center">
-          <div className="font-heading text-2xl text-[#FFD700] leading-none">#{entry.rank}</div>
-          <div className="text-[9px] text-text-secondary uppercase tracking-wider mt-1">место</div>
-        </div>
-
-        {entry.photoUrl ? (
-          <div className="flex-shrink-0 w-12 h-12 rounded-xl overflow-hidden border border-[#2a2a44]">
-            <PlayerPhoto photoUrl={entry.photoUrl} alt={entry.name} width={48} height={48} />
-          </div>
-        ) : (
-          <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-[#FFD700]/30 to-brand/30 border border-[#2a2a44] flex items-center justify-center text-sm font-bold text-white/90">
-            {entry.name.charAt(0).toUpperCase()}
-          </div>
-        )}
-
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="font-bold text-sm text-white truncate group-hover:text-brand transition-colors">
-              {entry.name}
-            </div>
-            <div className="flex items-center gap-2 text-sm font-bold">
-              {entry.gold > 0 ? <span className="text-[#FFD700]">🥇{entry.gold}</span> : null}
-              {entry.silver > 0 ? <span className="text-[#c0c0c0]">🥈{entry.silver}</span> : null}
-              {entry.bronze > 0 ? <span className="text-[#cd7f32]">🥉{entry.bronze}</span> : null}
+        <div className="w-9 text-center font-heading text-4xl leading-none text-[#ffd400]">{entry.rank}</div>
+        <PlayerAvatar name={entry.name} photoUrl={entry.photoUrl} sizeClass="h-14 w-14" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="truncate text-[20px] font-bold text-white">{entry.name}</div>
+            <div className="shrink-0 text-right text-sm font-bold text-white/72">
+              {entry.gold > 0 ? <div className="text-[#ffd400]">🥇{entry.gold}</div> : null}
+              {entry.silver > 0 ? <div>🥈{entry.silver}</div> : null}
+              {entry.bronze > 0 ? <div className="text-[#d79247]">🥉{entry.bronze}</div> : null}
             </div>
           </div>
 
-          {levelChips.length > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-1.5">
+          {levelChips.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
               {levelChips.map((chip) => (
                 <span
                   key={chip.label}
-                  className={`rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide ${chip.className}`}
+                  className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] ${chip.className}`}
                 >
-                  {chip.label} ×{chip.value}
+                  {chip.label} x{chip.value}
                 </span>
               ))}
             </div>
           ) : null}
 
-          {formatChips.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+          {formatChips.length ? (
+            <div className="mt-2 flex flex-wrap gap-2">
               {formatChips.map((chip) => (
-                <span key={chip.label} className={`rounded-full border px-2 py-0.5 font-bold tracking-wide ${chip.className}`}>
-                  {chip.icon} {chip.label} ×{chip.value}
+                <span
+                  key={chip.label}
+                  className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] ${chip.className}`}
+                >
+                  {chip.icon} {chip.label} x{chip.value}
                 </span>
               ))}
             </div>
@@ -235,8 +360,6 @@ function MedalItem({ entry }: { entry: MedalEntry }) {
     </Link>
   );
 }
-
-/* ── main client ─────────────────────────────────── */
 
 interface RankingsClientProps {
   initialEntries: LeaderboardEntry[];
@@ -262,18 +385,18 @@ export default function RankingsClient({ initialEntries, initialType, counts }: 
     }
     setLoading(true);
     fetch(`/api/leaderboard?type=${type}&limit=100&format=${format}`)
-      .then((r) => r.json())
+      .then((response) => response.json())
       .then((data: LeaderboardEntry[]) => setEntries(data))
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
-  }, [type, format, initialType, initialEntries]);
+  }, [type, format, initialEntries, initialType]);
 
   useEffect(() => {
     if (sort !== 'medals') return;
     if (medalsLoaded?.type === type && medalsLoaded?.format === format) return;
     setMedalsLoading(true);
     fetch(`/api/leaderboard-medals?type=${type}&limit=100&format=${format}`)
-      .then((r) => r.json())
+      .then((response) => response.json())
       .then((data: MedalEntry[]) => {
         setMedalEntries(data);
         setMedalsLoaded({ type, format });
@@ -283,167 +406,139 @@ export default function RankingsClient({ initialEntries, initialType, counts }: 
         setMedalsLoaded({ type, format });
       })
       .finally(() => setMedalsLoading(false));
-  }, [sort, type, format, medalsLoaded]);
+  }, [format, medalsLoaded, sort, type]);
 
   const filtered = useMemo(() => {
-    let list = entries;
+    let nextEntries = entries;
     if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter((e) => e.name.toLowerCase().includes(q));
+      const query = search.trim().toLowerCase();
+      nextEntries = nextEntries.filter((entry) => entry.name.toLowerCase().includes(query));
     }
-    return sortEntries(list, sort);
-  }, [entries, sort, search]);
+    return sortEntries(nextEntries, sort);
+  }, [entries, search, sort]);
 
   const filteredMedals = useMemo(() => {
-    let list = medalEntries;
+    let nextEntries = medalEntries;
     if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter((e) => e.name.toLowerCase().includes(q));
+      const query = search.trim().toLowerCase();
+      nextEntries = nextEntries.filter((entry) => entry.name.toLowerCase().includes(query));
     }
-    return list;
+    return nextEntries;
   }, [medalEntries, search]);
 
-  const genderTabs: { value: RatingType; label: string; icon: string; count: number }[] = [
-    { value: 'M', label: 'М', icon: '🏋️', count: counts.men },
-    { value: 'W', label: 'Ж', icon: '👩', count: counts.women },
-    { value: 'Mix', label: 'Микст', icon: '🤝', count: counts.mix },
+  const genderTabs: { value: RatingType; label: string; count: number }[] = [
+    { value: 'M', label: 'M', count: counts.men },
+    { value: 'W', label: 'Ж', count: counts.women },
+    { value: 'Mix', label: 'Микст', count: counts.mix },
   ];
 
-  const formatTabs: { value: TournamentFormatFilter; label: string; icon: string; activeClass: string; hoverColor: string }[] = [
-    { value: 'all',  label: 'Все',        icon: '🌐', activeClass: 'bg-white/10 border-white/25 text-white',                      hoverColor: 'hover:text-white' },
-    { value: 'kotc', label: 'KOTC',       icon: '👑', activeClass: 'bg-[#FFD700]/10 border-[#FFD700]/40 text-[#FFD700]',          hoverColor: 'hover:text-[#FFD700]' },
-    { value: 'thai', label: 'THAI',       icon: '🏖️', activeClass: 'bg-[#F97316]/10 border-[#F97316]/40 text-[#FDBA74]',         hoverColor: 'hover:text-[#FDBA74]' },
-    { value: 'dt',   label: 'Дабл Трабл', icon: '⚡', activeClass: 'bg-[#4DA8DA]/10 border-[#4DA8DA]/40 text-[#4DA8DA]',          hoverColor: 'hover:text-[#4DA8DA]' },
+  const formatTabs: { value: TournamentFormatFilter; label: string }[] = [
+    { value: 'all', label: 'Все' },
+    { value: 'kotc', label: '👑 KOTC' },
+    { value: 'thai', label: '🏴 THAI' },
+    { value: 'dt', label: '⚡ Дабл' },
   ];
 
   const sortTabs: { value: SortMode; label: string; icon: string }[] = [
     { value: 'pts', label: 'РЕЙТИНГ', icon: '⚡' },
     { value: 'avg', label: 'СРЕДНИЙ', icon: '📊' },
     { value: 'trn', label: 'ТУРНИРЫ', icon: '🏆' },
-    { value: 'medals', label: 'МЕДАЛИ', icon: '🏅' },
+    { value: 'medals', label: 'МЕДАЛИ', icon: '🎖' },
   ];
 
+  const busy = loading || medalsLoading;
+
   return (
-    <main className="max-w-3xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="text-center mb-6">
-        <h1 className="font-heading text-4xl md:text-5xl text-brand tracking-wide uppercase">
-          🔥 Рейтинг Лютых Игроков
-        </h1>
-        <p className="text-text-secondary text-sm mt-2">
-          Professional Points — места, зоны, статистика
-        </p>
-      </div>
-
-      {/* Stat chips */}
-      <div className="flex gap-2 mb-5">
-        <StatChip value={counts.men} label="Мужчин" icon="🏋️" />
-        <StatChip value={counts.women} label="Женщин" icon="👩" />
-        <StatChip value={counts.mix} label="Микст" icon="🤝" />
-        <StatChip value={counts.total} label="Всего" icon="👥" />
-      </div>
-
-      {/* Gender tabs */}
-      <div className="flex gap-1 bg-white/[.04] p-1 rounded-xl border border-[#2a2a40] mb-3">
-        {genderTabs.map((tab) => {
-          const isActive = tab.value === type;
-          return (
-            <button
-              key={tab.value}
-              onClick={() => { setType(tab.value); setSearch(''); setFormat('all'); }}
-              className={`flex-1 py-2 rounded-lg font-bold text-sm uppercase tracking-wide transition-all ${
-                isActive
-                  ? 'bg-brand text-[#111] shadow-[0_3px_10px_rgba(255,90,0,0.25)]'
-                  : 'text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              {tab.icon} {tab.label} ({tab.count})
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Format filter */}
-      <div className="flex gap-2 mb-4">
-        {formatTabs.map((tab) => {
-          const isActive = tab.value === format;
-          return (
-            <button
-              key={tab.value}
-              onClick={() => setFormat(tab.value)}
-              className={`flex-1 py-1.5 px-3 rounded-full border text-xs font-bold uppercase tracking-wider transition-all ${
-                isActive
-                  ? tab.activeClass
-                  : `bg-transparent border-[#2a2a44] text-text-secondary ${tab.hoverColor}`
-              }`}
-            >
-              {tab.icon} {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Sort tabs */}
-      <div className="flex gap-1.5 mb-4">
-        {sortTabs.map((tab) => {
-          const isActive = tab.value === sort;
-          return (
-            <button
-              key={tab.value}
-              onClick={() => setSort(tab.value)}
-              className={`flex-1 py-2 px-2 rounded-lg border text-xs font-bold uppercase tracking-wider transition-all ${
-                isActive
-                  ? 'bg-brand/10 border-brand/40 text-brand'
-                  : 'bg-white/[.04] border-[#2a2a44] text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              {tab.icon} {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Loading */}
-      <div className={loading || medalsLoading ? 'opacity-40 transition-opacity pointer-events-none' : ''}>
-        {sort !== 'medals' ? <Podium entries={filtered} sort={sort} /> : null}
-
-        {/* Search */}
-        <div className="relative mb-4">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-sm pointer-events-none">🔍</span>
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по имени..."
-            className="w-full bg-[#1a1a2e] border border-[#2a2a44] rounded-xl py-2.5 pl-9 pr-4 text-white text-sm outline-none focus:border-brand transition-colors"
-          />
+    <main className="mx-auto max-w-[920px] px-4 pb-10 pt-6">
+      <section className="rounded-[40px] border border-white/6 bg-[#0b0b0b] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.38)]">
+        <div className="text-left">
+          <div className="font-heading text-[54px] leading-none text-[#ff5a00] sm:text-[72px]">🔥 РЕЙТИНГ</div>
+          <h1 className="mt-3 text-[34px] font-black uppercase leading-[0.94] tracking-[-0.04em] text-white sm:text-[56px]">
+            Лютых игроков
+          </h1>
+          <p className="mt-3 max-w-2xl text-lg text-white/38">
+            Professional Points — места, зоны, статистика
+          </p>
         </div>
 
-        {/* Player list */}
-        {sort === 'medals' ? (
-          filteredMedals.length === 0 ? (
-            <div className="text-center text-text-secondary py-16">
-              Нет медалей для отображения
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {filteredMedals.map((entry) => (
-                <MedalItem key={entry.playerId} entry={entry} />
-              ))}
-            </div>
-          )
-        ) : filtered.length === 0 ? (
-          <div className="text-center text-text-secondary py-16">
-            Нет данных для отображения
+        <div className="mt-6 grid gap-3 sm:grid-cols-4">
+          <CountCard value={counts.men} label="M" accent="text-[#ff6a00]" />
+          <CountCard value={counts.women} label="Ж" accent="text-[#ff5bb7]" />
+          <CountCard value={counts.mix} label="МИК" accent="text-[#26c6ff]" />
+          <CountCard value={counts.total} label="ВСЕГО" accent="text-[#ffd400]" outlined />
+        </div>
+
+        <div className="mt-6 flex flex-wrap gap-3">
+          {genderTabs.map((tab) => (
+            <SegmentedButton
+              key={tab.value}
+              active={type === tab.value}
+              onClick={() => {
+                setType(tab.value);
+                setFormat('all');
+                setSearch('');
+              }}
+            >
+              {tab.label} ({tab.count})
+            </SegmentedButton>
+          ))}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {formatTabs.map((tab) => (
+            <FilterPill key={tab.value} active={format === tab.value} onClick={() => setFormat(tab.value)}>
+              {tab.label}
+            </FilterPill>
+          ))}
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-4">
+          {sortTabs.map((tab) => (
+            <SortButton
+              key={tab.value}
+              active={sort === tab.value}
+              onClick={() => setSort(tab.value)}
+              icon={tab.icon}
+              label={tab.label}
+            />
+          ))}
+        </div>
+
+        <div className={busy ? 'mt-6 opacity-45 transition-opacity pointer-events-none' : 'mt-6'}>
+          {sort !== 'medals' ? <Podium entries={filtered} sort={sort} /> : null}
+
+          <div className="mt-6 rounded-[28px] border border-white/6 bg-[#141414] px-5 py-4">
+            <label className="flex items-center gap-3">
+              <span className="text-2xl text-white/28">⌕</span>
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Поиск по имени..."
+                className="w-full bg-transparent text-xl text-white outline-none placeholder:text-white/18"
+              />
+            </label>
           </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {filtered.map((entry) => (
-              <PlayerItem key={entry.playerId} entry={entry} sort={sort} />
-            ))}
+
+          <div className="mt-6 space-y-3">
+            {sort === 'medals' ? (
+              filteredMedals.length ? (
+                filteredMedals.map((entry) => <MedalItem key={entry.playerId} entry={entry} />)
+              ) : (
+                <div className="rounded-[28px] border border-white/6 bg-[#141414] px-5 py-10 text-center text-white/38">
+                  Нет медалей для отображения
+                </div>
+              )
+            ) : filtered.length ? (
+              filtered.map((entry) => <PlayerItem key={entry.playerId} entry={entry} sort={sort} />)
+            ) : (
+              <div className="rounded-[28px] border border-white/6 bg-[#141414] px-5 py-10 text-center text-white/38">
+                Нет данных для отображения
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      </section>
     </main>
   );
 }

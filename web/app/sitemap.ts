@@ -5,6 +5,7 @@ const STATIC_ROUTES = [
   '/calendar',
   '/archive',
   '/rankings',
+  '/cabinet',
   '/profile',
   '/partner',
   '/pravila',

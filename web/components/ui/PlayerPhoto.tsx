@@ -21,7 +21,7 @@ export default function PlayerPhoto({
   if (!url) return null;
 
   const cls = className ?? 'object-cover w-full h-full';
-  if (/^https?:\/\//i.test(url)) {
+  if (/^https?:\/\//i.test(url) || /^data:image\//i.test(url)) {
     return (
       <img
         src={url}

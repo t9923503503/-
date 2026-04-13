@@ -73,7 +73,7 @@ export function KotcNextOperatorPanel({
   data,
   bootstrap,
   actions,
-  title = 'KOTC Next Control',
+  title = 'Король корта',
   subtitle = 'Оператор ведёт bootstrap R1/R2, отслеживает корты, а каждый судья закрывает свои раунды локально на PIN-экране.',
 }: {
   data: SudyamBootstrapPayload;
@@ -98,7 +98,8 @@ export function KotcNextOperatorPanel({
   const judgeModule = data.kotcJudgeModule === 'next' ? 'Next' : 'Legacy';
   const blockedReason = String(data.kotcJudgeBlockedReason || '').trim();
   const isNextModule = data.kotcJudgeModule === 'next';
-  const isBootstrapPending = isNextModule && Boolean(data.kotcJudgeNeedsBootstrap) && !blockedReason;
+  const canBootstrapR1 =
+    isNextModule && !blockedReason && Boolean(operatorState?.canBootstrapR1 || data.kotcJudgeNeedsBootstrap);
   const participants = data.bootstrapState.participants.filter((participant) => !participant.isWaitlist);
   const activeCourt =
     operatorState?.rounds.flatMap((round) => round.courts).find((court) => court.status === 'live') ??
@@ -108,20 +109,20 @@ export function KotcNextOperatorPanel({
     bootstrap.message ||
     (bootstrap.phase === 'bootstrapping'
       ? 'Подготавливаем R1 и судейские PIN-корты…'
-      : isBootstrapPending
+      : canBootstrapR1
         ? 'Турнир ещё не материализован в KOTC Next. Запустите R1, чтобы создать корты и PIN-коды.'
         : null);
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-[#2d3144] bg-[linear-gradient(180deg,rgba(20,24,37,0.98),rgba(10,13,24,0.98))] px-5 py-5 shadow-[0_24px_70px_rgba(0,0,0,0.34)]">
+      <section className="rounded-[32px] border border-white/8 bg-[linear-gradient(180deg,rgba(10,10,14,0.98),rgba(6,7,12,0.98))] px-5 py-5 shadow-[0_24px_70px_rgba(0,0,0,0.34)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-[10px] uppercase tracking-[0.34em] text-[#7d8498]">Sudyam / KOTC Next</div>
-            <h2 className="mt-2 font-heading text-3xl uppercase tracking-[0.08em] text-[#ffd24a] sm:text-4xl">
+            <div className="text-[10px] uppercase tracking-[0.34em] text-white/34">Sudyam / KOTC Next</div>
+            <h2 className="mt-2 font-heading text-4xl uppercase tracking-[0.08em] text-[#ffd24a] sm:text-5xl">
               {title}
             </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#c7cada]/78">{subtitle}</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/62">{subtitle}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-[#4b3c15] bg-[#1b160d] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#ffd24a]">
@@ -194,7 +195,7 @@ export function KotcNextOperatorPanel({
           >
             Обновить
           </button>
-          {isBootstrapPending ? (
+          {canBootstrapR1 ? (
             <button
               type="button"
               onClick={bootstrap.onBootstrapR1}
@@ -244,7 +245,7 @@ export function KotcNextOperatorPanel({
               Открыть активный корт
             </a>
           ) : null}
-          {operatorState && data.tournamentId ? (
+          {operatorState?.rounds.length && data.tournamentId ? (
             <a
               href={`/live/kotcn/${encodeURIComponent(data.tournamentId)}`}
               target="_blank"

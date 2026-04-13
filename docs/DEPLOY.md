@@ -48,7 +48,18 @@ STATIC_SYNC_MODE=overlay
 ALLOW_SYNC_TO_APP_DIR=1
 SERVICE_NAME=kotc-web.service
 PUBLIC_HEALTHCHECK_URL=https://lpvolley.ru/calendar
+NEXT_ASSET_HEALTHCHECK_URLS=https://lpvolley.ru/admin/login,https://lpvolley.ru/profile
 ```
+
+Если нужно поймать не только `200`, но и битый HTML после выкладки, включите body-level healthcheck на стабильной публичной странице:
+
+```bash
+PUBLIC_BODY_HEALTHCHECK_URL=https://lpvolley.ru/calendar/aa8a1292-deb9-4345-8e4d-4d72ed6261a1
+PUBLIC_BODY_HEALTHCHECK_CONTAINS=Подать заявку
+PUBLIC_BODY_HEALTHCHECK_NOT_CONTAINS=РџРѕРґР°С‚СЊ
+```
+
+Такой guard полезен для случаев, когда route отвечает `200`, но внутри уже лежит stale/mojibake HTML от старого bundle.
 
 Если нужно пропустить часть шага во время hotfix-деплоя:
 

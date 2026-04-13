@@ -43,6 +43,7 @@ import {
 } from '@/lib/admin-legacy-sync';
 import { buildSudyamLaunchUrl, getSudyamFormatForTournament } from '@/lib/sudyam-launch';
 import {
+  inferThaiJudgeModuleFromSettings,
   THAI_JUDGE_MODULE_LEGACY,
   THAI_JUDGE_MODULE_NEXT,
   THAI_NEXT_JUDGE_DEFAULT_TOUR_COUNT,
@@ -209,6 +210,16 @@ function normalizeThaiSettings(
   };
 }
 
+function getThaiJudgeModuleFallback(
+  settings?: Partial<TournamentSettings>,
+  fallback: ThaiJudgeModule = THAI_JUDGE_MODULE_LEGACY,
+): ThaiJudgeModule {
+  return inferThaiJudgeModuleFromSettings(
+    (settings ?? null) as Record<string, unknown> | null,
+    fallback,
+  );
+}
+
 function normalizeKotcSettings(
   settings?: Partial<TournamentSettings>,
   participantCount?: number,
@@ -285,7 +296,11 @@ function buildKotcNextControlUrl(tournamentId: string): string {
 function getPrimaryLaunchTarget(row: Pick<Row, 'id' | 'format' | 'settings'>): LaunchTarget | null {
   if (!row.id) return null;
   if (isThaiAdminFormat(row.format)) {
-    const normalized = normalizeThaiSettings(row.settings, undefined, THAI_JUDGE_MODULE_LEGACY);
+    const normalized = normalizeThaiSettings(
+      row.settings,
+      undefined,
+      getThaiJudgeModuleFallback(row.settings, THAI_JUDGE_MODULE_LEGACY),
+    );
     if (normalized.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT) {
       return {
         href: `/admin/tournaments/${encodeURIComponent(row.id)}/thai-live`,
@@ -461,7 +476,9 @@ export default function AdminTournamentsPage() {
         ? normalizeThaiSettings(
             form.settings,
             draftPlayers.length,
-            isEdit ? THAI_JUDGE_MODULE_LEGACY : THAI_JUDGE_MODULE_NEXT,
+            isEdit
+              ? getThaiJudgeModuleFallback(form.settings, THAI_JUDGE_MODULE_LEGACY)
+              : THAI_JUDGE_MODULE_NEXT,
           )
         : null,
     [draftPlayers.length, form.settings, isEdit, isThaiFormat]
@@ -751,7 +768,9 @@ export default function AdminTournamentsPage() {
       const nextSettings = normalizeThaiSettings(
         row.settings,
         row.participantCount || row.capacity,
-        isExactThaiTournamentFormat(row.format) ? THAI_JUDGE_MODULE_LEGACY : THAI_JUDGE_MODULE_NEXT,
+        isExactThaiTournamentFormat(row.format)
+          ? getThaiJudgeModuleFallback(row.settings, THAI_JUDGE_MODULE_LEGACY)
+          : THAI_JUDGE_MODULE_NEXT,
       );
       setForm({
         ...row,

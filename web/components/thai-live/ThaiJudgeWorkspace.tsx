@@ -43,8 +43,16 @@ function connectionClasses(online: boolean): string {
     : 'border-red-400/25 bg-red-500/15 text-red-100';
 }
 
-function formatTeamNames(team: ThaiJudgeTeamView): string {
-  return team.players.map((player) => player.name).join(' / ');
+function renderTeamNames(team: ThaiJudgeTeamView, align: 'left' | 'right' = 'left') {
+  return (
+    <div className={`flex flex-col gap-1 ${align === 'right' ? 'items-end text-right' : 'items-start text-left'}`}>
+      {team.players.map((player) => (
+        <span key={player.id} className="block max-w-full break-words">
+          {player.name}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function formatTeamRoles(team: ThaiJudgeTeamView): string {
@@ -86,7 +94,7 @@ function courtStatusDotClass(status: ThaiJudgeCourtNavItem['currentTourStatus'])
 
 function tourTabTone(tour: ThaiJudgeTourView, active: boolean): string {
   if (active) return 'border-[#ffd24a] bg-[#ffd24a] text-[#17130b]';
-  if (tour.isEditable) return 'border-[#5b4713] bg-[#18140d] text-[#ffd24a]';
+  if (tour.isEditable) return 'border-[#ff4d43] bg-[#221010] text-[#ff938b]';
   if (tour.status === 'confirmed') return 'border-white/10 bg-white/5 text-white/80';
   return 'border-white/10 bg-white/5 text-[#838aa0]';
 }
@@ -95,7 +103,7 @@ function roundTabTone(round: ThaiJudgeSnapshot['roundNav'][number], active: bool
   if (active) return 'border-[#ffd24a] bg-[#ffd24a] text-[#17130b]';
   if (!round.isAvailable) return 'border-white/10 bg-white/5 text-[#6f7588]';
   if (round.status === 'finished') return 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100';
-  if (round.status === 'live') return 'border-[#5b4713] bg-[#18140d] text-[#ffd24a]';
+  if (round.status === 'live') return 'border-[#ff4d43]/45 bg-[#221010] text-[#ff938b]';
   return 'border-white/10 bg-white/5 text-[#838aa0]';
 }
 
@@ -173,7 +181,7 @@ export function ThaiJudgeWorkspace({
   const [toast, setToast] = useState<ToastState | null>(null);
   const [selectedTourNo, setSelectedTourNo] = useState(initialSnapshot.currentTourNo);
   const [scoreEditor, setScoreEditor] = useState<ScoreEditorState | null>(null);
-  const [standingsOpen, setStandingsOpen] = useState(false);
+  const [standingsOpen, setStandingsOpen] = useState(true);
   const scoreTapRef = useRef<Record<string, number>>({});
   const scoreEditorInputRef = useRef<HTMLInputElement | null>(null);
   const cancelScoreEditorRef = useRef(false);
@@ -547,63 +555,161 @@ export function ThaiJudgeWorkspace({
           </section>
         ) : null}
 
-        <div className="space-y-2.5">
-          {selectedMatches.map((match) => {
-            const liveScore = scores[match.matchId] ?? { team1: Number(match.team1Score ?? 0), team2: Number(match.team2Score ?? 0) };
+        <div className="space-y-4">
+          {selectedMatches.map((match, matchIndex) => {
+            const liveScore = scores[match.matchId] ?? {
+              team1: Number(match.team1Score ?? 0),
+              team2: Number(match.team2Score ?? 0),
+            };
+            const accent =
+              matchIndex === 0
+                ? {
+                    frame: 'border-[#37d45d] bg-[linear-gradient(180deg,rgba(7,25,11,0.96),rgba(9,20,14,0.96))]',
+                    title: 'text-[#37d45d]',
+                    plus: 'border-[#37d45d] bg-[#37d45d] text-[#ffd400]',
+                    minus: 'border-white/12 bg-white/6 text-white',
+                  }
+                : {
+                    frame: 'border-[#ff9f0a] bg-[linear-gradient(180deg,rgba(32,19,2,0.96),rgba(15,12,8,0.96))]',
+                    title: 'text-[#ffb100]',
+                    plus: 'border-[#ff9f0a] bg-[#37d45d] text-[#ffb100]',
+                    minus: 'border-white/12 bg-white/6 text-white',
+                  };
+
+            const renderScore = (sideKey: 'team1' | 'team2') => {
+              if (scoreEditor?.matchId === match.matchId && scoreEditor.side === sideKey) {
+                return (
+                  <input
+                    ref={scoreEditorInputRef}
+                    type="number"
+                    min={0}
+                    max={snapshot.pointLimit}
+                    inputMode="numeric"
+                    value={scoreEditor.value}
+                    onChange={(event) =>
+                      setScoreEditor((current) =>
+                        current && current.matchId === match.matchId && current.side === sideKey
+                          ? { ...current, value: event.target.value.replace(/[^\d]/g, '') }
+                          : current,
+                      )
+                    }
+                    onBlur={() => {
+                      if (cancelScoreEditorRef.current) {
+                        cancelScoreEditorRef.current = false;
+                        return;
+                      }
+                      applyManualScore(match.matchId, sideKey, scoreEditor.value);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        applyManualScore(match.matchId, sideKey, scoreEditor.value);
+                      } else if (event.key === 'Escape') {
+                        event.preventDefault();
+                        cancelScoreEditorRef.current = true;
+                        setScoreEditor(null);
+                      }
+                    }}
+                    className="h-16 w-16 rounded-2xl border border-[#5b4713] bg-[#18140d] px-1 text-center font-black text-3xl text-[#ffd24a] outline-none"
+                  />
+                );
+              }
+
+              return (
+                <button
+                  type="button"
+                  disabled={!isViewingEditableTour}
+                  onClick={() => handleScoreTap(match.matchId, sideKey, liveScore[sideKey])}
+                  className="h-16 w-16 text-center font-heading text-6xl leading-none text-[#ffd400] disabled:cursor-default"
+                  title="Двойной тап для ручного ввода"
+                >
+                  {liveScore[sideKey]}
+                </button>
+              );
+            };
+
             return (
-              <article key={match.matchId} className={`border border-[#33280f] bg-[linear-gradient(180deg,rgba(18,17,29,0.98),rgba(12,12,24,0.98))] shadow-[0_20px_60px_rgba(0,0,0,0.3)] ${navigationMode === 'embedded' ? 'rounded-[16px] px-3 py-3' : 'rounded-[22px] px-4 py-4'}`}>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[10px] uppercase tracking-[0.22em] text-[#8f7c4a]">M{match.matchNo}</div>
-                  <div className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] uppercase tracking-[0.16em] text-[#b8bfd0]">{selectedTour?.status === 'confirmed' ? 'OK' : selectedTour?.isEditable ? 'LIVE' : 'RO'}</div>
+              <article key={match.matchId}>
+                <div className="mb-2 flex items-center gap-4 px-2">
+                  <div className="h-px flex-1 bg-white/14" />
+                  <div className={`text-[16px] font-black uppercase tracking-[0.22em] ${accent.title}`}>
+                    Пара {match.matchNo}
+                  </div>
+                  <div className="h-px flex-1 bg-white/14" />
                 </div>
 
-                <div className="mt-2 space-y-2">
-                  {[match.team1, match.team2].map((team, index) => {
-                    const sideKey = index === 0 ? 'team1' : 'team2';
-                    return (
-                      <section key={`${match.matchId}-${team.side}`} className={`flex flex-col gap-2 rounded-[16px] border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 ${index === 0 ? 'border-emerald-500/35 bg-[linear-gradient(180deg,rgba(15,56,45,0.42),rgba(11,19,26,0.92))]' : 'border-[#31405e] bg-[linear-gradient(180deg,rgba(19,24,42,0.92),rgba(11,15,28,0.94))]'}`}>
-                        <div className="min-w-0 w-full sm:flex-1 sm:pr-2">
-                          <div className={`${navigationMode === 'embedded' ? 'text-sm' : 'text-sm sm:text-base'} break-words font-semibold leading-snug text-white`}>{formatTeamNames(team)}</div>
-                          {navigationMode === 'standalone' ? <div className="mt-1 text-[10px] uppercase tracking-[0.22em] text-[#7d8498]">{formatTeamRoles(team)}</div> : null}
+                <div className={`rounded-[30px] border p-4 shadow-[0_20px_60px_rgba(0,0,0,0.32)] ${accent.frame}`}>
+                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[clamp(16px,2.8vw,22px)] font-black leading-[1.02] text-white">
+                        {renderTeamNames(match.team1)}
+                      </div>
+                      {navigationMode === 'standalone' ? (
+                        <div className="mt-2 text-sm uppercase tracking-[0.16em] text-[#7d8498]">
+                          {formatTeamRoles(match.team1)}
                         </div>
-                        <div className="flex shrink-0 items-center justify-end gap-2 sm:justify-start sm:gap-2.5">
-                          <button type="button" disabled={!isViewingEditableTour} onClick={() => bumpScore(match.matchId, sideKey, -1)} className={`flex shrink-0 items-center justify-center rounded-[10px] border border-white/12 bg-white/8 font-black leading-none text-white transition hover:border-white/25 hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40 ${navigationMode === 'embedded' ? 'h-10 w-14 text-2xl' : 'h-11 w-16 text-3xl sm:h-12 sm:w-[4.5rem] sm:text-4xl'}`}>-</button>
-                          {scoreEditor?.matchId === match.matchId && scoreEditor.side === sideKey ? (
-                            <input
-                              ref={scoreEditorInputRef}
-                              type="number"
-                              min={0}
-                              max={snapshot.pointLimit}
-                              inputMode="numeric"
-                              value={scoreEditor.value}
-                              onChange={(event) => setScoreEditor((current) => current && current.matchId === match.matchId && current.side === sideKey ? { ...current, value: event.target.value.replace(/[^\d]/g, '') } : current)}
-                              onBlur={() => {
-                                if (cancelScoreEditorRef.current) {
-                                  cancelScoreEditorRef.current = false;
-                                  return;
-                                }
-                                applyManualScore(match.matchId, sideKey, scoreEditor.value);
-                              }}
-                              onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                  event.preventDefault();
-                                  applyManualScore(match.matchId, sideKey, scoreEditor.value);
-                                } else if (event.key === 'Escape') {
-                                  event.preventDefault();
-                                  cancelScoreEditorRef.current = true;
-                                  setScoreEditor(null);
-                                }
-                              }}
-                              className={`rounded-[10px] border border-[#5b4713] bg-[#18140d] px-1 py-0 text-center font-black tabular-nums text-[#ffd24a] outline-none ${navigationMode === 'embedded' ? 'h-10 w-12 text-lg' : 'h-11 w-12 text-xl sm:h-12 sm:w-14 sm:text-2xl'}`}
-                            />
-                          ) : (
-                            <button type="button" disabled={!isViewingEditableTour} onClick={() => handleScoreTap(match.matchId, sideKey, liveScore[sideKey])} className={`${navigationMode === 'embedded' ? 'h-10 w-9 text-2xl' : 'h-11 w-10 text-2xl sm:h-12 sm:w-11 sm:text-3xl'} text-center font-black tabular-nums text-[#ffd24a] disabled:cursor-default`} title="Двойной тап для ручного ввода">{liveScore[sideKey]}</button>
-                          )}
-                          <button type="button" disabled={!isViewingEditableTour} onClick={() => bumpScore(match.matchId, sideKey, 1)} className={`flex shrink-0 items-center justify-center border-2 border-[#5b4713] bg-[#ffd24a] font-black leading-none tracking-tight text-[#17130b] shadow-[0_3px_0_#3d2f0c] transition hover:bg-[#ffe07f] active:translate-y-px active:shadow-[0_1px_0_#3d2f0c] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none disabled:active:translate-y-0 ${navigationMode === 'embedded' ? 'h-14 w-24 rounded-xl text-4xl' : 'h-14 w-24 rounded-2xl text-4xl sm:h-16 sm:w-28 sm:rounded-2xl sm:text-5xl'}`}>+</button>
+                      ) : null}
+                    </div>
+
+                    <div className="flex min-w-[150px] items-center justify-center gap-3">
+                      {renderScore('team1')}
+                      <div className="text-5xl font-black text-white/35">-</div>
+                      {renderScore('team2')}
+                    </div>
+
+                    <div className="min-w-0 text-right">
+                      <div className="text-[clamp(16px,2.8vw,22px)] font-black leading-[1.02] text-white">
+                        {renderTeamNames(match.team2, 'right')}
+                      </div>
+                      {navigationMode === 'standalone' ? (
+                        <div className="mt-2 text-sm uppercase tracking-[0.16em] text-[#7d8498]">
+                          {formatTeamRoles(match.team2)}
                         </div>
-                      </section>
-                    );
-                  })}
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        disabled={!isViewingEditableTour}
+                        onClick={() => bumpScore(match.matchId, 'team1', -1)}
+                        className={`h-20 rounded-[20px] border text-4xl font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.minus}`}
+                      >
+                        −
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!isViewingEditableTour}
+                        onClick={() => bumpScore(match.matchId, 'team1', 1)}
+                        className={`h-28 rounded-[22px] border-2 text-5xl font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.plus}`}
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    <div className="h-20 w-px bg-white/12" />
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        disabled={!isViewingEditableTour}
+                        onClick={() => bumpScore(match.matchId, 'team2', -1)}
+                        className={`h-20 rounded-[20px] border text-4xl font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.minus}`}
+                      >
+                        −
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!isViewingEditableTour}
+                        onClick={() => bumpScore(match.matchId, 'team2', 1)}
+                        className={`h-28 rounded-[22px] border-2 text-5xl font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.plus}`}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </article>
             );

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyManualPairSwitch,
   applyKingPoint,
   applyTakeover,
   applyUndo,
@@ -32,6 +33,31 @@ describe('kotc-next core', () => {
 
     expect(rebuilt).toEqual(afterTakeover);
     expect(rebuilt.pairs.reduce((sum, pair) => sum + pair.gamesPlayed, 0)).toBe(4);
+  });
+
+  it('supports manual slot rotation without mutating score stats', () => {
+    const initial = {
+      ...getInitialKotcNextCourtState(4, 1, 11, 10, '2026-04-09T10:00:00.000Z'),
+      kingPairIdx: 0,
+      challengerPairIdx: 1,
+      queueOrder: [2, 3],
+      pairs: [
+        { pairIdx: 0, kingWins: 7, takeovers: 2, gamesPlayed: 11 },
+        { pairIdx: 1, kingWins: 5, takeovers: 1, gamesPlayed: 6 },
+        { pairIdx: 2, kingWins: 2, takeovers: 0, gamesPlayed: 7 },
+        { pairIdx: 3, kingWins: 0, takeovers: 1, gamesPlayed: 4 },
+      ],
+    };
+
+    const kingNext = applyManualPairSwitch(initial, 'king', 'next');
+    expect([kingNext.kingPairIdx, kingNext.challengerPairIdx, ...kingNext.queueOrder]).toEqual([1, 2, 3, 0]);
+    expect(kingNext.pairs).toEqual(initial.pairs);
+
+    const challengerPrev = applyManualPairSwitch(initial, 'challenger', 'prev');
+    expect(challengerPrev.kingPairIdx).toBe(0);
+    expect(challengerPrev.challengerPairIdx).toBe(3);
+    expect(challengerPrev.queueOrder).toEqual([1, 2]);
+    expect(challengerPrev.pairs).toEqual(initial.pairs);
   });
 
   it('seeds R2 zones deterministically from ranked court pairs', () => {

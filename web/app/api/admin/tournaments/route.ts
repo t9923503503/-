@@ -17,6 +17,7 @@ import {
   THAI_NEXT_JUDGE_DEFAULT_COURTS,
   THAI_NEXT_JUDGE_DEFAULT_TOUR_COUNT,
   THAI_STRUCTURAL_DRIFT_LOCKED_CODE,
+  inferThaiJudgeModuleFromSettings,
   isExactThaiTournamentFormat,
   normalizeThaiJudgeBootstrapSignature,
   normalizeThaiJudgeModule,
@@ -45,7 +46,7 @@ function normalizeThaiJudgeSettings(
 
   const fallbackModule = options.isNew
     ? THAI_JUDGE_MODULE_NEXT
-    : normalizeThaiJudgeModule(existingSettings.thaiJudgeModule, THAI_JUDGE_MODULE_LEGACY);
+    : inferThaiJudgeModuleFromSettings(existingSettings, THAI_JUDGE_MODULE_LEGACY);
   const normalizedModule = normalizeThaiJudgeModule(settings.thaiJudgeModule, fallbackModule);
   const courts =
     toFiniteInt(settings.courts) ??
@@ -187,8 +188,13 @@ export async function PUT(req: NextRequest) {
     const err = validateTournamentInput(input);
     if (err) return NextResponse.json({ error: err }, { status: 400 });
 
+    const before = existingTournament ?? (await getTournamentById(id));
+    const beforeStatus = String(before?.status || '').toLowerCase();
+    let thaiNextAutoReset: Awaited<
+      ReturnType<typeof import('@/lib/thai-live').resetThaiJudgeState>
+    > | null = null;
     const thaiNextLockError = validateThaiNextStructuralLock({
-      currentTournament: existingTournament,
+      currentTournament: before,
       nextTournament: {
         format: input.format,
         settings: input.settings,
@@ -196,24 +202,39 @@ export async function PUT(req: NextRequest) {
       },
     });
     if (thaiNextLockError) {
-      return structuralLockResponse(thaiNextLockError.message);
+      if (beforeStatus === 'open') {
+        const { resetThaiJudgeState } = await import('@/lib/thai-live');
+        thaiNextAutoReset = await resetThaiJudgeState(id);
+      } else {
+        return structuralLockResponse(thaiNextLockError.message);
+      }
     }
-    if (isExactThaiTournamentFormat(input.format) && input.settings.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT) {
-      const thaiNextError = await validateThaiNextSaveInput(input);
+    const nextInput =
+      thaiNextAutoReset && isExactThaiTournamentFormat(input.format)
+        ? {
+            ...input,
+            settings: {
+              ...input.settings,
+              thaiJudgeBootstrapSignature: null,
+            },
+          }
+        : input;
+
+    if (isExactThaiTournamentFormat(nextInput.format) && nextInput.settings.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT) {
+      const thaiNextError = await validateThaiNextSaveInput(nextInput);
       if (thaiNextError) return NextResponse.json({ error: thaiNextError }, { status: 400 });
     }
 
-    const before = await getTournamentById(id);
     const wasFinished = String(before?.status || '').toLowerCase() === 'finished';
-    const nowFinished = String(input.status || '').toLowerCase() === 'finished';
+    const nowFinished = String(nextInput.status || '').toLowerCase() === 'finished';
     if (!wasFinished && nowFinished) {
       const { isThaiNextTournamentForRatingSync, syncThaiStandingsToTournamentResultsOrThrowBadRequest } =
         await import('@/lib/thai-live/sync-tournament-results');
-      if (isThaiNextTournamentForRatingSync(input)) {
+      if (isThaiNextTournamentForRatingSync(nextInput)) {
         await syncThaiStandingsToTournamentResultsOrThrowBadRequest(id);
       }
     }
-    const updated = await updateTournament(id, input);
+    const updated = await updateTournament(id, nextInput);
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     await writeAuditLog({
@@ -223,8 +244,13 @@ export async function PUT(req: NextRequest) {
       entityType: 'tournament',
       entityId: id,
       beforeState: before,
-      afterState: updated,
-      reason: input.reason,
+      afterState: thaiNextAutoReset
+        ? {
+            tournament: updated,
+            thaiNextAutoReset,
+          }
+        : updated,
+      reason: nextInput.reason,
     });
     if (!wasFinished && nowFinished) {
       const { persistThaiSpectatorBoardSnapshot } = await import('@/lib/thai-spectator');

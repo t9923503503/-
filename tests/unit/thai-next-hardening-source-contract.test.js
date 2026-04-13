@@ -37,6 +37,8 @@ describe('Thai Next hardening source contract', () => {
 
     expect(adminRoute).toContain('THAI_STRUCTURAL_DRIFT_LOCKED_CODE');
     expect(adminRoute).toContain('validateThaiNextStructuralLock');
+    expect(adminRoute).toContain("beforeStatus === 'open'");
+    expect(adminRoute).toContain('resetThaiJudgeState');
     expect(config).toContain('Cannot change tournament format. Structural Thai Next state already initialized.');
     expect(config).toContain('Cannot downgrade judge module after Thai Next state initialization.');
     expect(config).toContain('structural Thai Next state already initialized; reset/recreate flow required');

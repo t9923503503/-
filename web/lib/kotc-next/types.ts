@@ -80,6 +80,25 @@ export interface KotcNextRaundHistoryEntry {
   standings: KotcNextPairLiveState[];
 }
 
+export interface KotcNextJudgeCourtNavItem {
+  courtId: string | null;
+  courtNo: number;
+  label: string;
+  judgeUrl: string | null;
+  isSelected: boolean;
+  isAvailable: boolean;
+}
+
+export interface KotcNextJudgeRoundNavItem {
+  roundId: string | null;
+  roundNo: number;
+  roundType: KotcNextRoundType;
+  label: string;
+  isSelected: boolean;
+  isAvailable: boolean;
+  courts: KotcNextJudgeCourtNavItem[];
+}
+
 export interface KotcNextJudgeSnapshot {
   tournamentId: string;
   tournamentName: string;
@@ -96,6 +115,8 @@ export interface KotcNextJudgeSnapshot {
   pinCode: string;
   pairs: KotcNextPairView[];
   liveState: KotcNextCourtLiveState;
+  roundNav: KotcNextJudgeRoundNavItem[];
+  courtNav: KotcNextJudgeCourtNavItem[];
   raundHistory: KotcNextRaundHistoryEntry[];
   canUndo: boolean; // true if there is at least one game event to undo
 }

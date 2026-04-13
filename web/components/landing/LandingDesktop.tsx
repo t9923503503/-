@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import LandingHeroAccessPanel from '@/components/landing/LandingHeroAccessPanel';
 import type { HomeStats } from '@/lib/queries';
 import type { LeaderboardEntry, Tournament } from '@/lib/types';
 import {
@@ -314,6 +315,7 @@ export default function LandingDesktop({ stats, topPlayers, tournaments }: Landi
           <div className="relative min-h-[420px] overflow-hidden md:min-h-[520px]">
             <div className={HERO_BACKDROP} aria-hidden />
             <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,10,15,0.12),rgba(10,10,15,0.22)_20%,rgba(10,10,15,0.7)_70%,rgba(10,10,15,0.92))]" />
+            <LandingHeroAccessPanel />
 
             <div className="relative flex min-h-[420px] flex-col items-center justify-end px-6 py-10 text-center md:min-h-[520px] md:justify-center md:px-12 md:py-16">
               <div className="rounded-full border border-brand/30 bg-brand/10 px-5 py-2 text-[11px] uppercase tracking-[0.32em] text-brand">

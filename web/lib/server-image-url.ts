@@ -10,6 +10,10 @@ function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
 }
 
+function isInlineImageDataUrl(value: string): boolean {
+  return /^data:image\/[a-z0-9.+-]+;base64,/i.test(value);
+}
+
 function toPublicAssetPath(url: string): string | null {
   if (!url.startsWith('/')) return null;
 
@@ -42,6 +46,7 @@ export function sanitizeServerImageUrl(value: unknown): string {
   const url = String(value ?? '').trim();
   if (!url) return '';
   if (isHttpUrl(url)) return url;
+  if (isInlineImageDataUrl(url)) return url;
 
   return toPublicAssetPath(url) ? url : '';
 }

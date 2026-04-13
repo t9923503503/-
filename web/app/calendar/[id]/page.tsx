@@ -22,6 +22,19 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+function encodeHtmlEntities(value: string): string {
+  return Array.from(value)
+    .map((char) => {
+      const code = char.codePointAt(0);
+      return code && code > 127 ? `&#${code};` : char;
+    })
+    .join('');
+}
+
+function EntityText({ text }: { text: string }) {
+  return <span dangerouslySetInnerHTML={{ __html: encodeHtmlEntities(text) }} />;
+}
+
 const FINISHED_TOURNAMENT_HERO_FALLBACKS: Record<string, string> = {
   'a19522bb-864e-4520-8182-61e035c27894':
     'https://lpvolley.ru/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/hero.jpg',
@@ -76,18 +89,18 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const tournament = await fetchTournamentById(id);
 
   if (!tournament) {
-    return { title: 'Турнир | Лютые Пляжники' };
+    return { title: 'Tournament | LPVOLLEY.RU' };
   }
 
   if (tournament.status === 'finished') {
     const dateLabel = formatDateLabel(tournament.date, tournament.time);
     const heroPhotoUrl = resolveFinishedHeroPhoto(tournament.id, tournament.photoUrl);
-    const description = `Итоги турнира · ${dateLabel}${tournament.location ? ` · ${tournament.location}` : ''}`;
+    const description = `Tournament results · ${dateLabel}${tournament.location ? ` · ${tournament.location}` : ''}`;
     return {
-      title: `Результаты: ${tournament.name} | Лютые Пляжники`,
+      title: `Results: ${tournament.name} | LPVOLLEY.RU`,
       description,
       openGraph: {
-        title: `Результаты: ${tournament.name}`,
+        title: `Results: ${tournament.name}`,
         description,
         type: 'website',
         locale: 'ru_RU',
@@ -102,17 +115,17 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   return {
-    title: `${tournament.name} | Лютые Пляжники`,
+    title: `${tournament.name} | LPVOLLEY.RU`,
     description:
       tournament.description?.slice(0, 160) ||
-      `Детали турнира ${tournament.name}. Статус записи, локация, участники и результаты.`,
+      `Tournament details for ${tournament.name}. Registration status, venue, participants and results.`,
     ...(absoluteLocalPosterForTournamentId(tournament.id)
       ? {
           openGraph: {
             title: tournament.name,
             description:
               tournament.description?.slice(0, 160) ||
-              `Детали турнира ${tournament.name}. Статус записи, локация, участники и результаты.`,
+              `Tournament details for ${tournament.name}. Registration status, venue, participants and results.`,
             type: 'website',
             locale: 'ru_RU',
             images: [
@@ -214,7 +227,7 @@ export default async function TournamentPage({ params }: PageProps) {
     <main className="mx-auto max-w-6xl px-4 py-10">
       <nav className="text-sm font-body text-text-secondary">
         <Link href="/calendar" className="transition-colors hover:text-brand">
-          ← Календарь
+          <EntityText text="← Календарь" />
         </Link>
       </nav>
 
@@ -227,7 +240,7 @@ export default async function TournamentPage({ params }: PageProps) {
                 statusPill(tournament.status),
               ].join(' ')}
             >
-              {statusLabel(tournament.status)}
+              <EntityText text={statusLabel(tournament.status)} />
             </div>
             <h1 className="mt-4 font-heading text-4xl tracking-wide text-text-primary md:text-5xl">
               {tournament.name}
@@ -249,10 +262,10 @@ export default async function TournamentPage({ params }: PageProps) {
                 className="rounded-xl border border-white/10 bg-black/20 px-4 py-3"
               >
                 <div className="text-[11px] font-body uppercase tracking-[0.18em] text-text-secondary">
-                  {item.label}
+                  <EntityText text={item.label} />
                 </div>
                 <div className="mt-1 text-lg font-body font-semibold text-text-primary">
-                  {item.value}
+                  <EntityText text={item.value} />
                 </div>
               </div>
             ))}
@@ -262,13 +275,13 @@ export default async function TournamentPage({ params }: PageProps) {
         <div className="mt-8 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-xl border border-white/10 bg-black/20 p-4">
             <div className="text-[11px] font-body uppercase tracking-[0.18em] text-text-secondary">
-              Формат
+              <EntityText text="Формат" />
             </div>
             <div className="mt-2 text-sm font-body text-text-primary">{tournament.format}</div>
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-4">
             <div className="text-[11px] font-body uppercase tracking-[0.18em] text-text-secondary">
-              Дивизион
+              <EntityText text="Дивизион" />
             </div>
             <div className="mt-2 text-sm font-body text-text-primary">
               {tournament.division || '—'}
@@ -276,7 +289,7 @@ export default async function TournamentPage({ params }: PageProps) {
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-4">
             <div className="text-[11px] font-body uppercase tracking-[0.18em] text-text-secondary">
-              Уровень
+              <EntityText text="Уровень" />
             </div>
             <div className="mt-2 text-sm font-body text-text-primary">
               {tournament.level || '—'}
@@ -284,10 +297,10 @@ export default async function TournamentPage({ params }: PageProps) {
           </div>
           <div className="rounded-xl border border-white/10 bg-black/20 p-4">
             <div className="text-[11px] font-body uppercase tracking-[0.18em] text-text-secondary">
-              Для участника
+              <EntityText text="Для участника" />
             </div>
             <div className="mt-2 text-sm font-body text-text-primary">
-              {statusHelpText(tournament.status)}
+              <EntityText text={statusHelpText(tournament.status)} />
             </div>
           </div>
         </div>
@@ -298,11 +311,11 @@ export default async function TournamentPage({ params }: PageProps) {
               href={cta.href}
               className="inline-flex items-center justify-center rounded-lg bg-brand px-6 py-3 font-body font-semibold text-white transition-colors hover:bg-brand-light"
             >
-              {cta.label}
+              <EntityText text={cta.label} />
             </Link>
           ) : (
             <span className="inline-flex cursor-not-allowed items-center justify-center rounded-lg border border-white/10 bg-white/5 px-6 py-3 font-body font-semibold text-text-primary/50">
-              Регистрация закрыта
+              <EntityText text="Регистрация закрыта" />
             </span>
           )}
 
@@ -311,7 +324,7 @@ export default async function TournamentPage({ params }: PageProps) {
               href={buildThaiSpectatorBoardUrl(tournament.id)}
               className="inline-flex items-center justify-center rounded-lg border border-sky-500/40 bg-sky-500/15 px-6 py-3 font-body font-semibold text-sky-100 transition-colors hover:border-sky-400/60 hover:bg-sky-500/25"
             >
-              Табло для зрителей
+              <EntityText text="Табло для зрителей" />
             </Link>
           ) : null}
 
@@ -319,7 +332,7 @@ export default async function TournamentPage({ params }: PageProps) {
             href={calendarUrl}
             className="inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/5 px-6 py-3 font-body font-semibold text-text-primary transition-colors hover:border-brand hover:text-brand"
           >
-            Добавить в календарь
+            <EntityText text="Добавить в календарь" />
           </a>
 
           {mapsUrl ? (
@@ -329,7 +342,7 @@ export default async function TournamentPage({ params }: PageProps) {
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/5 px-6 py-3 font-body font-semibold text-text-primary transition-colors hover:border-brand hover:text-brand"
             >
-              Открыть карту
+              <EntityText text="Открыть карту" />
             </a>
           ) : null}
 
@@ -337,16 +350,20 @@ export default async function TournamentPage({ params }: PageProps) {
             href={partnerUrl}
             className="inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/5 px-6 py-3 font-body font-semibold text-text-primary transition-colors hover:border-brand hover:text-brand"
           >
-            {Number(tournament.partnerRequestCount ?? 0) > 0
-              ? `Найти пару (${tournament.partnerRequestCount})`
-              : 'Найти пару'}
+            <EntityText
+              text={
+                Number(tournament.partnerRequestCount ?? 0) > 0
+                  ? `Найти пару (${tournament.partnerRequestCount})`
+                  : 'Найти пару'
+              }
+            />
           </Link>
         </div>
 
         {tournament.description ? (
           <div className="mt-8 rounded-xl border border-white/10 bg-black/20 p-5">
             <h2 className="font-heading text-2xl tracking-wide text-text-primary">
-              Афиша турнира
+              <EntityText text="Афиша турнира" />
             </h2>
             {localPosterSrc ? (
               <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
@@ -368,23 +385,23 @@ export default async function TournamentPage({ params }: PageProps) {
           <div className="mt-8 rounded-xl border border-white/10 bg-black/20 p-5">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-heading text-2xl tracking-wide text-text-primary">
-                Результаты
+                <EntityText text="Результаты" />
               </h2>
               <span className="text-xs font-body text-text-secondary">
-                {results.length} игроков
+                <EntityText text={`${results.length} игроков`} />
               </span>
             </div>
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-full text-left text-sm font-body">
                 <thead className="text-text-secondary">
                   <tr className="border-b border-white/10">
-                    <th className="pb-3 pr-4">Место</th>
-                    <th className="pb-3 pr-4">Игрок</th>
-                    <th className="pb-3 pr-4">Победы</th>
+                    <th className="pb-3 pr-4"><EntityText text="Место" /></th>
+                    <th className="pb-3 pr-4"><EntityText text="Игрок" /></th>
+                    <th className="pb-3 pr-4"><EntityText text="Победы" /></th>
                     <th className="pb-3 pr-4">Diff</th>
                     <th className="pb-3 pr-4">Balls</th>
                     <th className="pb-3" title="Очки в общий рейтинг за место">
-                      В рейтинг
+                      <EntityText text="В рейтинг" />
                     </th>
                   </tr>
                 </thead>
@@ -408,7 +425,7 @@ export default async function TournamentPage({ params }: PageProps) {
         {tournament.participantListText ? (
           <div className="mt-8 rounded-xl border border-white/10 bg-black/20 p-5">
             <h2 className="font-heading text-2xl tracking-wide text-text-primary">
-              Состав участников
+              <EntityText text="Состав участников" />
             </h2>
             <p className="mt-4 whitespace-pre-line text-sm font-body leading-7 text-text-primary/85">
               {tournament.participantListText}
@@ -420,7 +437,7 @@ export default async function TournamentPage({ params }: PageProps) {
       {related.length ? (
         <section className="mt-10">
           <h2 className="font-heading text-3xl tracking-wide text-text-primary">
-            Похожие турниры
+            <EntityText text="Похожие турниры" />
           </h2>
           <div className="mt-6">
             <CalendarGrid tournaments={related} />

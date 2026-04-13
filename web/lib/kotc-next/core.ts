@@ -24,6 +24,9 @@ export interface KotcNextUndoInput {
   events: Array<{ eventType: 'king_point' | 'takeover' }>;
 }
 
+export type KotcNextManualPairSlot = 'king' | 'challenger';
+export type KotcNextManualPairDirection = 'prev' | 'next';
+
 function compareStandings(a: KotcNextPairLiveState, b: KotcNextPairLiveState): number {
   if (b.kingWins !== a.kingWins) return b.kingWins - a.kingWins;
   if (b.takeovers !== a.takeovers) return b.takeovers - a.takeovers;
@@ -208,6 +211,36 @@ export function applyUndo(input: KotcNextUndoInput): KotcNextCourtLiveState {
   return input.events.reduce((current, event) => {
     return event.eventType === 'takeover' ? applyTakeover(current) : applyKingPoint(current);
   }, base);
+}
+
+export function applyManualPairSwitch(
+  state: KotcNextCourtLiveState,
+  slot: KotcNextManualPairSlot,
+  direction: KotcNextManualPairDirection,
+): KotcNextCourtLiveState {
+  assertPlayableState(state);
+
+  const step = direction === 'next' ? 1 : -1;
+  if (slot === 'king') {
+    const [kingPairIdx, challengerPairIdx, ...queueOrder] = rotateQueue(
+      [state.kingPairIdx, state.challengerPairIdx, ...state.queueOrder],
+      step,
+    );
+    return {
+      ...state,
+      kingPairIdx,
+      challengerPairIdx,
+      queueOrder,
+    };
+  }
+
+  const rotated = rotateQueue([state.challengerPairIdx, ...state.queueOrder], step);
+  const [challengerPairIdx, ...queueOrder] = rotated;
+  return {
+    ...state,
+    challengerPairIdx,
+    queueOrder,
+  };
 }
 
 function activeZoneKeys(courtCount: number): KotcNextZoneKey[] {

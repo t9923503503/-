@@ -171,6 +171,106 @@ probe_content_type_contains() {
   die "${label}: ${url} Content-Type is '${ct}' (expected '${needle}'). nginx may be serving HTML for CSS — see docs/nginx-lpvolley.example.conf"
 }
 
+probe_next_route_assets() {
+  local page_url="$1"
+  local label="$2"
+  local page_html
+  local origin
+  local asset
+  local code
+  local found_assets=0
+
+  page_html="$(
+    curl \
+      --silent \
+      --show-error \
+      --location \
+      --max-time "$HEALTHCHECK_TIMEOUT_SEC" \
+      "$page_url"
+  )" || die "${label}: failed to fetch ${page_url}"
+
+  origin="$(printf '%s' "$page_url" | sed -E 's#^(https?://[^/]+).*#\1#')"
+  [[ -n "$origin" ]] || die "${label}: failed to resolve origin for ${page_url}"
+
+  while IFS= read -r asset; do
+    [[ -n "$asset" ]] || continue
+    found_assets=1
+    code="$(
+      curl \
+        --silent \
+        --show-error \
+        --output /dev/null \
+        --location \
+        --max-time "$HEALTHCHECK_TIMEOUT_SEC" \
+        --write-out '%{http_code}' \
+        "${origin}${asset}"
+    )"
+
+    if [[ "$code" != "200" ]]; then
+      die "${label}: asset ${asset} returned ${code}"
+    fi
+  done < <(
+    printf '%s' "$page_html" \
+      | grep -oE '/_next/static/[^"'"'"'"'"'"'"'"'<>[:space:]]+' \
+      | sort -u
+  )
+
+  if [[ "$found_assets" != "1" ]]; then
+    die "${label}: no Next static assets were found in ${page_url}"
+  fi
+
+  log "${label} Next asset probe passed: ${page_url}"
+}
+
+probe_body_contains() {
+  local url="$1"
+  local needle="$2"
+  local label="$3"
+  local page_html
+
+  [[ -n "$url" && -n "$needle" ]] || return 0
+
+  page_html="$(
+    curl \
+      --silent \
+      --show-error \
+      --location \
+      --max-time "$HEALTHCHECK_TIMEOUT_SEC" \
+      "$url"
+  )" || die "${label}: failed to fetch ${url}"
+
+  if printf '%s' "$page_html" | grep -Fq -- "$needle"; then
+    log "${label} body contains expected marker: ${needle}"
+    return 0
+  fi
+
+  die "${label}: ${url} does not contain expected marker '${needle}'"
+}
+
+probe_body_not_contains() {
+  local url="$1"
+  local needle="$2"
+  local label="$3"
+  local page_html
+
+  [[ -n "$url" && -n "$needle" ]] || return 0
+
+  page_html="$(
+    curl \
+      --silent \
+      --show-error \
+      --location \
+      --max-time "$HEALTHCHECK_TIMEOUT_SEC" \
+      "$url"
+  )" || die "${label}: failed to fetch ${url}"
+
+  if printf '%s' "$page_html" | grep -Fq -- "$needle"; then
+    die "${label}: ${url} still contains forbidden marker '${needle}'"
+  fi
+
+  log "${label} body does not contain forbidden marker: ${needle}"
+}
+
 ensure_dir() {
   mkdir -p "$1"
 }
@@ -315,6 +415,10 @@ NEXT_HEALTHCHECK_CODES="${NEXT_HEALTHCHECK_CODES:-200,302,401}"
 PUBLIC_HEALTHCHECK_URL="${PUBLIC_HEALTHCHECK_URL:-}"
 PUBLIC_HEALTHCHECK_CODES="${PUBLIC_HEALTHCHECK_CODES:-200}"
 KOTC_CSS_HEALTHCHECK_URL="${KOTC_CSS_HEALTHCHECK_URL:-}"
+NEXT_ASSET_HEALTHCHECK_URLS="${NEXT_ASSET_HEALTHCHECK_URLS:-}"
+PUBLIC_BODY_HEALTHCHECK_URL="${PUBLIC_BODY_HEALTHCHECK_URL:-}"
+PUBLIC_BODY_HEALTHCHECK_CONTAINS="${PUBLIC_BODY_HEALTHCHECK_CONTAINS:-}"
+PUBLIC_BODY_HEALTHCHECK_NOT_CONTAINS="${PUBLIC_BODY_HEALTHCHECK_NOT_CONTAINS:-}"
 HEALTHCHECK_TIMEOUT_SEC="${HEALTHCHECK_TIMEOUT_SEC:-15}"
 
 while [[ $# -gt 0 ]]; do
@@ -428,7 +532,7 @@ esac
 
 require_cmd git bash npm rsync
 if [[ "$HEALTHCHECK_ENABLED" == "1" ]]; then
-  require_cmd curl
+  require_cmd curl grep sed sort
 fi
 if [[ "$RESTART_SERVICE" == "1" || "$HEALTHCHECK_ENABLED" == "1" ]]; then
   require_cmd systemctl
@@ -532,6 +636,18 @@ if [[ "$HEALTHCHECK_ENABLED" == "1" ]]; then
     probe_url "$PUBLIC_HEALTHCHECK_URL" "$PUBLIC_HEALTHCHECK_CODES" "Public"
   fi
   probe_content_type_contains "$KOTC_CSS_HEALTHCHECK_URL" 'text/css' 'Public KOTC CSS'
+
+  if [[ -n "$NEXT_ASSET_HEALTHCHECK_URLS" ]]; then
+    IFS=',' read -r -a next_asset_urls <<<"$NEXT_ASSET_HEALTHCHECK_URLS"
+    for page_url in "${next_asset_urls[@]}"; do
+      page_url="${page_url//[[:space:]]/}"
+      [[ -n "$page_url" ]] || continue
+      probe_next_route_assets "$page_url" "Next assets"
+    done
+  fi
+
+  probe_body_contains "$PUBLIC_BODY_HEALTHCHECK_URL" "$PUBLIC_BODY_HEALTHCHECK_CONTAINS" "Public body"
+  probe_body_not_contains "$PUBLIC_BODY_HEALTHCHECK_URL" "$PUBLIC_BODY_HEALTHCHECK_NOT_CONTAINS" "Public body"
 fi
 
 log "Deployment completed successfully"

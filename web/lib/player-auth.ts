@@ -52,15 +52,31 @@ export function getPlayerTokenFromCookieHeader(cookieHeader: string): string | n
   }
 }
 
-export function setPlayerCookie(response: NextResponse, token: string): void {
-  response.cookies.set(PLAYER_COOKIE, token, {
+export function setPlayerCookie(
+  response: NextResponse,
+  token: string,
+  opts?: { persistent?: boolean }
+): void {
+  const cookieOptions: {
+    domain: string;
+    path: string;
+    httpOnly: boolean;
+    secure: boolean;
+    sameSite: 'lax';
+    maxAge?: number;
+  } = {
     domain: '.lpvolley.ru',
     path: '/',
     httpOnly: true,
     secure: true,
     sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 7,
-  });
+  };
+
+  if (opts?.persistent !== false) {
+    cookieOptions.maxAge = 60 * 60 * 24 * 7;
+  }
+
+  response.cookies.set(PLAYER_COOKIE, token, cookieOptions);
 }
 
 export function clearPlayerCookie(response: NextResponse): void {

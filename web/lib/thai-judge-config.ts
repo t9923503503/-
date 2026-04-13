@@ -75,6 +75,20 @@ export function normalizeThaiJudgeBootstrapSignature(value: unknown): string | n
   return normalized || null;
 }
 
+export function inferThaiJudgeModuleFromSettings(
+  settings: Record<string, unknown> | null | undefined,
+  fallback: ThaiJudgeModule = THAI_JUDGE_MODULE_LEGACY,
+): ThaiJudgeModule {
+  const explicitValue = settings?.thaiJudgeModule;
+  if (explicitValue != null && String(explicitValue).trim()) {
+    return normalizeThaiJudgeModule(explicitValue, fallback);
+  }
+  if (normalizeThaiJudgeBootstrapSignature(settings?.thaiJudgeBootstrapSignature)) {
+    return THAI_JUDGE_MODULE_NEXT;
+  }
+  return fallback;
+}
+
 function stripRulesFromThaiJudgeSignature(signature: string): string {
   return signature.replace(/;rules=[^;]*/, '');
 }

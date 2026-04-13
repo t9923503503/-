@@ -28,9 +28,46 @@ export default async function CourtEntryPage() {
             Откройте турнир, который сейчас в процессе. Если активен только один Thai-турнир,
             вход откроется сразу автоматически.
           </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link
+              href="/sudyam/login?returnTo=%2Fcourt"
+              className="inline-flex items-center justify-center rounded-full border border-[#ffd24a]/45 bg-[#ffd24a]/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-[#ffd24a] transition hover:bg-[#ffd24a]/16"
+            >
+              Вход по PIN
+            </Link>
+            <Link
+              href="/judge-scoreboard"
+              className="inline-flex items-center justify-center rounded-full border border-sky-300/35 bg-sky-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-sky-100 transition hover:bg-sky-400/16"
+            >
+              Простое табло 1–4
+            </Link>
+          </div>
         </div>
 
         <div className="mt-6 space-y-4">
+          <Link
+            href="/judge-scoreboard"
+            className="block rounded-[24px] border border-[#2d5a8c] bg-[linear-gradient(180deg,rgba(9,20,37,0.98),rgba(9,14,26,0.98))] px-5 py-5 shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition hover:-translate-y-0.5 hover:border-sky-300/50"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.28em] text-sky-300/70">
+                  Simple Judge Board
+                </div>
+                <h2 className="mt-2 font-heading text-2xl uppercase tracking-[0.06em] text-white">
+                  Простое табло
+                </h2>
+                <div className="mt-2 max-w-2xl text-sm text-[#c7cada]/78">
+                  Быстрый ручной режим для турниров, где нужно только судейское табло на
+                  корты 1–4.
+                </div>
+              </div>
+              <span className="rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-sky-100">
+                1–4 корта
+              </span>
+            </div>
+          </Link>
+
           {tournaments.length ? (
             tournaments.map((tournament) => (
               <Link

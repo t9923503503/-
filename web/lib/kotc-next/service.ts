@@ -18,6 +18,7 @@ import {
   zoneLabel,
 } from '@/lib/kotc-next-config';
 import {
+  applyManualPairSwitch,
   applyKingPoint,
   applyTakeover,
   applyUndo,
@@ -32,7 +33,9 @@ import type {
   KotcNextCourtStatus,
   KotcNextFinalZoneResult,
   KotcNextGameEvent,
+  KotcNextJudgeCourtNavItem,
   KotcNextJudgeParams,
+  KotcNextJudgeRoundNavItem,
   KotcNextJudgeSnapshot,
   KotcNextOperatorActionName,
   KotcNextOperatorRoundView,
@@ -160,6 +163,20 @@ interface JudgeMutationResult {
 
 const ZONE_ORDER: KotcNextZoneKey[] = ['kin', 'advance', 'medium', 'lite'];
 
+interface PairSourcePlayer {
+  primaryPlayerId: string | null;
+  primaryPlayerName: string;
+  secondaryPlayerId: string | null;
+  secondaryPlayerName: string;
+  primaryGender: 'M' | 'W' | null;
+  secondaryGender: 'M' | 'W' | null;
+}
+
+interface R1PairSource {
+  courtNo: number;
+  pairs: PairSourcePlayer[];
+}
+
 export class KotcNextError extends Error {
   status: number;
   code: string | null;
@@ -227,6 +244,10 @@ function normalizeQueueOrder(value: unknown): number[] {
 
 function judgeUrlForPin(pin: string): string {
   return `/kotc-next/judge/${encodeURIComponent(pin)}`;
+}
+
+function judgeRoundLabel(roundNo: number): string {
+  return roundNo === 2 ? 'ТУР 2' : 'ТУР 1';
 }
 
 function buildCourtSeed(roundSeed: number, courtNo: number): number {
@@ -440,13 +461,31 @@ async function hydrateTournamentTx(
 ): Promise<{ tournament: TournamentRow; roster: RosterPlayer[] }> {
   const tournament = await loadTournamentTx(client, tournamentId, options);
   const roster = await listRosterTx(client, tournamentId);
+  const rawSettings =
+    tournament.settings && typeof tournament.settings === 'object' && !Array.isArray(tournament.settings)
+      ? tournament.settings
+      : {};
+  const ppcForCourts = Math.max(1, asInt(rawSettings.kotcPpc ?? rawSettings.ppc, tournament.params.ppc));
+  const derivedCourts = Math.max(1, Math.ceil(roster.length / Math.max(1, ppcForCourts * 2)));
+  const preferredCourts = asInt(rawSettings.courts, derivedCourts);
+  const paramsAligned = normalizeKotcAdminSettings({
+    ...rawSettings,
+    courts: preferredCourts,
+    kotcPpc: tournament.params.ppc,
+    kotcRaundCount: tournament.params.raundCount,
+    kotcRaundTimerMinutes: tournament.params.raundTimerMinutes,
+  });
   const variant = inferKotcVariant(tournament.division, roster);
   return {
     tournament: {
       ...tournament,
+      courts: paramsAligned.courts,
       variant,
       params: {
-        ...tournament.params,
+        courts: paramsAligned.courts,
+        ppc: paramsAligned.ppc,
+        raundCount: paramsAligned.raundCount,
+        raundTimerMinutes: paramsAligned.raundTimerMinutes,
         variant,
       },
     },
@@ -682,6 +721,7 @@ async function loadCourtByPinTx(
   pin: string,
   options?: { forUpdate?: boolean },
 ): Promise<{ tournament: TournamentRow; round: RoundRow; court: CourtRow }> {
+  const columns = await getTournamentTableColumnsTx(client);
   const res = await client.query(
     `
       SELECT
@@ -693,13 +733,13 @@ async function loadCourtByPinTx(
         t.format,
         t.division,
         t.status AS tournament_status,
-        t.settings,
-        COALESCE(t.kotc_judge_module, 'legacy') AS kotc_judge_module,
-        t.kotc_judge_bootstrap_sig,
-        COALESCE(t.kotc_raund_count, 2) AS kotc_raund_count,
-        COALESCE(t.kotc_raund_timer_minutes, 10) AS kotc_raund_timer_minutes,
-        COALESCE(t.kotc_ppc, 4) AS kotc_ppc,
-        COALESCE(t.courts, 1) AS courts,
+        ${columns.has('settings') ? 't.settings' : 'NULL::jsonb AS settings'},
+        ${columns.has('kotc_judge_module') ? "COALESCE(t.kotc_judge_module, 'legacy') AS kotc_judge_module" : 'NULL::text AS kotc_judge_module'},
+        ${columns.has('kotc_judge_bootstrap_sig') ? 't.kotc_judge_bootstrap_sig' : 'NULL::text AS kotc_judge_bootstrap_sig'},
+        ${columns.has('kotc_raund_count') ? 'COALESCE(t.kotc_raund_count, 2) AS kotc_raund_count' : 'NULL::int AS kotc_raund_count'},
+        ${columns.has('kotc_raund_timer_minutes') ? 'COALESCE(t.kotc_raund_timer_minutes, 10) AS kotc_raund_timer_minutes' : 'NULL::int AS kotc_raund_timer_minutes'},
+        ${columns.has('kotc_ppc') ? 'COALESCE(t.kotc_ppc, 4) AS kotc_ppc' : 'NULL::int AS kotc_ppc'},
+        ${columns.has('courts') ? 'COALESCE(t.courts, 1) AS courts' : 'NULL::int AS courts'},
         kr.id AS round_id,
         kr.round_no,
         kr.status AS round_status,
@@ -729,10 +769,16 @@ async function loadCourtByPinTx(
       : {};
   const paramsBase = normalizeKotcAdminSettings({
     ...rawSettings,
-    courts: asInt(row.courts, 1),
-    kotcPpc: asInt(row.kotc_ppc, 4),
-    kotcRaundCount: asInt(row.kotc_raund_count, 2),
-    kotcRaundTimerMinutes: asInt(row.kotc_raund_timer_minutes, 10),
+    courts: asInt(row.courts, asInt(rawSettings.courts, 1)),
+    kotcPpc: asInt(row.kotc_ppc, asInt(rawSettings.kotcPpc ?? rawSettings.ppc, 4)),
+    kotcRaundCount: asInt(
+      row.kotc_raund_count,
+      asInt(rawSettings.kotcRaundCount ?? rawSettings.raundCount, 2),
+    ),
+    kotcRaundTimerMinutes: asInt(
+      row.kotc_raund_timer_minutes,
+      asInt(rawSettings.kotcRaundTimerMinutes ?? rawSettings.raundTimerMinutes, 10),
+    ),
   });
   const tournament: TournamentRow = {
     id: String(row.tournament_id),
@@ -744,8 +790,12 @@ async function loadCourtByPinTx(
     division: String(row.division || ''),
     status: String(row.tournament_status || ''),
     settings: rawSettings,
-    kotcJudgeModule: normalizeKotcJudgeModule(row.kotc_judge_module, 'legacy'),
-    kotcJudgeBootstrapSig: normalizeKotcJudgeBootstrapSignature(row.kotc_judge_bootstrap_sig),
+    kotcJudgeModule: normalizeKotcJudgeModule(row.kotc_judge_module ?? rawSettings.kotcJudgeModule, 'legacy'),
+    kotcJudgeBootstrapSig: normalizeKotcJudgeBootstrapSignature(
+      row.kotc_judge_bootstrap_sig ??
+        rawSettings.kotcJudgeBootstrapSignature ??
+        rawSettings.kotcJudgeBootstrapSig,
+    ),
     courts: paramsBase.courts,
     params: {
       courts: paramsBase.courts,
@@ -757,14 +807,35 @@ async function loadCourtByPinTx(
     variant: 'MF',
   };
   const roster = await listRosterTx(client, tournament.id);
+  const rawSettingsAligned =
+    tournament.settings && typeof tournament.settings === 'object' && !Array.isArray(tournament.settings)
+      ? tournament.settings
+      : {};
+  const ppcForCourts = Math.max(
+    1,
+    asInt(rawSettingsAligned.kotcPpc ?? rawSettingsAligned.ppc, tournament.params.ppc),
+  );
+  const derivedCourts = Math.max(1, Math.ceil(roster.length / Math.max(1, ppcForCourts * 2)));
+  const preferredCourts = asInt(rawSettingsAligned.courts, derivedCourts);
+  const paramsAligned = normalizeKotcAdminSettings({
+    ...rawSettingsAligned,
+    courts: preferredCourts,
+    kotcPpc: tournament.params.ppc,
+    kotcRaundCount: tournament.params.raundCount,
+    kotcRaundTimerMinutes: tournament.params.raundTimerMinutes,
+  });
   const variant = inferKotcVariant(tournament.division, roster);
 
   return {
     tournament: {
       ...tournament,
+      courts: paramsAligned.courts,
       variant,
       params: {
-        ...tournament.params,
+        courts: paramsAligned.courts,
+        ppc: paramsAligned.ppc,
+        raundCount: paramsAligned.raundCount,
+        raundTimerMinutes: paramsAligned.raundTimerMinutes,
         variant,
       },
     },
@@ -915,6 +986,58 @@ function selectCurrentRaund(raunds: RaundRow[]): RaundRow | null {
   return raunds.find((row) => row.status === 'running') ?? raunds.find((row) => row.status === 'pending') ?? raunds[raunds.length - 1] ?? null;
 }
 
+async function loadJudgeRoundNavTx(
+  client: PoolClient,
+  tournamentId: string,
+  selectedRoundNo: number,
+  selectedCourtNo: number,
+  maxCourts: number,
+): Promise<{ roundNav: KotcNextJudgeRoundNavItem[]; courtNav: KotcNextJudgeCourtNavItem[] }> {
+  const rounds = await listRoundsTx(client, tournamentId);
+  const courtsByRoundNo = new Map<number, CourtRow[]>();
+
+  for (const round of rounds) {
+    courtsByRoundNo.set(round.roundNo, await listCourtsByRoundTx(client, round.roundId));
+  }
+
+  const roundNav: KotcNextJudgeRoundNavItem[] = [1, 2].map((roundNo) => {
+    const round = rounds.find((entry) => entry.roundNo === roundNo) ?? null;
+    const roundCourts = courtsByRoundNo.get(roundNo) ?? [];
+    const courts: KotcNextJudgeCourtNavItem[] = Array.from(
+      { length: Math.max(1, maxCourts) },
+      (_, index) => {
+        const courtNo = index + 1;
+        const court = roundCourts.find((entry) => entry.courtNo === courtNo) ?? null;
+        return {
+          courtId: court?.courtId ?? null,
+          courtNo,
+          label: court?.label ?? `K${courtNo}`,
+          judgeUrl: court ? judgeUrlForPin(court.pinCode) : null,
+          isSelected: roundNo === selectedRoundNo && courtNo === selectedCourtNo,
+          isAvailable: Boolean(court),
+        };
+      },
+    );
+
+    return {
+      roundId: round?.roundId ?? null,
+      roundNo,
+      roundType: roundTypeFromNo(roundNo),
+      label: judgeRoundLabel(roundNo),
+      isSelected: roundNo === selectedRoundNo,
+      isAvailable: Boolean(round),
+      courts,
+    };
+  });
+
+  const courtNav =
+    roundNav.find((entry) => entry.roundNo === selectedRoundNo)?.courts ??
+    roundNav[0]?.courts ??
+    [];
+
+  return { roundNav, courtNav };
+}
+
 function zoneFromCourtLabel(label: string): KotcNextZoneKey | null {
   const normalized = String(label || '').trim().toLowerCase();
   if (normalized === 'кин' || normalized === 'kin') return 'kin';
@@ -1027,6 +1150,137 @@ async function persistPlayerRoundStatsTx(client: PoolClient, round: RoundRow, su
       );
     }
   }
+}
+
+export async function resetKotcNextState(tournamentId: string): Promise<{
+  tournamentId: string;
+  removedRoundCount: number;
+  removedCourtCount: number;
+  removedPairCount: number;
+  removedRaundCount: number;
+  removedGameCount: number;
+  removedRaundStatCount: number;
+  removedPlayerRoundStatCount: number;
+  clearedSignature: boolean;
+}> {
+  const normalizedId = String(tournamentId || '').trim();
+  if (!normalizedId) {
+    throw new KotcNextError(400, 'tournamentId is required');
+  }
+
+  return withTransaction((client) => resetKotcNextStateTx(client, normalizedId));
+}
+
+async function resetKotcNextStateTx(
+  client: PoolClient,
+  tournamentId: string,
+): Promise<{
+  tournamentId: string;
+  removedRoundCount: number;
+  removedCourtCount: number;
+  removedPairCount: number;
+  removedRaundCount: number;
+  removedGameCount: number;
+  removedRaundStatCount: number;
+  removedPlayerRoundStatCount: number;
+  clearedSignature: boolean;
+}> {
+  const normalizedId = String(tournamentId || '').trim();
+  if (!normalizedId) {
+    throw new KotcNextError(400, 'tournamentId is required');
+  }
+
+  const tournament = await loadTournamentTx(client, normalizedId, { forUpdate: true });
+  const playerRoundStatsResult = await client.query(
+    `
+      DELETE FROM kotcn_player_round_stat stats
+      USING kotcn_round rounds
+      WHERE stats.round_id = rounds.id
+        AND rounds.tournament_id = $1
+    `,
+    [normalizedId],
+  );
+  const gamesResult = await client.query(
+    `
+      DELETE FROM kotcn_game games
+      USING kotcn_raund raunds, kotcn_court courts, kotcn_round rounds
+      WHERE games.raund_id = raunds.id
+        AND raunds.court_id = courts.id
+        AND courts.round_id = rounds.id
+        AND rounds.tournament_id = $1
+    `,
+    [normalizedId],
+  );
+  const raundStatsResult = await client.query(
+    `
+      DELETE FROM kotcn_raund_stat stats
+      USING kotcn_raund raunds, kotcn_court courts, kotcn_round rounds
+      WHERE stats.raund_id = raunds.id
+        AND raunds.court_id = courts.id
+        AND courts.round_id = rounds.id
+        AND rounds.tournament_id = $1
+    `,
+    [normalizedId],
+  );
+  const raundsResult = await client.query(
+    `
+      DELETE FROM kotcn_raund raunds
+      USING kotcn_court courts, kotcn_round rounds
+      WHERE raunds.court_id = courts.id
+        AND courts.round_id = rounds.id
+        AND rounds.tournament_id = $1
+    `,
+    [normalizedId],
+  );
+  const pairsResult = await client.query(
+    `
+      DELETE FROM kotcn_pair pairs
+      USING kotcn_court courts, kotcn_round rounds
+      WHERE pairs.court_id = courts.id
+        AND courts.round_id = rounds.id
+        AND rounds.tournament_id = $1
+    `,
+    [normalizedId],
+  );
+  const courtsResult = await client.query(
+    `
+      DELETE FROM kotcn_court courts
+      USING kotcn_round rounds
+      WHERE courts.round_id = rounds.id
+        AND rounds.tournament_id = $1
+    `,
+    [normalizedId],
+  );
+  const roundsResult = await client.query(`DELETE FROM kotcn_round WHERE tournament_id = $1`, [normalizedId]);
+
+  const settings = {
+    ...tournament.settings,
+    kotcJudgeBootstrapSignature: null,
+    kotcJudgeBootstrapSig: null,
+  };
+  await client.query(
+    `
+      UPDATE tournaments
+      SET settings = $2::jsonb,
+          kotc_judge_bootstrap_sig = NULL
+      WHERE id = $1
+    `,
+    [normalizedId, JSON.stringify(settings)],
+  );
+
+  return {
+    tournamentId: normalizedId,
+    removedRoundCount: roundsResult.rowCount ?? 0,
+    removedCourtCount: courtsResult.rowCount ?? 0,
+    removedPairCount: pairsResult.rowCount ?? 0,
+    removedRaundCount: raundsResult.rowCount ?? 0,
+    removedGameCount: gamesResult.rowCount ?? 0,
+    removedRaundStatCount: raundStatsResult.rowCount ?? 0,
+    removedPlayerRoundStatCount: playerRoundStatsResult.rowCount ?? 0,
+    clearedSignature: normalizeKotcJudgeBootstrapSignature(
+      tournament.settings.kotcJudgeBootstrapSignature ?? tournament.settings.kotcJudgeBootstrapSig,
+    ) != null || tournament.kotcJudgeBootstrapSig != null,
+  };
 }
 
 async function syncKotcNextResultsToTournamentResults(tournamentId: string): Promise<number> {
@@ -1161,40 +1415,77 @@ async function bootstrapRoundTx(
   }
 }
 
-function buildR1Pairs(
+function toPairSource(primary: RosterPlayer, secondary: RosterPlayer): PairSourcePlayer {
+  return {
+    primaryPlayerId: primary.playerId,
+    primaryPlayerName: primary.playerName,
+    secondaryPlayerId: secondary.playerId,
+    secondaryPlayerName: secondary.playerName,
+    primaryGender: primary.gender,
+    secondaryGender: secondary.gender,
+  };
+}
+
+function buildSequentialR1PairSources(
   roster: RosterPlayer[],
-  tournament: TournamentRow,
-): Array<{
-  courtNo: number;
-  pairs: Array<{
-    primaryPlayerId: string | null;
-    primaryPlayerName: string;
-    secondaryPlayerId: string | null;
-    secondaryPlayerName: string;
-    primaryGender: 'M' | 'W' | null;
-    secondaryGender: 'M' | 'W' | null;
-  }>;
-}> {
-  const playersPerCourt = tournament.params.ppc * 2;
-  return Array.from({ length: tournament.params.courts }, (_, courtIdx) => {
+  params: Pick<KotcNextJudgeParams, 'courts' | 'ppc'>,
+): R1PairSource[] {
+  const playersPerCourt = params.ppc * 2;
+  return Array.from({ length: params.courts }, (_, courtIdx) => {
     const courtPlayers = roster.slice(courtIdx * playersPerCourt, courtIdx * playersPerCourt + playersPerCourt);
-    const pairs = Array.from({ length: tournament.params.ppc }, (_, pairIdx) => {
+    const pairs = Array.from({ length: params.ppc }, (_, pairIdx) => {
       const primary = courtPlayers[pairIdx * 2];
       const secondary = courtPlayers[pairIdx * 2 + 1];
       if (!primary || !secondary) {
         throw new KotcNextError(422, 'Roster does not match KOTC Next pair capacity');
       }
-      return {
-        primaryPlayerId: primary.playerId,
-        primaryPlayerName: primary.playerName,
-        secondaryPlayerId: secondary.playerId,
-        secondaryPlayerName: secondary.playerName,
-        primaryGender: primary.gender,
-        secondaryGender: secondary.gender,
-      };
+      return toPairSource(primary, secondary);
     });
     return { courtNo: courtIdx + 1, pairs };
   });
+}
+
+function buildMixedR1PairSources(
+  roster: RosterPlayer[],
+  params: Pick<KotcNextJudgeParams, 'courts' | 'ppc'>,
+): R1PairSource[] {
+  const men = roster.filter((player) => player.gender === 'M');
+  const women = roster.filter((player) => player.gender === 'W');
+  const expectedPerGender = params.courts * params.ppc;
+
+  if (men.length !== expectedPerGender || women.length !== expectedPerGender) {
+    throw new KotcNextError(
+      422,
+      `Mixed KOTC requires ${expectedPerGender} men and ${expectedPerGender} women, received ${men.length} men and ${women.length} women`,
+    );
+  }
+
+  return Array.from({ length: params.courts }, (_, courtIdx) => {
+    const pairs = Array.from({ length: params.ppc }, (_, pairIdx) => {
+      const rosterIdx = courtIdx * params.ppc + pairIdx;
+      const primary = men[rosterIdx];
+      const secondary = women[rosterIdx];
+      if (!primary || !secondary) {
+        throw new KotcNextError(422, 'Roster does not match KOTC Next pair capacity');
+      }
+      return toPairSource(primary, secondary);
+    });
+    return { courtNo: courtIdx + 1, pairs };
+  });
+}
+
+export function buildKotcNextR1PairSources(
+  roster: RosterPlayer[],
+  options: Pick<KotcNextJudgeParams, 'courts' | 'ppc' | 'variant'>,
+): R1PairSource[] {
+  if (options.variant === 'MF') {
+    return buildMixedR1PairSources(roster, options);
+  }
+  return buildSequentialR1PairSources(roster, options);
+}
+
+function buildR1Pairs(roster: RosterPlayer[], tournament: TournamentRow): R1PairSource[] {
+  return buildKotcNextR1PairSources(roster, tournament.params);
 }
 
 function normalizeSeedDraftInput(input: unknown, draft: KotcNextR2SeedZone[]): KotcNextR2SeedZone[] {
@@ -1306,6 +1597,40 @@ async function recordEventTx(
   );
   await writeRaundStateTx(client, target.raund.raundId, nextState);
   await setCourtStatusTx(client, target.court.courtId, 'live');
+
+  return { tournamentId: target.tournament.id, pin, publishResults: false };
+}
+
+async function manualPairSwitchTx(
+  client: PoolClient,
+  pin: string,
+  raundNo: number,
+  slot: 'king' | 'challenger',
+  direction: 'prev' | 'next',
+): Promise<JudgeMutationResult> {
+  const target = await loadActionTargetTx(client, pin, raundNo);
+  if (target.raund.status === 'finished') {
+    throw new KotcNextError(423, 'Raund already finished');
+  }
+
+  const currentState = buildLiveState(target.pairs, target.raund, target.stats);
+  const nextState = applyManualPairSwitch(currentState, slot, direction);
+  await writeRaundStateTx(client, target.raund.raundId, nextState);
+  await setCourtStatusTx(client, target.court.courtId, nextState.status === 'running' ? 'live' : 'pending');
+
+  return { tournamentId: target.tournament.id, pin, publishResults: false };
+}
+
+async function resetRaundTx(client: PoolClient, pin: string, raundNo: number): Promise<JudgeMutationResult> {
+  const target = await loadActionTargetTx(client, pin, raundNo);
+  if (target.raund.status === 'finished') {
+    throw new KotcNextError(423, 'Finished raund cannot be reset from the judge screen');
+  }
+
+  await client.query(`DELETE FROM kotcn_game WHERE raund_id = $1`, [target.raund.raundId]);
+  const state = buildInitialState(target.tournament, target.round, target.court, raundNo, null);
+  await writeRaundStateTx(client, target.raund.raundId, state);
+  await setCourtStatusTx(client, target.court.courtId, 'pending');
 
   return { tournamentId: target.tournament.id, pin, publishResults: false };
 }
@@ -1469,6 +1794,13 @@ export async function getKotcNextJudgeSnapshotByPin(pin: string): Promise<KotcNe
     const { tournament, round, court } = await loadCourtByPinTx(client, normalizedPin);
     const pairs = await listPairsByCourtTx(client, court.courtId);
     const raunds = await listRaundsByCourtTx(client, court.courtId);
+    const { roundNav, courtNav } = await loadJudgeRoundNavTx(
+      client,
+      tournament.id,
+      round.roundNo,
+      court.courtNo,
+      tournament.params.courts,
+    );
     if (!raunds.length) {
       throw new KotcNextError(409, 'Court has no raunds');
     }
@@ -1502,6 +1834,8 @@ export async function getKotcNextJudgeSnapshotByPin(pin: string): Promise<KotcNe
       pinCode: court.pinCode,
       pairs: buildPairViews(pairs),
       liveState: buildLiveState(pairs, currentRaund, currentStats),
+      roundNav,
+      courtNav,
       raundHistory,
       canUndo: currentEvents.length > 0 && currentRaund.status !== 'finished',
     };
@@ -1535,6 +1869,39 @@ export async function recordKotcNextTakeover(pin: string, raundNo: number): Prom
   if (!normalizedRaundNo) throw new KotcNextError(400, 'raundNo is required');
 
   await withTransaction((client) => recordEventTx(client, normalizedPin, normalizedRaundNo, 'takeover'));
+  return getKotcNextJudgeSnapshotByPin(normalizedPin);
+}
+
+export async function manualRotateKotcNextPairs(
+  pin: string,
+  raundNo: number,
+  slot: 'king' | 'challenger',
+  direction: 'prev' | 'next',
+): Promise<KotcNextJudgeSnapshot> {
+  const normalizedPin = String(pin || '').trim().toUpperCase();
+  const normalizedRaundNo = Math.max(1, asInt(raundNo, 0));
+  if (!normalizedPin) throw new KotcNextError(400, 'pin is required');
+  if (!normalizedRaundNo) throw new KotcNextError(400, 'raundNo is required');
+  if (slot !== 'king' && slot !== 'challenger') {
+    throw new KotcNextError(400, 'slot must be king or challenger');
+  }
+  if (direction !== 'prev' && direction !== 'next') {
+    throw new KotcNextError(400, 'direction must be prev or next');
+  }
+
+  await withTransaction((client) =>
+    manualPairSwitchTx(client, normalizedPin, normalizedRaundNo, slot, direction),
+  );
+  return getKotcNextJudgeSnapshotByPin(normalizedPin);
+}
+
+export async function resetKotcNextRaund(pin: string, raundNo: number): Promise<KotcNextJudgeSnapshot> {
+  const normalizedPin = String(pin || '').trim().toUpperCase();
+  const normalizedRaundNo = Math.max(1, asInt(raundNo, 0));
+  if (!normalizedPin) throw new KotcNextError(400, 'pin is required');
+  if (!normalizedRaundNo) throw new KotcNextError(400, 'raundNo is required');
+
+  await withTransaction((client) => resetRaundTx(client, normalizedPin, normalizedRaundNo));
   return getKotcNextJudgeSnapshotByPin(normalizedPin);
 }
 

@@ -49,9 +49,14 @@ describe('Thai judge v2 source contract', () => {
     expect(tournamentWorkspace).toContain('/api/thai/judge/tournament/');
     expect(tournamentWorkspace).toContain('ThaiJudgeWorkspace');
     expect(tournamentWorkspace).toContain("navigationMode=\"embedded\"");
+    expect(tournamentWorkspace).toContain('usePathname');
+    expect(tournamentWorkspace).toContain('buildThaiTournamentSelectionUrl');
+    expect(tournamentWorkspace).toContain('resolveCourtSelectionHref');
     expect(tournamentWorkspace).toContain('snapshot.rounds.map');
     expect(tournamentWorkspace).toContain('selectedRound.courts.map');
     expect(tournamentWorkspace).toContain('switchSelection');
+    expect(tournamentWorkspace).toContain('court.judgeUrl');
+    expect(tournamentWorkspace).toContain('/court/tournament/${encodeURIComponent(tournamentId)}?');
 
     expect(types).toContain('export interface ThaiJudgeCourtNavItem');
     expect(types).toContain('export interface ThaiJudgeRoundNavItem');

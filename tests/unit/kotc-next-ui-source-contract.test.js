@@ -21,6 +21,7 @@ describe('KOTC Next UI source contract', () => {
     expect(workspace).toContain('KotcNextOperatorPanel');
     expect(workspace).toContain("onAction: (action) => void runKotcAction(action)");
     expect(panel).toContain('KotcNextR2SeedEditor');
+    expect(panel).toContain('operatorState?.canBootstrapR1');
     expect(panel).toContain("actions.onAction('finish_r1')");
     expect(panel).toContain("actions.onAction('finish_r2')");
     expect(panel).toContain('/live/kotcn/');
@@ -43,5 +44,13 @@ describe('KOTC Next UI source contract', () => {
     expect(spectatorPage).toContain('KotcNextSpectatorBoard');
     expect(spectatorBoard).toContain('router.refresh');
     expect(spectatorLib).toContain('sanitizeKotcNextOperatorStateForSpectators');
+  });
+
+  it('maps bootstrap refresh errors to their own status instead of generic 500s', () => {
+    const sudyamRoute = read('web/app/api/sudyam/kotcn/route.ts');
+
+    expect(sudyamRoute).toContain('SudyamBootstrapError');
+    expect(sudyamRoute).toContain('error instanceof SudyamBootstrapError');
+    expect(sudyamRoute).toContain('status: error.status');
   });
 });

@@ -6,7 +6,7 @@ import { createPlayerToken, setPlayerCookie } from '@/lib/player-auth';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-  let body: { email?: string; password?: string };
+  let body: { email?: string; password?: string; remember?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -14,6 +14,7 @@ export async function POST(req: Request) {
   }
 
   const { email, password } = body;
+  const remember = body.remember !== false;
 
   if (!email || !password) {
     return NextResponse.json({ error: 'Введите email и пароль' }, { status: 400 });
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
       success: true,
       user: { id: user.id, name: user.full_name },
     });
-    setPlayerCookie(response, token);
+    setPlayerCookie(response, token, { persistent: remember });
     return response;
   } catch (err) {
     console.error('[api/auth/login]', err);

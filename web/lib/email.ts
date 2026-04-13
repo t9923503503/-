@@ -45,7 +45,10 @@ export async function sendAppEmail({
 }
 
 export async function sendResetEmail(to: string, token: string): Promise<void> {
-  const resetUrl = `https://lpvolley.ru/play/index.html?route=reset&token=${token}`;
+  const siteUrl = String(
+    process.env.SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://lpvolley.ru'
+  ).replace(/\/+$/, '');
+  const resetUrl = `${siteUrl}/reset-password?token=${encodeURIComponent(token)}`;
   const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@lpvolley.ru';
 
   await getTransporter().sendMail({

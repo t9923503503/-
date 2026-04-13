@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireLiveReadAccess } from '@/lib/kotc-live';
-import { resolveSudyamBootstrap } from '@/lib/sudyam-bootstrap';
+import { SudyamBootstrapError, resolveSudyamBootstrap } from '@/lib/sudyam-bootstrap';
 import { isKotcNextError, runKotcNextOperatorAction } from '@/lib/kotc-next';
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +39,9 @@ export async function POST(req: NextRequest) {
       r2SeedDraft: result.r2SeedDraft,
     });
   } catch (error) {
+    if (error instanceof SudyamBootstrapError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     if (isKotcNextError(error)) {
       const body = error.code ? { error: error.message, code: error.code } : { error: error.message };
       return NextResponse.json(body, { status: error.status });

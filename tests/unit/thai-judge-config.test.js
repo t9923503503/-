@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  inferThaiJudgeModuleFromSettings,
   THAI_JUDGE_MODULE_LEGACY,
   THAI_JUDGE_MODULE_NEXT,
   THAI_STRUCTURAL_DRIFT_LOCKED_CODE,
@@ -31,6 +32,12 @@ describe('thai judge config helpers', () => {
     expect(THAI_STRUCTURAL_DRIFT_LOCKED_CODE).toBe('STRUCTURAL_DRIFT_LOCKED');
     expect(normalizeThaiJudgeBootstrapSignature('  sig:v1  ')).toBe('sig:v1');
     expect(normalizeThaiJudgeBootstrapSignature('')).toBeNull();
+    expect(
+      inferThaiJudgeModuleFromSettings({
+        thaiJudgeBootstrapSignature: 'variant=MF;courts=1;tours=4;players=p1,p2',
+      }),
+    ).toBe(THAI_JUDGE_MODULE_NEXT);
+    expect(inferThaiJudgeModuleFromSettings({ thaiJudgeModule: 'legacy' })).toBe(THAI_JUDGE_MODULE_LEGACY);
   });
 
   it('builds a stable structural signature from settings and ordered main roster', () => {

@@ -26,4 +26,14 @@ describe('KOTC Next schema compatibility source contract', () => {
     expect(source).toContain('row.kotc_judge_module ?? rawSettings.kotcJudgeModule');
     expect(source).toContain('rawSettings.kotcJudgeBootstrapSignature');
   });
+
+  it('loads KOTC Next judge court snapshots without assuming dedicated tournaments columns exist', () => {
+    const source = read('web/lib/kotc-next/service.ts');
+
+    expect(source).toContain('async function loadCourtByPinTx(');
+    expect(source).toContain("const columns = await getTournamentTableColumnsTx(client);");
+    expect(source).toContain("${columns.has('courts') ? 'COALESCE(t.courts, 1) AS courts' : 'NULL::int AS courts'}");
+    expect(source).toContain("courts: asInt(row.courts, asInt(rawSettings.courts, 1))");
+    expect(source).toContain('row.kotc_judge_bootstrap_sig ??');
+  });
 });
