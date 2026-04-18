@@ -16,6 +16,21 @@ export async function POST(
     const { id } = await params;
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+
+    const VALID_ZONES = ['hard', 'advance', 'medium', 'light'];
+    if (
+      !Array.isArray(body.zones) ||
+      body.zones.length === 0 ||
+      body.zones.some(
+        (z: unknown) =>
+          typeof z !== 'object' ||
+          z === null ||
+          !VALID_ZONES.includes(String((z as Record<string, unknown>).zone || '')),
+      )
+    ) {
+      return NextResponse.json({ error: 'Invalid zones payload' }, { status: 400 });
+    }
+
     const result = await confirmThaiR2Seed(id, body.zones);
     return NextResponse.json(result);
   } catch (error) {

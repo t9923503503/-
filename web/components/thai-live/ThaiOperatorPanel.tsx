@@ -58,6 +58,16 @@ const RESHUFFLE_R1_CONFIRM_MESSAGE =
   'Делайте это только если ни один тур ещё не подтверждён судьями.\n\n' +
   'Продолжить?';
 
+const FINISH_R1_CONFIRM_MESSAGE =
+  'Завершить R1?\n\n' +
+  'Все туры R1 будут закрыты. Это действие нельзя отменить.\n\n' +
+  'Продолжить?';
+
+const FINISH_R2_CONFIRM_MESSAGE =
+  'Завершить R2?\n\n' +
+  'Турнир будет завершён в судейской системе. Это действие нельзя отменить.\n\n' +
+  'Продолжить?';
+
 export function ThaiOperatorPanel({
   data,
   bootstrap,
@@ -78,6 +88,7 @@ export function ThaiOperatorPanel({
   };
   actions: {
     pendingAction: ThaiOperatorPanelActionName | null;
+    anyLoading: boolean;
     onAction: (action: ThaiOperatorPanelActionName) => void;
     r2SeedDraft: ThaiR2SeedDraft | null;
     r2SeedLoading: boolean;
@@ -104,7 +115,7 @@ export function ThaiOperatorPanel({
     Boolean(judgeState) &&
     Boolean(operatorState) &&
     (!blockedReason || isFinishedTournamentRecord);
-  const thaiJudgeHref = judgeState?.courts[0]?.judgeUrl || data.thaiJudgeLegacyUrl || '#';
+  const thaiJudgeHref = judgeState?.courts[0]?.judgeUrl || data.thaiJudgeLegacyUrl || null;
   const thaiTournamentHref = isNextModule ? buildThaiTournamentJudgeUrl(data.tournamentId) : thaiJudgeHref;
   const isBootstrapPending = isNextModule && Boolean(data.thaiJudgeNeedsBootstrap) && !blockedReason;
   const rosterMode =
@@ -246,9 +257,9 @@ export function ThaiOperatorPanel({
         ) : null}
 
         <div className="mt-4 flex flex-wrap gap-3">
-          {isReady || !isNextModule ? (
+          {thaiTournamentHref && (isReady || !isNextModule) ? (
             <a
-              href={thaiTournamentHref}
+              href={thaiTournamentHref ?? undefined}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex rounded-full border border-[#5b4713] bg-[#ffd24a] px-4 py-2 text-sm font-semibold text-[#17130b] transition hover:bg-[#ffe07f]"
@@ -256,7 +267,7 @@ export function ThaiOperatorPanel({
               {isNextModule ? 'Открыть турнир' : 'Open Thai legacy'}
             </a>
           ) : null}
-          {isReady && isNextModule ? (
+          {isReady && isNextModule && thaiJudgeHref ? (
             <a
               href={thaiJudgeHref}
               target="_blank"
@@ -289,9 +300,10 @@ export function ThaiOperatorPanel({
               type="button"
               onClick={() => bootstrap.onConfirmPreview()}
               disabled={bootstrap.phase === 'bootstrapping'}
+              aria-busy={bootstrap.phase === 'bootstrapping'}
               className="inline-flex rounded-full border border-[#5b4713] bg-[#ffd24a] px-4 py-2 text-sm font-semibold text-[#17130b] transition hover:bg-[#ffe07f] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {bootstrap.phase === 'bootstrapping' ? '\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u0435\u043C R1...' : '\u25B6 \u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C R1'}
+              {bootstrap.phase === 'bootstrapping' ? 'Запускаем R1...' : '▶ Запустить R1'}
             </button>
           ) : null}
           {isBootstrapPending && !isManualRosterMode ? (
@@ -299,6 +311,7 @@ export function ThaiOperatorPanel({
               type="button"
               onClick={bootstrap.onOpenPreview}
               disabled={bootstrap.drawPreviewLoading}
+              aria-busy={bootstrap.drawPreviewLoading}
               className="inline-flex rounded-full border border-[#5b4713] bg-[#ffd24a] px-4 py-2 text-sm font-semibold text-[#17130b] transition hover:bg-[#ffe07f] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {bootstrap.drawPreviewLoading ? 'Готовим жеребьёвку...' : '▶ Жеребьёвка R1'}
@@ -307,8 +320,12 @@ export function ThaiOperatorPanel({
           {operatorState?.canFinishR1 ? (
             <button
               type="button"
-              onClick={() => actions.onAction('finish_r1')}
-              disabled={actions.pendingAction === 'finish_r1'}
+              onClick={() => {
+                if (typeof window !== 'undefined' && !window.confirm(FINISH_R1_CONFIRM_MESSAGE)) return;
+                actions.onAction('finish_r1');
+              }}
+              disabled={actions.anyLoading}
+              aria-busy={actions.pendingAction === 'finish_r1'}
               className="inline-flex rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-100 transition hover:border-red-300/50 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {actions.pendingAction === 'finish_r1' ? 'Завершаем R1...' : '■ Завершить R1'}
@@ -318,7 +335,8 @@ export function ThaiOperatorPanel({
             <button
               type="button"
               onClick={actions.onOpenR2Seed}
-              disabled={actions.r2SeedLoading}
+              disabled={actions.anyLoading}
+              aria-busy={actions.r2SeedLoading}
               className="inline-flex rounded-full border border-[#5b4713] bg-[#ffd24a] px-4 py-2 text-sm font-semibold text-[#17130b] transition hover:bg-[#ffe07f] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {actions.r2SeedLoading ? 'Готовим R2...' : '▶ Запустить R2'}
@@ -327,8 +345,12 @@ export function ThaiOperatorPanel({
           {operatorState?.canFinishR2 ? (
             <button
               type="button"
-              onClick={() => actions.onAction('finish_r2')}
-              disabled={actions.pendingAction === 'finish_r2'}
+              onClick={() => {
+                if (typeof window !== 'undefined' && !window.confirm(FINISH_R2_CONFIRM_MESSAGE)) return;
+                actions.onAction('finish_r2');
+              }}
+              disabled={actions.anyLoading}
+              aria-busy={actions.pendingAction === 'finish_r2'}
               className="inline-flex rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-100 transition hover:border-red-300/50 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {actions.pendingAction === 'finish_r2' ? 'Завершаем R2...' : '■ Завершить R2'}
@@ -566,7 +588,7 @@ export function ThaiOperatorPanel({
                       if (typeof window !== 'undefined' && !window.confirm(RESHUFFLE_R1_CONFIRM_MESSAGE)) return;
                       actions.onAction('reshuffle_r1');
                     }}
-                    disabled={actions.pendingAction === 'reshuffle_r1'}
+                    disabled={actions.anyLoading}
                     className="inline-flex shrink-0 rounded-full border border-amber-500/35 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-100 transition hover:border-amber-400/50 hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {actions.pendingAction === 'reshuffle_r1' ? 'Перемешиваем...' : 'Перемешать R1'}

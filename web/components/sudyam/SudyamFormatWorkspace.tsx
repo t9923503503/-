@@ -159,6 +159,7 @@ function renderThaiSudyamOverview(
   },
   actions: {
     pendingAction: ThaiActionName | null;
+    anyLoading: boolean;
     onAction: (action: ThaiActionName) => void;
     r2SeedDraft: ThaiR2SeedDraft | null;
     r2SeedLoading: boolean;
@@ -191,6 +192,7 @@ function renderStaticFormatSummary(
     void kotcBaseUrl;
     return renderThaiSudyamOverview(data, bootstrap, {
       pendingAction: null,
+      anyLoading: false,
       onAction: () => {},
       r2SeedDraft: null,
       r2SeedLoading: false,
@@ -575,6 +577,7 @@ export function SudyamFormatWorkspace({
             onConfirmPreview: (seed) => void bootstrapThaiJudge(seed),
           }, {
             pendingAction: pendingThaiAction,
+            anyLoading: pendingThaiAction !== null || r2SeedLoading,
             onAction: (action) => {
               void runThaiAction(action);
             },

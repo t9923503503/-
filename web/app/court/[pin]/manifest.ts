@@ -11,9 +11,9 @@ export default async function manifest({
 
   return {
     id: startUrl,
-    name: `LPVOLLEY Thai Judge ${String(pin || '').trim().toUpperCase()}`,
-    short_name: `Thai ${String(pin || '').trim().toUpperCase()}`,
-    description: 'Thai judge workspace with local draft restore for beach courts.',
+    name: `LPVOLLEY Судья ${String(pin || '').trim().toUpperCase()}`,
+    short_name: `Судья ${String(pin || '').trim().toUpperCase()}`,
+    description: 'Судейский экран LPVOLLEY для активного PIN корта.',
     start_url: startUrl,
     scope: `/court/${normalizedPin}`,
     display: 'standalone',

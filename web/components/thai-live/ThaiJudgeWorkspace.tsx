@@ -31,6 +31,13 @@ interface ScoreEditorState {
   value: string;
 }
 
+interface ScoreHistoryState {
+  matchId: string;
+  side: 'team1' | 'team2';
+  previousValue: number;
+  nextValue: number;
+}
+
 function toneClasses(tone: ToastTone): string {
   if (tone === 'success') return 'border-emerald-400/30 bg-emerald-500/15 text-emerald-100';
   if (tone === 'error') return 'border-red-400/30 bg-red-500/15 text-red-100';
@@ -120,6 +127,19 @@ function resolveRoundTabLabel(round: ThaiJudgeSnapshot['roundNav'][number]): str
   return courtKey ? `${roundKey} ${courtKey}` : roundKey;
 }
 
+function formatSnapshotFreshness(lastUpdatedAt: string, nowMs: number): string {
+  const parsed = Date.parse(lastUpdatedAt);
+  if (!Number.isFinite(parsed)) return 'только что';
+  const diffMs = Math.max(0, nowMs - parsed);
+  const diffSec = Math.max(0, Math.round(diffMs / 1000));
+  if (diffSec < 5) return 'только что';
+  if (diffSec < 60) return `${diffSec} сек назад`;
+  const diffMin = Math.max(1, Math.round(diffSec / 60));
+  if (diffMin < 60) return `${diffMin} мин назад`;
+  const diffHours = Math.max(1, Math.round(diffMin / 60));
+  return `${diffHours} ч назад`;
+}
+
 /**
  * Thai judge раньше регистрировал отдельный SW (`thai-judge-sw.js`), который
  * перехватывал `/_next/static/*`. На Safari/iPad WebKit это давало «страницу без стилей»
@@ -181,7 +201,10 @@ export function ThaiJudgeWorkspace({
   const [toast, setToast] = useState<ToastState | null>(null);
   const [selectedTourNo, setSelectedTourNo] = useState(initialSnapshot.currentTourNo);
   const [scoreEditor, setScoreEditor] = useState<ScoreEditorState | null>(null);
-  const [standingsOpen, setStandingsOpen] = useState(true);
+  const [standingsOpen, setStandingsOpen] = useState(false);
+  const [scoreHistory, setScoreHistory] = useState<ScoreHistoryState | null>(null);
+  const [confirmCooldownUntil, setConfirmCooldownUntil] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const scoreTapRef = useRef<Record<string, number>>({});
   const scoreEditorInputRef = useRef<HTMLInputElement | null>(null);
   const cancelScoreEditorRef = useRef(false);
@@ -209,6 +232,8 @@ export function ThaiJudgeWorkspace({
   useEffect(() => {
     setSnapshot(initialSnapshot);
     setSelectedTourNo(initialSnapshot.currentTourNo);
+    setScoreHistory(null);
+    setConfirmCooldownUntil(0);
   }, [initialSnapshot]);
 
   useEffect(() => {
@@ -290,27 +315,70 @@ export function ThaiJudgeWorkspace({
     scoreEditorInputRef.current?.select();
   }, [scoreEditor]);
 
-  const scoreErrors = useMemo(() => {
-    if (!isViewingEditableTour) return [];
-    return selectedMatches
-      .map((match) => {
-        const score = scores[match.matchId] ?? {
-          team1: Number(match.team1Score ?? 0),
-          team2: Number(match.team2Score ?? 0),
-        };
-        return validateMatchScore(match, score, snapshot.pointLimit);
-      })
-      .filter((value): value is string => Boolean(value));
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const scoreErrorsByMatch = useMemo(() => {
+    if (!isViewingEditableTour) return new Map<string, string>();
+    return new Map(
+      selectedMatches
+        .map((match) => {
+          const score = scores[match.matchId] ?? {
+            team1: Number(match.team1Score ?? 0),
+            team2: Number(match.team2Score ?? 0),
+          };
+          return [match.matchId, validateMatchScore(match, score, snapshot.pointLimit)] as const;
+        })
+        .filter((entry): entry is readonly [string, string] => Boolean(entry[1])),
+    );
   }, [isViewingEditableTour, scores, selectedMatches, snapshot.pointLimit]);
 
+  const scoreErrors = useMemo(() => [...scoreErrorsByMatch.values()], [scoreErrorsByMatch]);
+  const missingMatches = useMemo(
+    () => selectedMatches.filter((match) => !touchedMatches[match.matchId]),
+    [selectedMatches, touchedMatches],
+  );
   const touchedCount = useMemo(() => Object.keys(touchedMatches).length, [touchedMatches]);
+  const confirmBlockedReason = useMemo(() => {
+    if (submitting) return 'Фиксируем тур...';
+    if (confirmCooldownUntil > nowMs) return 'Тур уже отправлен. Дождитесь обновления экрана.';
+    if (!online) return 'Нет сети. Черновик сохранён на этом телефоне.';
+    if (!selectedTour) return 'Тур не найден.';
+    if (!activeSnapshot) return 'Корт ждёт следующий этап.';
+    if (!isViewingEditableTour) {
+      if (selectedTour.status === 'confirmed') return `Тур T${selectedTour.tourNo} уже подтверждён.`;
+      return 'Сейчас доступен другой тур.';
+    }
+    if (selectedMatches.length !== 2) return 'В туре должны быть доступны два матча.';
+    if (missingMatches.length) {
+      return `Введите счёт для ${missingMatches.map((match) => `матча ${match.matchNo}`).join(' и ')}.`;
+    }
+    if (scoreErrors.length) return scoreErrors[0];
+    return null;
+  }, [
+    activeSnapshot,
+    confirmCooldownUntil,
+    isViewingEditableTour,
+    missingMatches,
+    nowMs,
+    online,
+    scoreErrors,
+    selectedMatches.length,
+    selectedTour,
+    submitting,
+  ]);
   const canConfirm = Boolean(
     isViewingEditableTour &&
       selectedMatches.length === 2 &&
       touchedCount === 2 &&
       scoreErrors.length === 0 &&
-      !submitting,
+      !submitting &&
+      online &&
+      confirmCooldownUntil <= nowMs,
   );
+  const hasDraftScores = touchedCount > 0;
 
   function writeDraft(nextScores: Record<string, { team1: number; team2: number }>) {
     if (!draftKey || typeof window === 'undefined') return;
@@ -322,12 +390,19 @@ export function ThaiJudgeWorkspace({
     playBeep();
     setScores((previous) => {
       const current = previous[matchId] ?? { team1: 0, team2: 0 };
+      const nextValue = clampThaiJudgeScore(current[side] + delta, snapshot.pointLimit);
       const next = {
         ...current,
-        [side]: clampThaiJudgeScore(current[side] + delta, snapshot.pointLimit),
+        [side]: nextValue,
       };
       const nextScores = { ...previous, [matchId]: next };
       writeDraft(nextScores);
+      setScoreHistory({
+        matchId,
+        side,
+        previousValue: current[side],
+        nextValue,
+      });
       return nextScores;
     });
     setTouchedMatches((previous) => ({ ...previous, [matchId]: true }));
@@ -362,10 +437,33 @@ export function ThaiJudgeWorkspace({
       };
       const nextScores = { ...previous, [matchId]: next };
       writeDraft(nextScores);
+      setScoreHistory({
+        matchId,
+        side,
+        previousValue: current[side],
+        nextValue: normalizedValue,
+      });
       return nextScores;
     });
     setTouchedMatches((previous) => ({ ...previous, [matchId]: true }));
     setScoreEditor(null);
+  }
+
+  function undoLastScoreAction() {
+    if (!isViewingEditableTour || !scoreHistory) return;
+    setScores((previous) => {
+      const current = previous[scoreHistory.matchId] ?? { team1: 0, team2: 0 };
+      const next = {
+        ...current,
+        [scoreHistory.side]: scoreHistory.previousValue,
+      };
+      const nextScores = { ...previous, [scoreHistory.matchId]: next };
+      writeDraft(nextScores);
+      return nextScores;
+    });
+    setTouchedMatches((previous) => ({ ...previous, [scoreHistory.matchId]: true }));
+    setToast({ tone: 'info', message: 'Последнее изменение отменено.' });
+    setScoreHistory(null);
   }
 
   async function handleConfirm() {
@@ -406,6 +504,8 @@ export function ThaiJudgeWorkspace({
       if (draftKey && typeof window !== 'undefined') {
         window.localStorage.removeItem(draftKey);
       }
+      setConfirmCooldownUntil(Date.now() + 1800);
+      setScoreHistory(null);
       setSnapshot(payload.snapshot);
       setSelectedTourNo(payload.snapshot.currentTourNo);
       onSnapshotChange?.(payload.snapshot);
@@ -420,17 +520,20 @@ export function ThaiJudgeWorkspace({
     }
   }
 
+  const freshnessLabel = formatSnapshotFreshness(snapshot.lastUpdatedAt, nowMs);
+  const isCompactMode = navigationMode === 'embedded';
+
   return (
     <div
       className={
-        navigationMode === 'embedded'
-          ? 'text-white'
-          : 'min-h-screen min-h-[100dvh] bg-[radial-gradient(circle_at_top,rgba(255,210,74,0.08),transparent_14%),linear-gradient(180deg,#080813,#0d0d18_28%,#090913)] px-3 pb-8 pt-4 text-white'
+        isCompactMode
+          ? 'overflow-x-hidden text-white'
+          : 'min-h-screen min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,rgba(255,210,74,0.08),transparent_14%),linear-gradient(180deg,#080813,#0d0d18_28%,#090913)] px-3 pb-8 pt-4 text-white'
       }
     >
-      <div className={`mx-auto flex w-full max-w-[760px] flex-col ${navigationMode === 'embedded' ? 'gap-3' : 'gap-4'}`}>
+      <div className={`mx-auto flex w-full max-w-[720px] flex-col ${isCompactMode ? 'gap-3' : 'gap-4'}`}>
         {navigationMode === 'standalone' && snapshot.courtNav.length > 1 ? (
-          <nav className="overflow-x-auto">
+          <nav className="overflow-x-auto pb-1">
             <div className="flex min-w-max items-center gap-1 rounded-[16px] border border-[#1f2033] bg-[#0d0d18]/92 p-1 shadow-[0_14px_40px_rgba(0,0,0,0.26)]">
               {snapshot.courtNav.map((court) => (
                 <Link
@@ -459,9 +562,9 @@ export function ThaiJudgeWorkspace({
         {navigationMode === 'standalone' ? (
           <header className="rounded-[24px] border border-[#33280f] bg-[linear-gradient(180deg,rgba(21,18,32,0.98),rgba(12,12,24,0.98))] px-4 py-4 shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[10px] uppercase tracking-[0.34em] text-[#8e7b48]">Thai Judge</div>
-                <h1 className="mt-2 truncate text-3xl font-heading uppercase tracking-[0.08em] text-[#ffd24a] sm:text-4xl">
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] uppercase tracking-[0.34em] text-[#8e7b48]">Судейский экран</div>
+                <h1 className="mt-2 text-[28px] font-heading uppercase leading-[0.96] tracking-[0.08em] text-[#ffd24a] sm:text-[34px]">
                   {resolveJudgeHeadline(snapshot)}
                 </h1>
                 <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8e7b48]">
@@ -472,15 +575,20 @@ export function ThaiJudgeWorkspace({
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.24em] ${connectionClasses(online)}`}>
-                  {online ? 'ONLINE' : 'OFF'}
-                </span>
-                <span className="rounded-full border border-[#4b3c15] bg-[#1b160d] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#ffd24a]">
-                  {snapshot.variant}
-                </span>
-                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-[#aeb6c8]">
-                  PIN {snapshot.pin}
+              <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.24em] ${connectionClasses(online)}`}>
+                    {online ? 'ONLINE' : 'OFF'}
+                  </span>
+                  <span className="rounded-full border border-[#4b3c15] bg-[#1b160d] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#ffd24a]">
+                    {snapshot.variant}
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-[#aeb6c8]">
+                    PIN {snapshot.pin}
+                  </span>
+                </div>
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-[#aeb6c8]">
+                  Обновлено {freshnessLabel}
                 </span>
               </div>
             </div>
@@ -497,7 +605,11 @@ export function ThaiJudgeWorkspace({
           </header>
         ) : null}
 
-        {toast ? <div className={`rounded-[18px] border px-4 py-3 text-sm font-medium shadow-[0_12px_40px_rgba(0,0,0,0.22)] ${toneClasses(toast.tone)}`}>{toast.message}</div> : null}
+        {toast ? (
+          <div className={`rounded-[18px] border px-4 py-3 text-sm font-medium shadow-[0_12px_40px_rgba(0,0,0,0.22)] ${toneClasses(toast.tone)}`}>
+            {toast.message}
+          </div>
+        ) : null}
 
         <section className="rounded-[18px] border border-[#2a2a3f] bg-[linear-gradient(180deg,rgba(18,17,29,0.98),rgba(12,12,24,0.98))] px-3 py-3 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
           {navigationMode === 'standalone' ? (
@@ -507,11 +619,28 @@ export function ThaiJudgeWorkspace({
                   const isActive = round.isActive;
                   const disabled = !round.isAvailable || !round.judgeUrl;
                   const className = `rounded-full border px-4 py-2 text-[11px] font-bold uppercase tracking-[0.24em] transition ${roundTabTone(round, isActive)} ${disabled ? 'cursor-not-allowed opacity-55' : ''}`;
-                  if (disabled) return <span key={round.roundType} aria-disabled="true" className={className}>{resolveRoundTabLabel(round)}</span>;
-                  return <Link key={round.roundType} href={round.judgeUrl ?? '/'} aria-current={isActive ? 'page' : undefined} className={className}>{resolveRoundTabLabel(round)}</Link>;
+                  if (disabled) {
+                    return (
+                      <span key={round.roundType} aria-disabled="true" className={className}>
+                        {resolveRoundTabLabel(round)}
+                      </span>
+                    );
+                  }
+                  return (
+                    <Link key={round.roundType} href={round.judgeUrl ?? '/'} aria-current={isActive ? 'page' : undefined} className={className}>
+                      {resolveRoundTabLabel(round)}
+                    </Link>
+                  );
                 })}
               </div>
-              <div className="mb-3 text-[11px] uppercase tracking-[0.22em] text-[#7d8498]">{snapshot.roundNav.map((round) => `${round.label}: ${roundStatusLabel(round)}`).join(' • ')}</div>
+              <div className="mb-3 text-[11px] uppercase tracking-[0.22em] text-[#7d8498]">
+                {snapshot.roundNav.map((round) => `${round.label}: ${roundStatusLabel(round)}`).join(' • ')}
+              </div>
+              {snapshot.roundNav.find((round) => !round.isAvailable && round.unavailableReason) ? (
+                <div className="mb-3 rounded-[14px] border border-white/8 bg-white/5 px-3 py-2 text-[12px] text-[#c6cad6]">
+                  {snapshot.roundNav.find((round) => !round.isAvailable && round.unavailableReason)?.unavailableReason}
+                </div>
+              ) : null}
             </>
           ) : null}
 
@@ -519,48 +648,84 @@ export function ThaiJudgeWorkspace({
             {snapshot.tours.map((tour) => {
               const isActive = selectedTour?.tourNo === tour.tourNo;
               const disabled = tour.tourNo > snapshot.currentTourNo;
-              return <button key={tour.tourId} type="button" disabled={disabled} onClick={() => setSelectedTourNo(tour.tourNo)} className={`rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] transition ${tourTabTone(tour, isActive)} ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}>T{tour.tourNo}</button>;
+              return (
+                <button
+                  key={tour.tourId}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setSelectedTourNo(tour.tourNo)}
+                  className={`rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] transition ${tourTabTone(tour, isActive)} ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+                >
+                  T{tour.tourNo}
+                </button>
+              );
             })}
           </div>
-          <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-[#7d8498]">{selectedTour?.isEditable ? 'LIVE' : selectedTour?.status === 'confirmed' ? 'RO' : 'Ждите'}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-[#7d8498]">
+            <span>{selectedTour?.isEditable ? 'LIVE' : selectedTour?.status === 'confirmed' ? 'RO' : 'Ждите'}</span>
+            <span className="rounded-full border border-white/8 bg-white/5 px-2 py-1 text-[9px] tracking-[0.14em] text-[#aeb6c8]">
+              Обновлено {freshnessLabel}
+            </span>
+            {hasDraftScores && isViewingEditableTour ? (
+              <span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-2 py-1 text-[9px] tracking-[0.14em] text-amber-100">
+                Черновик сохранён
+              </span>
+            ) : null}
+            {scoreHistory && isViewingEditableTour ? (
+              <button
+                type="button"
+                onClick={undoLastScoreAction}
+                className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/20 hover:bg-white/10"
+              >
+                Отменить последнее
+              </button>
+            ) : null}
+          </div>
         </section>
 
         {(snapshot.kind !== 'active' || !selectedTour?.isEditable) && snapshot.message ? (
-          <section className={`rounded-[24px] border px-5 py-4 shadow-[0_20px_60px_rgba(0,0,0,0.4)] ${snapshot.kind === 'finished' ? 'border-[#ffd24a]/50 bg-[#ffd24a]/10 text-[#ffd24a] animate-pulse' : 'border-[#2a2a3f] bg-[linear-gradient(180deg,rgba(18,17,29,0.98),rgba(12,12,24,0.98))] text-[#c1c7d6]/86'}`}>
-            <div className={`text-[12px] font-bold uppercase tracking-[0.24em] ${snapshot.kind === 'finished' ? 'text-[#ffd24a]' : 'text-[#8f7c4a]'}`}>
-              {snapshot.kind === 'finished' ? 'ВНИМАНИЕ — КОРТ ЗАВЕРШЁН' : 'INFO'}
+          <section
+            className={`rounded-[24px] border px-4 py-4 shadow-[0_20px_60px_rgba(0,0,0,0.4)] ${
+              snapshot.kind === 'finished'
+                ? 'border-[#ffd24a]/40 bg-[#ffd24a]/10 text-[#f8d768]'
+                : 'border-[#2a2a3f] bg-[linear-gradient(180deg,rgba(18,17,29,0.98),rgba(12,12,24,0.98))] text-[#c1c7d6]/86'
+            }`}
+          >
+            <div className={`text-[11px] font-bold uppercase tracking-[0.24em] ${snapshot.kind === 'finished' ? 'text-[#ffd24a]' : 'text-[#8f7c4a]'}`}>
+              {snapshot.kind === 'finished' ? 'Корт завершил туры' : 'Статус корта'}
             </div>
-            <div className={`mt-2 ${snapshot.kind === 'finished' ? 'text-lg font-bold' : 'text-sm'}`}>
+            <div className={`mt-2 ${snapshot.kind === 'finished' ? 'text-base font-semibold' : 'text-sm'}`}>
               {snapshot.message}
-              {snapshot.kind === 'finished' ? (
-                <div className="mt-4 text-[13px] leading-relaxed text-white/90 font-medium">
-                  Ожидайте, пока Главный Администратор запустит следующий этап (Раунд 2) из Панели управления турниром. 
-                  <br/><br/>
-                  <span className="text-[#ffd24a]/80 font-bold">Вы можете устно сообщить администратору, что ваш корт отыграл все игры!</span>
-                  
-                  <div className="mt-5 pt-4 border-t border-[#ffd24a]/20">
-                    <p className="text-[11px] uppercase tracking-wider text-[#ffd24a]/80 mb-2">Как только админ запустит R2:</p>
-                    <button 
-                      type="button" 
-                      onClick={() => window.location.reload()} 
-                      className="w-full rounded-[14px] bg-[#ffd24a]/20 border border-[#ffd24a]/40 py-3 text-sm font-bold text-[#ffd24a] transition hover:bg-[#ffd24a]/30"
-                    >
-                      🔄 ПРОВЕРИТЬ ДОСТУП К R2 (Обновить)
-                    </button>
-                    <p className="mt-2 text-[11px] text-white/60 text-center leading-tight">Обновите страницу. После обновления сверху загорится вкладка "ROUND 2" — просто нажмите на неё, новые ссылки скидывать не нужно!</p>
-                  </div>
-                </div>
-              ) : null}
             </div>
+            {snapshot.kind === 'finished' ? (
+              <div className="mt-3 space-y-3">
+                <p className="text-[13px] leading-relaxed text-white/85">
+                  {snapshot.canAutoRefreshToNextStage
+                    ? 'Оставьте экран открытым. Следующий этап проверяется автоматически.'
+                    : 'Судейский ввод для этого корта больше не требуется.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => startTransition(() => router.refresh())}
+                  className="w-full rounded-[14px] border border-[#ffd24a]/35 bg-[#ffd24a]/12 py-3 text-sm font-bold text-[#ffd24a] transition hover:bg-[#ffd24a]/18"
+                >
+                  Проверить сейчас
+                </button>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           {selectedMatches.map((match, matchIndex) => {
             const liveScore = scores[match.matchId] ?? {
               team1: Number(match.team1Score ?? 0),
               team2: Number(match.team2Score ?? 0),
             };
+            const matchError = scoreErrorsByMatch.get(match.matchId) ?? null;
+            const isMissing = !touchedMatches[match.matchId];
+            const needsAttention = Boolean(matchError || isMissing);
+            const attentionText = matchError ?? (isMissing ? `Введите счёт для матча ${match.matchNo}.` : null);
             const accent =
               matchIndex === 0
                 ? {
@@ -610,38 +775,58 @@ export function ThaiJudgeWorkspace({
                         setScoreEditor(null);
                       }
                     }}
-                    className="h-16 w-16 rounded-2xl border border-[#5b4713] bg-[#18140d] px-1 text-center font-black text-3xl text-[#ffd24a] outline-none"
+                    className={`${isCompactMode ? 'h-12 w-12 text-2xl' : 'h-16 w-16 text-3xl'} rounded-2xl border border-[#5b4713] bg-[#18140d] px-1 text-center font-black text-[#ffd24a] outline-none`}
                   />
                 );
               }
 
               return (
-                <button
-                  type="button"
-                  disabled={!isViewingEditableTour}
-                  onClick={() => handleScoreTap(match.matchId, sideKey, liveScore[sideKey])}
-                  className="h-16 w-16 text-center font-heading text-6xl leading-none text-[#ffd400] disabled:cursor-default"
-                  title="Двойной тап для ручного ввода"
-                >
-                  {liveScore[sideKey]}
-                </button>
+                <div className="flex flex-col items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={!isViewingEditableTour}
+                    onClick={() => handleScoreTap(match.matchId, sideKey, liveScore[sideKey])}
+                    className={`${isCompactMode ? 'h-12 w-12 text-4xl' : 'h-16 w-16 text-6xl'} text-center font-heading leading-none text-[#ffd400] disabled:cursor-default`}
+                    title="Двойной тап или кнопка ниже для ручного ввода"
+                  >
+                    {liveScore[sideKey]}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!isViewingEditableTour}
+                    onClick={() => openScoreEditor(match.matchId, sideKey, liveScore[sideKey])}
+                    className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-white/80 transition hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Ввести
+                  </button>
+                </div>
               );
             };
 
             return (
               <article key={match.matchId}>
-                <div className="mb-2 flex items-center gap-4 px-2">
+                <div className="mb-2 flex items-center gap-3 px-1">
                   <div className="h-px flex-1 bg-white/14" />
-                  <div className={`text-[16px] font-black uppercase tracking-[0.22em] ${accent.title}`}>
+                  <div className={`text-[14px] font-black uppercase tracking-[0.18em] ${accent.title}`}>
                     Пара {match.matchNo}
                   </div>
                   <div className="h-px flex-1 bg-white/14" />
                 </div>
 
-                <div className={`rounded-[30px] border p-4 shadow-[0_20px_60px_rgba(0,0,0,0.32)] ${accent.frame}`}>
-                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                {attentionText ? (
+                  <div className="mb-2 rounded-[14px] border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[12px] font-medium text-amber-100">
+                    {attentionText}
+                  </div>
+                ) : null}
+
+                <div
+                  className={`rounded-[26px] border ${isCompactMode ? 'p-3' : 'p-4'} shadow-[0_20px_60px_rgba(0,0,0,0.32)] ${accent.frame} ${
+                    needsAttention ? 'ring-1 ring-amber-300/35' : ''
+                  }`}
+                >
+                  <div className={`grid items-center ${isCompactMode ? 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2' : 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-3'}`}>
                     <div className="min-w-0">
-                      <div className="text-[clamp(16px,2.8vw,22px)] font-black leading-[1.02] text-white">
+                      <div className={`${isCompactMode ? 'text-[clamp(15px,4.4vw,19px)]' : 'text-[clamp(16px,2.8vw,22px)]'} font-black leading-[1.02] text-white`}>
                         {renderTeamNames(match.team1)}
                       </div>
                       {navigationMode === 'standalone' ? (
@@ -651,14 +836,14 @@ export function ThaiJudgeWorkspace({
                       ) : null}
                     </div>
 
-                    <div className="flex min-w-[150px] items-center justify-center gap-3">
+                    <div className={`flex items-start justify-center ${isCompactMode ? 'min-w-[108px] gap-2' : 'min-w-[150px] gap-3'}`}>
                       {renderScore('team1')}
-                      <div className="text-5xl font-black text-white/35">-</div>
+                      <div className={`${isCompactMode ? 'pt-1 text-3xl' : 'text-5xl'} font-black text-white/35`}>-</div>
                       {renderScore('team2')}
                     </div>
 
                     <div className="min-w-0 text-right">
-                      <div className="text-[clamp(16px,2.8vw,22px)] font-black leading-[1.02] text-white">
+                      <div className={`${isCompactMode ? 'text-[clamp(15px,4.4vw,19px)]' : 'text-[clamp(16px,2.8vw,22px)]'} font-black leading-[1.02] text-white`}>
                         {renderTeamNames(match.team2, 'right')}
                       </div>
                       {navigationMode === 'standalone' ? (
@@ -669,46 +854,39 @@ export function ThaiJudgeWorkspace({
                     </div>
                   </div>
 
-                  <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        disabled={!isViewingEditableTour}
-                        onClick={() => bumpScore(match.matchId, 'team1', -1)}
-                        className={`h-20 rounded-[20px] border text-4xl font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.minus}`}
-                      >
-                        −
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!isViewingEditableTour}
-                        onClick={() => bumpScore(match.matchId, 'team1', 1)}
-                        className={`h-28 rounded-[22px] border-2 text-5xl font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.plus}`}
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    <div className="h-20 w-px bg-white/12" />
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        disabled={!isViewingEditableTour}
-                        onClick={() => bumpScore(match.matchId, 'team2', -1)}
-                        className={`h-20 rounded-[20px] border text-4xl font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.minus}`}
-                      >
-                        −
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!isViewingEditableTour}
-                        onClick={() => bumpScore(match.matchId, 'team2', 1)}
-                        className={`h-28 rounded-[22px] border-2 text-5xl font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.plus}`}
-                      >
-                        +
-                      </button>
-                    </div>
+                  <div className={`mt-4 grid ${isCompactMode ? 'grid-cols-4 gap-2' : 'grid-cols-4 gap-3'}`}>
+                    <button
+                      type="button"
+                      disabled={!isViewingEditableTour}
+                      onClick={() => bumpScore(match.matchId, 'team1', -1)}
+                      className={`${isCompactMode ? 'h-14 text-3xl' : 'h-20 text-4xl'} rounded-[18px] border font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.minus}`}
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!isViewingEditableTour}
+                      onClick={() => bumpScore(match.matchId, 'team1', 1)}
+                      className={`${isCompactMode ? 'h-14 text-4xl' : 'h-20 text-5xl'} rounded-[18px] border-2 font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.plus}`}
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!isViewingEditableTour}
+                      onClick={() => bumpScore(match.matchId, 'team2', -1)}
+                      className={`${isCompactMode ? 'h-14 text-3xl' : 'h-20 text-4xl'} rounded-[18px] border font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.minus}`}
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!isViewingEditableTour}
+                      onClick={() => bumpScore(match.matchId, 'team2', 1)}
+                      className={`${isCompactMode ? 'h-14 text-4xl' : 'h-20 text-5xl'} rounded-[18px] border-2 font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.plus}`}
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
               </article>
@@ -719,7 +897,7 @@ export function ThaiJudgeWorkspace({
         {snapshot.standingsGroups.length ? (
           <section className="rounded-[18px] border border-[#2a2a3f] bg-[linear-gradient(180deg,rgba(18,17,29,0.98),rgba(12,12,24,0.98))] shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
             <button type="button" onClick={() => setStandingsOpen((value) => !value)} className="flex w-full items-center justify-between px-3 py-2">
-              <span className="text-[10px] uppercase tracking-[0.2em] text-[#8f7c4a]">Табл.</span>
+              <span className="text-[10px] uppercase tracking-[0.2em] text-[#8f7c4a]">Таблица</span>
               <span className="text-[10px] uppercase tracking-[0.16em] text-[#aeb6c8]">{standingsOpen ? 'Скрыть' : 'Показать'}</span>
             </button>
             {standingsOpen ? (
@@ -733,7 +911,11 @@ export function ThaiJudgeWorkspace({
                           <tr>
                             <th className="px-3 py-2">#</th>
                             <th className="px-3 py-2">Игрок</th>
-                            {Array.from({ length: snapshot.tourCount }, (_, index) => <th key={index} className="px-2 py-2 text-center">T{index + 1}</th>)}
+                            {Array.from({ length: snapshot.tourCount }, (_, index) => (
+                              <th key={index} className="px-2 py-2 text-center">
+                                T{index + 1}
+                              </th>
+                            ))}
                             <th className="px-3 py-2 text-center">P</th>
                             <th className="px-3 py-2 text-center">М</th>
                           </tr>
@@ -743,7 +925,16 @@ export function ThaiJudgeWorkspace({
                             <tr key={row.playerId} className="border-t border-white/6">
                               <td className="px-3 py-2 font-semibold text-[#ffd24a]">{row.place}</td>
                               <td className="px-3 py-2 font-semibold">{row.playerName}</td>
-                              {row.tourDiffs.map((delta, index) => <td key={`${row.playerId}-${index}`} className={`px-2 py-2 text-center font-semibold ${delta > 0 ? 'text-emerald-300' : delta < 0 ? 'text-red-300' : 'text-white/50'}`}>{formatStandingDelta(delta)}</td>)}
+                              {row.tourDiffs.map((delta, index) => (
+                                <td
+                                  key={`${row.playerId}-${index}`}
+                                  className={`px-2 py-2 text-center font-semibold ${
+                                    delta > 0 ? 'text-emerald-300' : delta < 0 ? 'text-red-300' : 'text-white/50'
+                                  }`}
+                                >
+                                  {formatStandingDelta(delta)}
+                                </td>
+                              ))}
                               <td className="px-3 py-2 text-center font-bold text-[#ffd24a]">{row.pointsP}</td>
                               <td className="px-3 py-2 text-center font-semibold">{row.place}</td>
                             </tr>
@@ -758,14 +949,32 @@ export function ThaiJudgeWorkspace({
           </section>
         ) : null}
 
-        {scoreErrors.length ? <div className="rounded-[18px] border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">{scoreErrors[0]}</div> : null}
-
         {isViewingEditableTour ? (
-          <button type="button" onClick={handleConfirm} disabled={!canConfirm} className={`sticky bottom-4 w-full rounded-[18px] border border-[#5b4713] bg-[#ffd24a] text-center font-black uppercase tracking-[0.08em] text-[#17130b] shadow-[0_16px_48px_rgba(245,158,11,0.2)] transition hover:bg-[#ffe07f] disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none ${navigationMode === 'embedded' ? 'px-4 py-3.5 text-base' : 'px-5 py-4 text-lg sm:px-6 sm:py-5 sm:text-xl'}`}>
-            {submitting ? 'Фиксация...' : 'Подтвердить тур'}
-          </button>
+          <div className="sticky bottom-4 space-y-2">
+            {confirmBlockedReason ? (
+              <div className="rounded-[16px] border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                {confirmBlockedReason}
+              </div>
+            ) : (
+              <div className="rounded-[16px] border border-emerald-400/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+                Всё готово. Проверьте итоговый счёт и подтвердите тур.
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={!canConfirm}
+              className={`w-full rounded-[18px] border border-[#5b4713] bg-[#ffd24a] text-center font-black uppercase tracking-[0.08em] text-[#17130b] shadow-[0_16px_48px_rgba(245,158,11,0.2)] transition hover:bg-[#ffe07f] disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none ${isCompactMode ? 'px-4 py-3.5 text-base' : 'px-5 py-4 text-lg sm:px-6 sm:py-5 sm:text-xl'}`}
+            >
+              {submitting ? 'Фиксация...' : confirmCooldownUntil > nowMs ? 'Тур отправлен' : 'Подтвердить тур'}
+            </button>
+          </div>
         ) : (
-          <button type="button" onClick={() => startTransition(() => router.refresh())} className="w-full rounded-[18px] border border-white/10 bg-white/5 px-5 py-4 text-sm font-bold uppercase tracking-[0.22em] text-white/80 transition hover:border-white/20 hover:bg-white/10">
+          <button
+            type="button"
+            onClick={() => startTransition(() => router.refresh())}
+            className="w-full rounded-[18px] border border-white/10 bg-white/5 px-5 py-4 text-sm font-bold uppercase tracking-[0.22em] text-white/80 transition hover:border-white/20 hover:bg-white/10"
+          >
             Обновить
           </button>
         )}

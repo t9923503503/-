@@ -1,0 +1,9 @@
+web/app/admin/tournaments/page.tsx
+web/components/admin/tournaments
+web/lib/roster-editor
+web/app/api/admin/tournaments/[id]/roster-editor
+migrations/054_roster_editor_history.sql
+migrations/055_roster_editor_history_revision_and_retention.sql
+migrations/056_roster_editor_action_log_audit_fields.sql
+scripts/prune-roster-editor-history.mjs
+scripts/smoke-go-fixedpairs-checklist.mjs

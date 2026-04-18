@@ -55,6 +55,7 @@ export interface ThaiJudgeCourtNavItem {
   judgeUrl: string;
   isActive: boolean;
   currentTourStatus: ThaiTourStatus | 'finished';
+  unavailableReason: string | null;
 }
 
 export interface ThaiJudgeRoundNavItem {
@@ -66,6 +67,7 @@ export interface ThaiJudgeRoundNavItem {
   judgeUrl: string | null;
   isActive: boolean;
   isAvailable: boolean;
+  unavailableReason: string | null;
 }
 
 export interface ThaiJudgeSnapshot {
@@ -92,6 +94,8 @@ export interface ThaiJudgeSnapshot {
   tourStatus: ThaiTourStatus | null;
   pendingCourtCount: number;
   message: string;
+  lastUpdatedAt: string;
+  canAutoRefreshToNextStage: boolean;
   roundNav: ThaiJudgeRoundNavItem[];
   courtNav: ThaiJudgeCourtNavItem[];
   tours: ThaiJudgeTourView[];
@@ -138,6 +142,7 @@ export interface ThaiJudgeTournamentCourtTabItem {
   currentTourStatus: ThaiTourStatus | 'finished' | 'soon';
   isSelected: boolean;
   isAvailable: boolean;
+  unavailableReason: string | null;
 }
 
 export interface ThaiJudgeTournamentRoundItem {
@@ -148,6 +153,7 @@ export interface ThaiJudgeTournamentRoundItem {
   status: ThaiRoundStatus | 'pending';
   isSelected: boolean;
   isAvailable: boolean;
+  unavailableReason: string | null;
   courts: ThaiJudgeTournamentCourtTabItem[];
 }
 
@@ -161,6 +167,7 @@ export interface ThaiJudgeTournamentSnapshot {
   pointLimit: number;
   selectedRoundType: ThaiRoundType;
   selectedCourtNo: number;
+  lastUpdatedAt: string;
   rounds: ThaiJudgeTournamentRoundItem[];
   activeSnapshot: ThaiJudgeSnapshot;
 }

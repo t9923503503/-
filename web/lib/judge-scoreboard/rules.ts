@@ -80,6 +80,23 @@ export function isMatchPoint(core: MatchCore, config: MatchConfig): TeamId | nul
   return null;
 }
 
+export function canEndSetNow(
+  scoreA: number,
+  scoreB: number,
+  target: number,
+  winByTwo: boolean,
+): { ok: boolean; reason: string } {
+  const maxScore = Math.max(scoreA, scoreB);
+  const lead = Math.abs(scoreA - scoreB);
+  if (maxScore < target) {
+    return { ok: false, reason: `Нельзя завершить сет: не достигнут лимит ${target}.` };
+  }
+  if (winByTwo && lead < 2) {
+    return { ok: false, reason: 'Нельзя завершить сет: нужна разница минимум 2 очка.' };
+  }
+  return { ok: true, reason: '' };
+}
+
 /**
  * Смена сторон: каждые `interval` суммарных очков в сете.
  * Триггер — достигнут новый порог (scoreA + scoreB >= lastSwap + interval).

@@ -203,6 +203,10 @@ function judgeUrlForPin(pin: string): string {
   return `/court/${encodeURIComponent(pin)}`;
 }
 
+function judgeSnapshotTimestamp(): string {
+  return new Date().toISOString();
+}
+
 function normalizeThaiVariant(settings: Record<string, unknown>): string {
   return normalizeThaiAdminSettings(settings).variant;
 }
@@ -844,6 +848,7 @@ async function loadJudgeCourtNavTx(
       judgeUrl: judgeUrlForPin(court.pin),
       isActive: court.courtId === input.activeCourtId,
       currentTourStatus: progress.currentTourStatus,
+      unavailableReason: null,
     });
   }
 
@@ -878,6 +883,7 @@ async function loadJudgeRoundNavTx(
         judgeUrl: null,
         isActive: false,
         isAvailable: false,
+        unavailableReason: 'Раунд ещё не открыт администратором.',
       };
     }
 
@@ -897,12 +903,15 @@ async function loadJudgeRoundNavTx(
       judgeUrl: targetCourt ? judgeUrlForPin(targetCourt.pin) : null,
       isActive: round.roundId === input.activeRoundId,
       isAvailable: Boolean(targetCourt),
+      unavailableReason: targetCourt ? null : 'Нет активного корта для этого раунда.',
     };
   });
 }
 
 function buildTournamentCourtTabs(input: {
   roundType: ThaiRoundType;
+  roundExists: boolean;
+  roundStatus: ThaiRoundStatus | 'pending';
   courtCount: number;
   selectedCourtNo: number;
   existingCourts: Array<CourtRow & { currentTourNo: number | null; currentTourStatus: ThaiTourStatus | 'finished' }> ;
@@ -921,6 +930,15 @@ function buildTournamentCourtTabs(input: {
       currentTourStatus: existing?.currentTourStatus ?? 'soon',
       isSelected: input.selectedCourtNo === courtNo,
       isAvailable: Boolean(existing),
+      unavailableReason: existing
+        ? null
+        : !input.roundExists
+          ? input.roundType === 'r2'
+            ? 'ROUND 2 откроется после завершения ROUND 1.'
+            : 'Раунд ещё не открыт.'
+          : input.roundStatus === 'pending'
+            ? 'Раунд ещё не запущен.'
+            : 'Этот корт пока недоступен.',
     };
   });
 }
@@ -943,6 +961,7 @@ async function loadJudgeTournamentSnapshotTx(
   const courtCount = settings.courts;
   const roundByType = new Map(rounds.map((round) => [round.roundType, round] as const));
   const requestedRoundType = options?.selectedRoundType ?? (rounds.find((round) => round.roundStatus !== 'finished')?.roundType ?? rounds[0]?.roundType ?? 'r1');
+  const snapshotTimestamp = judgeSnapshotTimestamp();
 
   const roundsView: ThaiJudgeTournamentRoundItem[] = [];
   const roundCourtData = new Map<ThaiRoundType, Array<CourtRow & { currentTourNo: number | null; currentTourStatus: ThaiTourStatus | 'finished' }>>();
@@ -973,6 +992,8 @@ async function loadJudgeTournamentSnapshotTx(
     const selectedCourtNo = fallbackRound.roundType === roundType ? actualCourtNo : -1;
     const courts = buildTournamentCourtTabs({
       roundType,
+      roundExists: Boolean(round),
+      roundStatus: round?.roundStatus ?? 'pending',
       courtCount,
       selectedCourtNo,
       existingCourts: roundCourtData.get(roundType) ?? [],
@@ -985,6 +1006,13 @@ async function loadJudgeTournamentSnapshotTx(
       status: round?.roundStatus ?? 'pending',
       isSelected: fallbackRound.roundType === roundType,
       isAvailable: courts.some((court) => court.isAvailable),
+      unavailableReason: round
+        ? courts.some((court) => court.isAvailable)
+          ? null
+          : 'Нет доступных кортов для этого раунда.'
+        : roundType === 'r2'
+          ? 'ROUND 2 откроется после завершения ROUND 1.'
+          : 'Раунд ещё не открыт.',
       courts,
     });
   }
@@ -1008,6 +1036,7 @@ async function loadJudgeTournamentSnapshotTx(
     pointLimit: activeSnapshot.pointLimit,
     selectedRoundType: fallbackRound.roundType,
     selectedCourtNo: actualCourtNo,
+    lastUpdatedAt: snapshotTimestamp,
     rounds: roundsView.map((round) => ({
       ...round,
       isSelected: round.roundType === fallbackRound.roundType,
@@ -1661,6 +1690,7 @@ async function loadJudgeSnapshotByPinTx(client: PoolClient, pin: string): Promis
   });
   const tours = await loadToursByCourtTx(client, court.courtId);
   const progress = resolveCourtProgress(tours, court.roundStatus);
+  const snapshotTimestamp = judgeSnapshotTimestamp();
 
   const tourViews = tours.map((tour) => ({
     tourId: tour.tourId,
@@ -1700,7 +1730,9 @@ async function loadJudgeSnapshotByPinTx(client: PoolClient, pin: string): Promis
       roundNav,
       courtNav,
       pendingCourtCount: 0,
-      message: 'Раунд завершён. Судейский ввод больше не требуется.',
+      message: 'Раунд закрыт. Следите за следующим этапом турнира.',
+      lastUpdatedAt: snapshotTimestamp,
+      canAutoRefreshToNextStage: court.roundType === 'r1',
       tours: tourViews,
       matches: activeTourView?.matches ?? [],
       standingsGroups: aggregate.standingsGroups,
@@ -1733,7 +1765,9 @@ async function loadJudgeSnapshotByPinTx(client: PoolClient, pin: string): Promis
       roundNav,
       courtNav,
       pendingCourtCount: 0,
-      message: 'Все туры этого корта подтверждены.',
+      message: 'Все туры этого корта подтверждены. Ждём следующий этап.',
+      lastUpdatedAt: snapshotTimestamp,
+      canAutoRefreshToNextStage: court.roundType === 'r1',
       tours: tourViews,
       matches: activeTourView?.matches ?? [],
       standingsGroups: aggregate.standingsGroups,
@@ -1766,6 +1800,8 @@ async function loadJudgeSnapshotByPinTx(client: PoolClient, pin: string): Promis
     courtNav,
     pendingCourtCount: 0,
     message: `Введите финальный счёт двух матчей до ${pointLimit} очков.`,
+    lastUpdatedAt: snapshotTimestamp,
+    canAutoRefreshToNextStage: false,
     tours: tourViews,
     matches: activeTourView?.matches ?? [],
     standingsGroups: aggregate.standingsGroups,

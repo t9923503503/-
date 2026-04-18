@@ -1,9 +1,9 @@
-import type { Metadata, Viewport } from 'next';
+﻿import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Судейское табло | LPVOLLEY',
-  description: 'Табло судьи для пляжного волейбола — выбери корт.',
+  description: 'Табло судьи для пляжного волейбола — выберите корт.',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -41,18 +41,14 @@ export default function JudgeScoreboardIndexPage() {
         >
           Табло судьи
         </h1>
-        <p className="mt-2 text-sm text-white/60 sm:text-base">
-          Выберите корт
-        </p>
+        <p className="mt-2 text-sm text-white/60 sm:text-base">Выберите корт и режим</p>
       </header>
 
       <div className="grid w-full max-w-2xl grid-cols-2 gap-4 sm:gap-6">
         {COURTS.map((courtId) => (
-          <Link
+          <div
             key={courtId}
-            href={`/judge-scoreboard/${courtId}`}
-            prefetch={false}
-            className="group flex aspect-square flex-col items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 text-center transition active:scale-[0.97] sm:rounded-3xl"
+            className="group flex aspect-square flex-col items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/0 text-center sm:rounded-3xl"
             style={{ minHeight: 140, touchAction: 'manipulation' }}
           >
             <span
@@ -61,17 +57,37 @@ export default function JudgeScoreboardIndexPage() {
             >
               {courtId}
             </span>
-            <span className="mt-2 text-xs uppercase tracking-widest text-white/60 sm:text-sm">
-              Корт
-            </span>
-          </Link>
+            <span className="mt-2 text-xs uppercase tracking-widest text-white/60 sm:text-sm">Корт</span>
+            <div className="mt-3 grid w-full max-w-[150px] grid-cols-2 gap-2">
+              <Link
+                href={`/judge-scoreboard/${courtId}`}
+                prefetch={false}
+                className="rounded-lg bg-emerald-500 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-white"
+              >
+                Judge
+              </Link>
+              <Link
+                href={`/judge-scoreboard/${courtId}/viewer`}
+                prefetch={false}
+                className="rounded-lg bg-sky-500 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-white"
+              >
+                Viewer
+              </Link>
+            </div>
+          </div>
         ))}
       </div>
 
       <p className="mt-10 max-w-md text-center text-xs leading-relaxed text-white/40">
-        Инструмент работает оффлайн. Счёт сохраняется в памяти браузера
-        отдельно для каждого корта.
+        Режим `Judge` — управление матчем. Режим `Viewer` — read-only экран для ТВ/зрителей.
       </p>
+      <Link
+        href="/judge-scoreboard/viewer"
+        prefetch={false}
+        className="mt-4 rounded-xl border border-sky-400/35 bg-sky-500/15 px-4 py-2 text-xs font-black uppercase tracking-widest text-sky-100"
+      >
+        Открыть видеостену (авто 1→4)
+      </Link>
     </div>
   );
 }

@@ -103,20 +103,40 @@ export interface AdminFilterPreset {
 
 const PLAYER_DB_EXTERNAL_ID = '__playerdb__';
 let tournamentsColumnCache: Set<string> | null = null;
+let playersColumnCache: Set<string> | null = null;
 
 const PLAYER_STATUSES = new Set<PlayerStatus>(['active', 'temporary', 'inactive', 'injured', 'vacation']);
 const PLAYER_SKILL_LEVELS = new Set<PlayerSkillLevel>(['light', 'medium', 'advanced', 'pro']);
 const PLAYER_POSITIONS = new Set<PlayerPreferredPosition>(['attacker', 'defender', 'universal', 'setter', 'blocker']);
-const PLAYER_SELECT = `
-  id, name, gender, status, rating_m, rating_w, rating_mix, wins, total_pts,
-  COALESCE(tournaments_played, 0) AS tournaments_played,
-  COALESCE(photo_url, '') AS photo_url,
-  birth_date, height_cm, weight_kg, skill_level, preferred_position,
-  COALESCE(mix_ready, false) AS mix_ready,
-  COALESCE(phone, '') AS phone,
-  COALESCE(telegram, '') AS telegram,
-  COALESCE(admin_comment, '') AS admin_comment
-`;
+function buildPlayerSelectSql(columns?: Set<string>): string {
+  const has = (column: string) => (columns ? columns.has(column) : true);
+  return [
+    has('id') ? 'id' : `''::text AS id`,
+    has('name') ? 'name' : `''::text AS name`,
+    has('gender') ? 'gender' : `'M'::text AS gender`,
+    has('status') ? 'status' : `'active'::text AS status`,
+    has('rating_m') ? 'rating_m' : '0::double precision AS rating_m',
+    has('rating_w') ? 'rating_w' : '0::double precision AS rating_w',
+    has('rating_mix') ? 'rating_mix' : '0::double precision AS rating_mix',
+    has('wins') ? 'wins' : '0::integer AS wins',
+    has('total_pts') ? 'total_pts' : '0::double precision AS total_pts',
+    has('tournaments_played')
+      ? 'COALESCE(tournaments_played, 0) AS tournaments_played'
+      : '0::integer AS tournaments_played',
+    has('photo_url') ? `COALESCE(photo_url, '') AS photo_url` : `''::text AS photo_url`,
+    has('birth_date') ? 'birth_date' : 'NULL::date AS birth_date',
+    has('height_cm') ? 'height_cm' : 'NULL::integer AS height_cm',
+    has('weight_kg') ? 'weight_kg' : 'NULL::integer AS weight_kg',
+    has('skill_level') ? 'skill_level' : 'NULL::text AS skill_level',
+    has('preferred_position') ? 'preferred_position' : 'NULL::text AS preferred_position',
+    has('mix_ready') ? 'COALESCE(mix_ready, false) AS mix_ready' : 'false AS mix_ready',
+    has('phone') ? `COALESCE(phone, '') AS phone` : `''::text AS phone`,
+    has('telegram') ? `COALESCE(telegram, '') AS telegram` : `''::text AS telegram`,
+    has('admin_comment') ? `COALESCE(admin_comment, '') AS admin_comment` : `''::text AS admin_comment`,
+  ].join(', ');
+}
+
+const PLAYER_SELECT = buildPlayerSelectSql();
 
 function toIsoDate(value: unknown): string {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
@@ -298,6 +318,29 @@ export async function getTournamentTableColumnsTx(client: PoolClient): Promise<S
   return tournamentsColumnCache;
 }
 
+async function getPlayerTableColumnsTx(client: PoolClient): Promise<Set<string>> {
+  if (playersColumnCache) return playersColumnCache;
+  const { rows } = await client.query(
+    `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'players'
+    `
+  );
+  playersColumnCache = new Set(rows.map((row) => String(row.column_name ?? '')));
+  return playersColumnCache;
+}
+
+async function getPlayerTableColumns(): Promise<Set<string>> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    return await getPlayerTableColumnsTx(client);
+  } finally {
+    client.release();
+  }
+}
+
 function buildDynamicInsertSql(
   tableName: string,
   payload: Record<string, unknown>,
@@ -446,9 +489,11 @@ async function listTournamentPlayersForLegacyTx(client: PoolClient, tournamentId
 }
 
 async function listPlayersForLegacySnapshotTx(client: PoolClient): Promise<AdminPlayer[]> {
+  const playerColumns = await getPlayerTableColumnsTx(client);
+  const playerSelect = buildPlayerSelectSql(playerColumns);
   const { rows } = await client.query(
     `
-      SELECT ${PLAYER_SELECT}
+      SELECT ${playerSelect}
       FROM players
       ORDER BY name ASC
     `
@@ -818,11 +863,13 @@ export async function getTournamentLegacyGameStateById(id: string): Promise<Reco
 export async function listPlayers(query = ''): Promise<AdminPlayer[]> {
   if (!process.env.DATABASE_URL) return [];
   const pool = getPool();
+  const playerColumns = await getPlayerTableColumns();
   const term = String(query || '').trim();
   const hasFilter = term.length > 0;
+  const playerSelect = buildPlayerSelectSql(playerColumns);
   const { rows } = await pool.query(
     `
-      SELECT ${PLAYER_SELECT}
+      SELECT ${playerSelect}
       FROM players
       ${hasFilter ? 'WHERE name ILIKE $1 OR id::text ILIKE $1' : ''}
       ORDER BY name ASC
@@ -836,8 +883,10 @@ export async function listPlayers(query = ''): Promise<AdminPlayer[]> {
 export async function getPlayerById(id: string): Promise<AdminPlayer | null> {
   if (!process.env.DATABASE_URL) return null;
   const pool = getPool();
+  const playerColumns = await getPlayerTableColumns();
+  const playerSelect = buildPlayerSelectSql(playerColumns);
   const { rows } = await pool.query(
-    `SELECT ${PLAYER_SELECT} FROM players WHERE id = $1 LIMIT 1`,
+    `SELECT ${playerSelect} FROM players WHERE id = $1 LIMIT 1`,
     [id]
   );
   const data = rows[0];
@@ -850,9 +899,11 @@ export async function getPlayersByIds(ids: string[]): Promise<AdminPlayer[]> {
   if (!normalizedIds.length) return [];
 
   const pool = getPool();
+  const playerColumns = await getPlayerTableColumns();
+  const playerSelect = buildPlayerSelectSql(playerColumns);
   const { rows } = await pool.query(
     `
-      SELECT ${PLAYER_SELECT}
+      SELECT ${playerSelect}
       FROM players
       WHERE id::text = ANY($1::text[])
     `,

@@ -1,5 +1,11 @@
 export type ThaiGenderFilter = 'all' | 'M' | 'W';
 
+export function getThaiErrorText(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return fallback;
+}
+
 export function resolveAbsoluteJudgeUrl(
   judgeUrl: string,
   origin?: string | null,

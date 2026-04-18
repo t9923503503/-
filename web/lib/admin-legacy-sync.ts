@@ -1,6 +1,7 @@
 export const THAI_ADMIN_FORMAT = 'Thai';
 export const IPT_MIXED_FORMAT = 'IPT Mixed';
 export const KOTC_ADMIN_FORMAT = 'King of the Court';
+export const GO_ADMIN_FORMAT = 'Groups + Olympic';
 
 export const THAI_ADMIN_MIN_COURTS = 1;
 export const THAI_ADMIN_MAX_COURTS = Number.MAX_SAFE_INTEGER;
@@ -35,6 +36,32 @@ export const KOTC_ADMIN_DEFAULT_RAUNDS = 2;
 export const KOTC_ADMIN_MIN_TIMER = 9;
 export const KOTC_ADMIN_MAX_TIMER = 20;
 export const KOTC_ADMIN_DEFAULT_TIMER = 10;
+export const GO_ADMIN_MIN_COURTS = 1;
+export const GO_ADMIN_MAX_COURTS = 7;
+export const GO_ADMIN_DEFAULT_COURTS = 3;
+export const GO_ADMIN_MIN_GROUPS = 1;
+export const GO_ADMIN_MAX_GROUPS = 12;
+export const GO_ADMIN_DEFAULT_GROUPS = 4;
+export const GO_ADMIN_MIN_TEAMS_PER_GROUP = 3;
+export const GO_ADMIN_MAX_TEAMS_PER_GROUP = 4;
+export const GO_ADMIN_DEFAULT_TEAMS_PER_GROUP = 4;
+export const GO_ADMIN_MIN_DECLARED_TEAMS = 2;
+export const GO_ADMIN_MAX_DECLARED_TEAMS = GO_ADMIN_MAX_GROUPS * GO_ADMIN_MAX_TEAMS_PER_GROUP;
+export const GO_ADMIN_DEFAULT_GROUP_FORMULA = { hard: 2, medium: 1, lite: 1 } as const;
+export const GO_ADMIN_DEFAULT_SLOT_MINUTES = 30;
+export const GO_ADMIN_DEFAULT_START_TIME = '08:00';
+export const GO_ADMIN_PLAYOFF_LEAGUES = ['lyutye', 'hard', 'medium', 'lite'] as const;
+export const GO_ADMIN_MIN_BRACKET_LEVELS = 2;
+export const GO_ADMIN_MAX_BRACKET_LEVELS = 4;
+export const GO_ADMIN_DEFAULT_BRACKET_LEVELS = 3;
+export const GO_BRACKET_LEVEL_LABELS = GO_ADMIN_PLAYOFF_LEAGUES;
+
+export type GoAutoLayoutSuggestion = {
+  declaredTeamCount: number;
+  groupCount: number;
+  groupSize: 3 | 4;
+  emptySlots: number;
+};
 
 export const THAI_VARIANTS = ['MF', 'MN', 'MM', 'WW'] as const;
 export type ThaiVariant = (typeof THAI_VARIANTS)[number];
@@ -136,6 +163,10 @@ export function isKotcAdminFormat(format: unknown): boolean {
   return String(format ?? '').trim().toLowerCase() === KOTC_ADMIN_FORMAT.toLowerCase();
 }
 
+export function isGoAdminFormat(format: unknown): boolean {
+  return String(format ?? '').trim().toLowerCase() === GO_ADMIN_FORMAT.toLowerCase();
+}
+
 export function getThaiSeatCount(courts: number): number {
   return clamp(Math.floor(Number(courts) || 0), THAI_ADMIN_MIN_COURTS, THAI_ADMIN_MAX_COURTS) * THAI_ADMIN_SEAT_COUNT;
 }
@@ -148,6 +179,48 @@ export function getKotcSeatCount(courts: number, ppc = KOTC_ADMIN_DEFAULT_PPC): 
   const normalizedCourts = clamp(Math.floor(Number(courts) || 0), KOTC_ADMIN_MIN_COURTS, KOTC_ADMIN_MAX_COURTS);
   const normalizedPpc = clamp(Math.floor(Number(ppc) || 0), KOTC_ADMIN_MIN_PPC, KOTC_ADMIN_MAX_PPC);
   return normalizedCourts * normalizedPpc * 2;
+}
+
+export function getGoSeatCount(groups: number, teamsPerGroup: number): number {
+  const normalizedGroups = Math.max(1, Math.floor(Number(groups) || 0));
+  const normalizedTeamsPerGroup = clamp(
+    Math.floor(Number(teamsPerGroup) || 0),
+    GO_ADMIN_MIN_TEAMS_PER_GROUP,
+    GO_ADMIN_MAX_TEAMS_PER_GROUP,
+  );
+  return normalizedGroups * normalizedTeamsPerGroup * 2;
+}
+
+export function buildGoAutoLayoutSuggestion(declaredTeams: number): GoAutoLayoutSuggestion {
+  const normalizedDeclaredTeamCount = clamp(
+    Math.floor(Number(declaredTeams) || 0),
+    GO_ADMIN_MIN_DECLARED_TEAMS,
+    GO_ADMIN_MAX_DECLARED_TEAMS,
+  );
+  const candidates: GoAutoLayoutSuggestion[] = [3, 4]
+    .map((groupSize) => {
+      const groupCount = Math.ceil(normalizedDeclaredTeamCount / groupSize);
+      if (groupCount < GO_ADMIN_MIN_GROUPS || groupCount > GO_ADMIN_MAX_GROUPS) return null;
+      return {
+        declaredTeamCount: normalizedDeclaredTeamCount,
+        groupCount,
+        groupSize: groupSize as 3 | 4,
+        emptySlots: groupCount * groupSize - normalizedDeclaredTeamCount,
+      };
+    })
+    .filter((row): row is GoAutoLayoutSuggestion => Boolean(row));
+  const best = candidates.sort((left, right) => {
+    if (left.emptySlots !== right.emptySlots) return left.emptySlots - right.emptySlots;
+    if (left.groupCount !== right.groupCount) return left.groupCount - right.groupCount;
+    return right.groupSize - left.groupSize;
+  })[0];
+  if (best) return best;
+  return {
+    declaredTeamCount: normalizedDeclaredTeamCount,
+    groupCount: GO_ADMIN_MAX_GROUPS,
+    groupSize: GO_ADMIN_MAX_TEAMS_PER_GROUP as 4,
+    emptySlots: GO_ADMIN_MAX_GROUPS * GO_ADMIN_MAX_TEAMS_PER_GROUP - normalizedDeclaredTeamCount,
+  };
 }
 
 function inferCourtCount(participantCount: unknown, fallback: number): number {
@@ -173,6 +246,91 @@ function inferKotcCourtCount(participantCount: unknown, ppc: number, fallback: n
     );
   }
   return clamp(fallback, KOTC_ADMIN_MIN_COURTS, KOTC_ADMIN_MAX_COURTS);
+}
+
+function inferGoTeamsPerGroup(participantCount: unknown, groupCount: number, fallback: number): number {
+  const parsed = Math.floor(Number(participantCount) || 0);
+  if (parsed > 0 && groupCount > 0) {
+    return clamp(
+      Math.ceil(parsed / 2 / groupCount),
+      GO_ADMIN_MIN_TEAMS_PER_GROUP,
+      GO_ADMIN_MAX_TEAMS_PER_GROUP,
+    );
+  }
+  return clamp(fallback, GO_ADMIN_MIN_TEAMS_PER_GROUP, GO_ADMIN_MAX_TEAMS_PER_GROUP);
+}
+
+function inferGoDeclaredTeamCount(source: Record<string, unknown>, groupSlotSize: number): number {
+  const persistedGroupCount = clamp(
+    toFiniteInt(source.goGroupCount ?? source.groupCount, GO_ADMIN_DEFAULT_GROUPS),
+    GO_ADMIN_MIN_GROUPS,
+    GO_ADMIN_MAX_GROUPS,
+  );
+  const fallback = persistedGroupCount * clamp(
+    Math.floor(Number(groupSlotSize) || 0),
+    GO_ADMIN_MIN_TEAMS_PER_GROUP,
+    GO_ADMIN_MAX_TEAMS_PER_GROUP,
+  );
+  return clamp(
+    toFiniteInt(source.goDeclaredTeamCount ?? source.declaredTeamCount, fallback),
+    GO_ADMIN_MIN_DECLARED_TEAMS,
+    GO_ADMIN_MAX_DECLARED_TEAMS,
+  );
+}
+
+function normalizeGoPlayoffLeague(value: unknown): typeof GO_ADMIN_PLAYOFF_LEAGUES[number] | null {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return GO_ADMIN_PLAYOFF_LEAGUES.find((league) => league === normalized) ?? null;
+}
+
+function sortGoPlayoffLeagues(
+  value: unknown,
+): Array<(typeof GO_ADMIN_PLAYOFF_LEAGUES)[number]> {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? String(value)
+          .split(',')
+          .map((item) => item.trim())
+      : [];
+  const selected = new Set(
+    raw
+      .map((item) => normalizeGoPlayoffLeague(item))
+      .filter((item): item is (typeof GO_ADMIN_PLAYOFF_LEAGUES)[number] => Boolean(item)),
+  );
+  const ordered = GO_ADMIN_PLAYOFF_LEAGUES.filter((league) => selected.has(league));
+  if (ordered.length >= 2) return ordered;
+  return ['hard', 'medium', 'lite'];
+}
+
+function normalizeGoGroupFormula(source: Record<string, unknown>) {
+  const hard = clamp(toFiniteInt(source.goGroupFormulaHard ?? source.groupFormulaHard, GO_ADMIN_DEFAULT_GROUP_FORMULA.hard), 0, 4);
+  const medium = clamp(
+    toFiniteInt(source.goGroupFormulaMedium ?? source.groupFormulaMedium, GO_ADMIN_DEFAULT_GROUP_FORMULA.medium),
+    0,
+    4,
+  );
+  const lite = clamp(toFiniteInt(source.goGroupFormulaLite ?? source.groupFormulaLite, GO_ADMIN_DEFAULT_GROUP_FORMULA.lite), 0, 4);
+  const total = hard + medium + lite;
+  if (total < GO_ADMIN_MIN_TEAMS_PER_GROUP || total > GO_ADMIN_MAX_TEAMS_PER_GROUP) {
+    return { ...GO_ADMIN_DEFAULT_GROUP_FORMULA };
+  }
+  return { hard, medium, lite };
+}
+
+function normalizeGoBracketSizeForLeague(
+  league: (typeof GO_ADMIN_PLAYOFF_LEAGUES)[number],
+  value: unknown,
+): number {
+  const fallback = league === 'lyutye' || league === 'hard' ? 4 : 2;
+  const normalized = clamp(toFiniteInt(value, fallback), 2, 16);
+  if (league === 'lyutye' || league === 'hard') {
+    return normalized <= 4 ? 4 : normalized <= 8 ? 8 : 16;
+  }
+  if (normalized <= 2) return 2;
+  if (normalized <= 4) return 4;
+  if (normalized <= 8) return 8;
+  return 16;
 }
 
 export function getThaiDivisionLabel(variant: unknown): string {
@@ -248,6 +406,122 @@ export function normalizeKotcAdminSettings(settings?: Record<string, unknown>, p
     ),
     kotcJudgeModule: normalizeKotcJudgeModule(source.kotcJudgeModule),
     kotcJudgeBootstrapSignature: normalizeKotcJudgeBootstrapSignature(source.kotcJudgeBootstrapSignature),
+  };
+}
+
+function normalizeGoMatchFormat(value: unknown): 'single15' | 'single21' | 'bo3' {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'single21') return 'single21';
+  if (normalized === 'bo3') return 'bo3';
+  return 'single15';
+}
+
+function normalizeGoSeedingMode(value: unknown): 'serpentine' | 'random' | 'manual' | 'fixedPairs' {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'random') return 'random';
+  if (normalized === 'manual') return 'manual';
+  if (
+    normalized === 'fixedpairs' ||
+    normalized === 'fixed_pairs' ||
+    normalized === 'fixed-pairs' ||
+    normalized === 'fixedpair' ||
+    normalized === 'fixed_pair' ||
+    normalized === 'fixed-pair'
+  ) {
+    return 'fixedPairs';
+  }
+  return 'serpentine';
+}
+
+function normalizeGoMatchPointSystem(value: unknown): 'fivb' | 'simple' {
+  return String(value ?? '').trim().toLowerCase() === 'simple' ? 'simple' : 'fivb';
+}
+
+function normalizeGoTieBreakerLogic(value: unknown): 'fivb' | 'classic' {
+  return String(value ?? '').trim().toLowerCase() === 'classic' ? 'classic' : 'fivb';
+}
+
+export function normalizeGoAdminSettings(
+  settings?: Record<string, unknown>,
+  participantCount?: unknown
+): {
+  declaredTeamCount: number;
+  courts: number;
+  groupFormula: { hard: number; medium: number; lite: number };
+  groupSlotSize: number;
+  matchFormat: 'single15' | 'single21' | 'bo3';
+  pointLimitGroup: number;
+  pointLimitBracket: number;
+  seedingMode: 'serpentine' | 'random' | 'manual' | 'fixedPairs';
+  slotMinutes: number;
+  startTime: string;
+  enabledPlayoffLeagues: Array<(typeof GO_ADMIN_PLAYOFF_LEAGUES)[number]>;
+  bracketSizes: Partial<Record<(typeof GO_ADMIN_PLAYOFF_LEAGUES)[number], number>>;
+  bronzeMatchEnabled: boolean;
+  bracketLevels: number;
+  matchPointSystem: 'fivb' | 'simple';
+  tieBreakerLogic: 'fivb' | 'classic';
+} {
+  const source = settings ?? {};
+  const groupFormula = normalizeGoGroupFormula(source);
+  const groupSlotSize = groupFormula.hard + groupFormula.medium + groupFormula.lite;
+  const declaredTeamCount = inferGoDeclaredTeamCount(source, groupSlotSize);
+  const matchFormat = normalizeGoMatchFormat(source.goMatchFormat ?? source.matchFormat);
+  const defaultPointLimit = matchFormat === 'single21' ? 21 : 15;
+  const enabledPlayoffLeagues = sortGoPlayoffLeagues(
+    source.goEnabledPlayoffLeagues ?? source.enabledPlayoffLeagues ?? source.goPlayoffPreset,
+  );
+  const bracketSizes = Object.fromEntries(
+    enabledPlayoffLeagues.map((league) => [
+      league,
+      normalizeGoBracketSizeForLeague(
+        league,
+        source[`goBracketSize_${league}`] ??
+          (source.goBracketSizes && typeof source.goBracketSizes === 'object'
+            ? (source.goBracketSizes as Record<string, unknown>)[league]
+            : undefined) ??
+          (source.bracketSizes && typeof source.bracketSizes === 'object'
+            ? (source.bracketSizes as Record<string, unknown>)[league]
+            : undefined),
+      ),
+    ]),
+  ) as Partial<Record<(typeof GO_ADMIN_PLAYOFF_LEAGUES)[number], number>>;
+  const parsedStart = String(source.goStartTime ?? source.startTime ?? GO_ADMIN_DEFAULT_START_TIME).trim();
+  const startTime = /^\d{2}:\d{2}$/.test(parsedStart) ? parsedStart : GO_ADMIN_DEFAULT_START_TIME;
+
+  return {
+    declaredTeamCount,
+    courts: clamp(
+      toFiniteInt(source.goCourts ?? source.courts, GO_ADMIN_DEFAULT_COURTS),
+      GO_ADMIN_MIN_COURTS,
+      GO_ADMIN_MAX_COURTS,
+    ),
+    groupFormula,
+    groupSlotSize,
+    matchFormat,
+    pointLimitGroup: clamp(
+      toFiniteInt(source.goPointLimitGroup ?? source.pointLimitGroup, defaultPointLimit),
+      1,
+      99,
+    ),
+    pointLimitBracket: clamp(
+      toFiniteInt(source.goPointLimitBracket ?? source.pointLimitBracket, defaultPointLimit),
+      1,
+      99,
+    ),
+    seedingMode: normalizeGoSeedingMode(source.goSeedingMode ?? source.seedingMode),
+    slotMinutes: clamp(
+      toFiniteInt(source.goSlotMinutes ?? source.slotMinutes, GO_ADMIN_DEFAULT_SLOT_MINUTES),
+      10,
+      120,
+    ),
+    startTime,
+    enabledPlayoffLeagues,
+    bracketSizes,
+    bronzeMatchEnabled: Boolean(source.goBronzeMatchEnabled ?? source.bronzeMatchEnabled ?? true),
+    bracketLevels: enabledPlayoffLeagues.length,
+    matchPointSystem: normalizeGoMatchPointSystem(source.goMatchPointSystem ?? source.matchPointSystem),
+    tieBreakerLogic: normalizeGoTieBreakerLogic(source.goTieBreakerLogic ?? source.tieBreakerLogic),
   };
 }
 

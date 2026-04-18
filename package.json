@@ -16,7 +16,9 @@
     "test:gate": "node scripts/release-gate.mjs",
     "verify:release": "npm run test:unit && cd web && npm run build",
     "test:smoke:headed": "playwright test --headed",
-    "test:smoke:debug": "playwright test --debug"
+    "test:smoke:debug": "playwright test --debug",
+    "ops:roster-history:prune": "node scripts/prune-roster-editor-history.mjs",
+    "ops:smoke:go-fixedpairs": "node scripts/smoke-go-fixedpairs-checklist.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",

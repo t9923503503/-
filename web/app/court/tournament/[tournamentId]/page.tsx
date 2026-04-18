@@ -12,8 +12,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { tournamentId } = await params;
   return {
-    title: `Thai Tournament ${String(tournamentId || '').trim()} | LPVOLLEY`,
-    description: 'Thai tournament-level judge workspace with round and court tabs.',
+    title: `Судейский турнир ${String(tournamentId || '').trim()} | LPVOLLEY`,
+    description: 'Турнирный судейский экран LPVOLLEY с вкладками раундов и кортов.',
   };
 }
 

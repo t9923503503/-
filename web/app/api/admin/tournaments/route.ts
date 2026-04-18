@@ -11,6 +11,8 @@ import {
 import { writeAuditLog } from '@/lib/admin-audit';
 import { normalizeTournamentInput, validateTournamentInput } from '@/lib/admin-validators';
 import { adminErrorResponse } from '@/lib/admin-errors';
+import { isGoAdminFormat, normalizeGoAdminSettings } from '@/lib/admin-legacy-sync';
+import { validateGoSetup } from '@/lib/go-next-config';
 import {
   THAI_JUDGE_MODULE_LEGACY,
   THAI_JUDGE_MODULE_NEXT,
@@ -101,6 +103,45 @@ async function validateThaiNextSaveInput(
   });
 }
 
+async function validateGoSaveInput(
+  input: ReturnType<typeof normalizeTournamentInput>,
+): Promise<string | null> {
+  const orderedParticipants = [...(input.participants ?? [])]
+    .filter((participant) => !participant.isWaitlist)
+    .sort((left, right) => left.position - right.position);
+  const playerIds = orderedParticipants.map((participant) => participant.playerId).filter(Boolean);
+  const players = await getPlayersByIds(playerIds);
+  const playersById = new Map(players.map((player) => [player.id, player]));
+
+  if (playersById.size !== playerIds.length) {
+    return 'GO could not resolve all roster players';
+  }
+
+  const settings = normalizeGoAdminSettings(input.settings, orderedParticipants.length);
+  const declaredParticipants = Math.max(2, Math.floor(Number(settings.declaredTeamCount) || 0)) * 2;
+  const structuralParticipantCount = Math.max(orderedParticipants.length, declaredParticipants);
+  const structuralError = validateGoSetup(settings as never, structuralParticipantCount);
+  if (structuralError) return structuralError;
+  if (String(input.status || '').toLowerCase() === 'draft') return null;
+
+  const isCompleteRoster = orderedParticipants.length >= structuralParticipantCount;
+  if (!isCompleteRoster) return null;
+  if (orderedParticipants.length % 2 !== 0) return 'GO requires an even number of participants';
+
+  const normalizedDivision = String(input.division || '').trim().toLowerCase();
+  const isMixedDivision = normalizedDivision.includes('mix') || normalizedDivision.includes('микс');
+  for (let index = 0; index < orderedParticipants.length; index += 2) {
+    const left = playersById.get(orderedParticipants[index]?.playerId ?? '');
+    const right = playersById.get(orderedParticipants[index + 1]?.playerId ?? '');
+    if (!left || !right) return 'GO teams must be formed from complete pairs';
+    const genders = [String(left.gender ?? 'M').toUpperCase(), String(right.gender ?? 'M').toUpperCase()].sort().join('');
+    if (isMixedDivision && genders !== 'MW') {
+      return 'Mixed GO requires M/W pairs in roster order';
+    }
+  }
+
+  return null;
+}
 function structuralLockResponse(error: string) {
   return NextResponse.json(
     {
@@ -156,6 +197,10 @@ export async function POST(req: NextRequest) {
     const { input } = await prepareTournamentInput(body, { isNew: true });
     const err = validateTournamentInput(input);
     if (err) return NextResponse.json({ error: err }, { status: 400 });
+    if (isGoAdminFormat(input.format)) {
+      const goError = await validateGoSaveInput(input);
+      if (goError) return NextResponse.json({ error: goError }, { status: 400 });
+    }
     if (isExactThaiTournamentFormat(input.format) && input.settings.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT) {
       const thaiNextError = await validateThaiNextSaveInput(input);
       if (thaiNextError) return NextResponse.json({ error: thaiNextError }, { status: 400 });
@@ -187,6 +232,10 @@ export async function PUT(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
     const err = validateTournamentInput(input);
     if (err) return NextResponse.json({ error: err }, { status: 400 });
+    if (isGoAdminFormat(input.format)) {
+      const goError = await validateGoSaveInput(input);
+      if (goError) return NextResponse.json({ error: goError }, { status: 400 });
+    }
 
     const before = existingTournament ?? (await getTournamentById(id));
     const beforeStatus = String(before?.status || '').toLowerCase();
@@ -291,3 +340,4 @@ export async function DELETE(req: NextRequest) {
     return adminErrorResponse(err, 'tournaments.delete');
   }
 }
+

@@ -12,6 +12,7 @@ describe('Sudyam launch contract', () => {
     expect(getSudyamFormatForTournament('Thai')).toBe('thai');
     expect(getSudyamFormatForTournament('King of the Court')).toBe('kotc');
     expect(getSudyamFormatForTournament('Round Robin')).toBe('rr');
+    expect(getSudyamFormatForTournament('Groups + Olympic')).toBe('go');
   });
 
   it('builds canonical sudyam launch URLs', () => {
@@ -19,6 +20,7 @@ describe('Sudyam launch contract', () => {
     expect(buildSudyamLaunchUrl({ tournamentId: 'thai-1', format: 'thai' })).toBe('/sudyam?tournamentId=thai-1&format=thai');
     expect(buildSudyamLaunchUrl({ tournamentId: 'kotc-1', format: 'kotc' })).toBe('/sudyam?tournamentId=kotc-1&format=kotc');
     expect(buildSudyamLaunchUrl({ tournamentId: 'rr-1', format: 'rr' })).toBe('/sudyam?tournamentId=rr-1&format=rr');
+    expect(buildSudyamLaunchUrl({ tournamentId: 'go-1', format: 'go' })).toBe('/sudyam?tournamentId=go-1&format=go');
   });
 
   it('keeps legacy params backward-compatible but does not force legacy mode from compat links', () => {

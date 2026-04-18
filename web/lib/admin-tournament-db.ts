@@ -1,6 +1,7 @@
 const DEFAULT_SUPPORTED_TOURNAMENT_FORMAT_CODES = new Set([
   'classic',
   'double_elim',
+  'groups_olympic',
   'ipt_mixed',
   'kotc',
   'swiss',
@@ -10,6 +11,9 @@ const TOURNAMENT_FORMAT_CODE_ALIASES = new Map<string, string>([
   ['classic', 'classic'],
   ['double elimination', 'double_elim'],
   ['double_elim', 'double_elim'],
+  ['go', 'groups_olympic'],
+  ['groups + olympic', 'groups_olympic'],
+  ['groups_olympic', 'groups_olympic'],
   ['ipt mixed', 'ipt_mixed'],
   ['ipt_mixed', 'ipt_mixed'],
   ['king of the court', 'kotc'],

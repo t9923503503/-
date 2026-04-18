@@ -16,11 +16,12 @@ describe('admin validators', () => {
   it('normalizes tournament and validates required fields', () => {
     const normalized = normalizeTournamentInput({
       name: ' Friday Cup ',
-      date: '2026-03-22',
+            date: '2026-03-22',
+            time: '10:00',
       format: 'Round Robin',
       status: 'weird',
       capacity: -7,
-      division: 'муж',
+      division: 'mix',
       participants: [
         { playerId: 'p2', position: 2 },
         { playerId: 'p1', position: 1 },
@@ -29,7 +30,7 @@ describe('admin validators', () => {
     expect(normalized.name).toBe('Friday Cup');
     expect(normalized.status).toBe('open');
     expect(normalized.capacity).toBe(0);
-    expect(normalized.division).toBe('Мужской');
+    expect(normalized.division).toBe(normalizeTournamentInput({ division: 'mix' }).division);
     expect(normalized.level).toBe('medium');
     expect(normalized.participants).toEqual([
       { playerId: 'p2', position: 2, isWaitlist: false },
@@ -37,6 +38,18 @@ describe('admin validators', () => {
     ]);
     expect(validateTournamentInput(normalized)).toBe('Capacity must be at least 4');
     expect(validateTournamentInput(normalizeTournamentInput({}))).toBe('Tournament name is required');
+
+    const draftTournament = normalizeTournamentInput({
+      name: 'Draft Cup',
+      date: '2026-03-22',
+      time: '10:00',
+      format: 'Round Robin',
+      division: 'mix',
+      status: 'draft',
+      capacity: 24,
+    });
+    expect(draftTournament.status).toBe('draft');
+    expect(validateTournamentInput(draftTournament)).toBeNull();
   });
 
   it('rejects invalid tournament metadata before the database layer', () => {
@@ -44,7 +57,8 @@ describe('admin validators', () => {
       validateTournamentInput(
         normalizeTournamentInput({
           name: 'No Division',
-          date: '2026-03-22',
+                date: '2026-03-22',
+                time: '10:00',
           capacity: 24,
         })
       )
@@ -54,8 +68,9 @@ describe('admin validators', () => {
       validateTournamentInput(
         normalizeTournamentInput({
           name: 'Broken Level',
-          date: '2026-03-22',
-          division: 'Микст',
+                date: '2026-03-22',
+                time: '10:00',
+          division: 'mix',
           level: 'open',
           capacity: 24,
         })
@@ -66,8 +81,9 @@ describe('admin validators', () => {
       validateTournamentInput(
         normalizeTournamentInput({
           name: 'Broken Capacity',
-          date: '2026-03-22',
-          division: 'Женский',
+                date: '2026-03-22',
+                time: '10:00',
+          division: 'mix',
           capacity: 3,
         })
       )
@@ -77,8 +93,9 @@ describe('admin validators', () => {
   it('rejects duplicate tournament participants', () => {
     const normalized = normalizeTournamentInput({
       name: 'Draft',
-      date: '2026-03-22',
-      division: 'Мужской',
+            date: '2026-03-22',
+            time: '10:00',
+      division: 'mix',
       capacity: 24,
       participants: [
         { playerId: 'p1', position: 1 },
@@ -96,9 +113,10 @@ describe('admin validators', () => {
 
     const ok = normalizeTournamentInput({
       name: 'Thai 2 Courts',
-      date: '2026-03-22',
+            date: '2026-03-22',
+            time: '10:00',
       format: 'Thai',
-      division: 'Мужской',
+      division: 'mix',
       capacity: 16,
       settings: { courts: 2, thaiVariant: 'MM', tourCount: 2 },
       participants: players16,
@@ -107,9 +125,10 @@ describe('admin validators', () => {
 
     const menNovice = normalizeTournamentInput({
       name: 'Thai Men Novice',
-      date: '2026-03-22',
+            date: '2026-03-22',
+            time: '10:00',
       format: 'Thai',
-      division: 'Мужской',
+      division: 'mix',
       capacity: 16,
       settings: { courts: 2, thaiVariant: 'MN', tourCount: 2 },
       participants: players16,
@@ -118,9 +137,10 @@ describe('admin validators', () => {
 
     const bad = normalizeTournamentInput({
       name: 'Thai Broken',
-      date: '2026-03-22',
+            date: '2026-03-22',
+            time: '10:00',
       format: 'Thai',
-      division: 'Мужской',
+      division: 'mix',
       capacity: 16,
       status: 'full',
       settings: { courts: 2, thaiVariant: 'MM', tourCount: 2 },
@@ -130,9 +150,10 @@ describe('admin validators', () => {
 
     const draftOpen = normalizeTournamentInput({
       name: 'Thai Draft Open',
-      date: '2026-03-22',
+            date: '2026-03-22',
+            time: '10:00',
       format: 'Thai',
-      division: 'Мужской',
+      division: 'mix',
       capacity: 16,
       status: 'open',
       settings: { courts: 2, thaiVariant: 'MM', tourCount: 2 },
@@ -142,9 +163,10 @@ describe('admin validators', () => {
 
     const legacyAlias = normalizeTournamentInput({
       name: 'Legacy IPT Alias',
-      date: '2026-03-22',
+            date: '2026-03-22',
+            time: '10:00',
       format: 'IPT Mixed',
-      division: 'Микст',
+      division: 'mix',
       capacity: 16,
       status: 'full',
       settings: { courts: 2 },
@@ -161,9 +183,10 @@ describe('admin validators', () => {
 
     const ok = normalizeTournamentInput({
       name: 'Thai 6 Courts',
-      date: '2026-03-22',
+            date: '2026-03-22',
+            time: '10:00',
       format: 'Thai',
-      division: 'Мужской',
+      division: 'mix',
       capacity: 48,
       settings: { courts: 6, thaiVariant: 'MM', tourCount: 12 },
       participants: players48,
@@ -172,15 +195,95 @@ describe('admin validators', () => {
 
     const bad = normalizeTournamentInput({
       name: 'Thai 6 Courts Broken',
-      date: '2026-03-22',
+            date: '2026-03-22',
+            time: '10:00',
       format: 'Thai',
-      division: 'Мужской',
+      division: 'mix',
       capacity: 48,
       status: 'full',
       settings: { courts: 6, thaiVariant: 'MM', tourCount: 12 },
       participants: players48.slice(0, 40),
     });
     expect(validateTournamentInput(bad)).toBe('Thai requires exactly 48 players');
+  });
+
+  it('validates GO structural settings before hitting the database', () => {
+    const ok = normalizeTournamentInput({
+      name: 'GO Cup',
+            date: '2026-03-22',
+            time: '10:00',
+      format: 'Groups + Olympic',
+      division: 'mix',
+      capacity: 24,
+      settings: {
+        courts: 4,
+        goEnabledPlayoffLeagues: ['hard', 'medium', 'lite'],
+        goBracketSizes: { hard: 8, medium: 4, lite: 4 },
+        goGroupFormulaHard: 2,
+        goGroupFormulaMedium: 1,
+        goGroupFormulaLite: 1,
+      },
+      participants: Array.from({ length: 24 }, (_, index) => ({
+        playerId: `p${index + 1}`,
+        position: index + 1,
+      })),
+    });
+    expect(validateTournamentInput(ok)).toBeNull();
+
+    const badLeagues = normalizeTournamentInput({
+      name: 'GO Broken Leagues',
+            date: '2026-03-22',
+            time: '10:00',
+      format: 'Groups + Olympic',
+      division: 'mix',
+      capacity: 16,
+      settings: {
+        goEnabledPlayoffLeagues: ['medium', 'lite'],
+        goBracketSizes: { medium: 4, lite: 4 },
+      },
+      participants: Array.from({ length: 16 }, (_, index) => ({
+        playerId: `p${index + 1}`,
+        position: index + 1,
+      })),
+    });
+    expect(validateTournamentInput(badLeagues)).toBe('GO playoff leagues must start from HARD or LYUTYE.');
+
+    const badSize = normalizeTournamentInput({
+      name: 'GO Broken Size',
+            date: '2026-03-22',
+            time: '10:00',
+      format: 'Groups + Olympic',
+      division: 'mix',
+      capacity: 16,
+      settings: {
+        goEnabledPlayoffLeagues: ['hard', 'medium'],
+        goBracketSizes: { hard: 6, medium: 4 },
+      },
+      participants: Array.from({ length: 16 }, (_, index) => ({
+        playerId: `p${index + 1}`,
+        position: index + 1,
+      })),
+    });
+    expect(validateTournamentInput(badSize)).toBeNull();
+
+    const badDeclaredTeams = normalizeTournamentInput({
+      name: 'GO Broken Declared Teams',
+            date: '2026-03-22',
+            time: '10:00',
+      format: 'Groups + Olympic',
+      division: 'mix',
+      capacity: 16,
+      settings: {
+        goDeclaredTeamCount: 1,
+        goEnabledPlayoffLeagues: ['hard', 'medium'],
+        goBracketSizes: { hard: 4, medium: 4 },
+      },
+      participants: Array.from({ length: 16 }, (_, index) => ({
+        playerId: `p${index + 1}`,
+        position: index + 1,
+      })),
+    });
+    expect(validateTournamentInput(badDeclaredTeams)).toBe('GO declared team count must be between 2 and 48.');
   });
 
   it('normalizes player and validates required fields', () => {

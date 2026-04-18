@@ -1,12 +1,17 @@
 import {
+  GO_ADMIN_MAX_DECLARED_TEAMS,
+  GO_ADMIN_MIN_DECLARED_TEAMS,
   IPT_MIXED_FORMAT,
+  isGoAdminFormat,
   THAI_ADMIN_FORMAT,
   getThaiSeatCount,
   isThaiAdminFormat,
+  normalizeGoAdminSettings,
   normalizeThaiAdminSettings,
 } from './admin-legacy-sync';
+import { validateGoSetup } from './go-next-config';
 
-const TOURNAMENT_STATUSES = new Set(['open', 'full', 'finished', 'cancelled']);
+const TOURNAMENT_STATUSES = new Set(['draft', 'open', 'full', 'finished', 'cancelled']);
 const TOURNAMENT_DIVISIONS = new Set(['Мужской', 'Женский', 'Микст']);
 const TOURNAMENT_LEVELS = new Set(['hard', 'medium', 'easy']);
 const PLAYER_GENDERS = new Set(['M', 'W']);
@@ -20,6 +25,32 @@ type PlayerPreferredPosition = 'attacker' | 'defender' | 'universal' | 'setter' 
 type BulkPlayerAction = 'status' | 'level' | 'delete';
 function toSafeString(value: unknown): string {
   return String(value != null ? value : '').trim();
+}
+
+function isValidIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [yearRaw, monthRaw, dayRaw] = value.split('-');
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  return (
+    candidate.getUTCFullYear() === year &&
+    candidate.getUTCMonth() === month - 1 &&
+    candidate.getUTCDate() === day
+  );
+}
+
+function isValidTime(value: string): boolean {
+  if (!/^\d{2}:\d{2}$/.test(value)) return false;
+  const [hourRaw, minuteRaw] = value.split(':');
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return false;
+  return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59;
 }
 
 function toFiniteNumber(value: unknown, fallback = 0): number {
@@ -96,6 +127,9 @@ export function normalizeTournamentInput(input: Record<string, unknown>) {
 export function validateTournamentInput(input: ReturnType<typeof normalizeTournamentInput>): string | null {
   if (!input.name) return 'Tournament name is required';
   if (!input.date) return 'Tournament date is required';
+  if (!isValidIsoDate(input.date)) return 'Tournament date must be YYYY-MM-DD';
+  if (!input.time) return 'Tournament time is required';
+  if (!isValidTime(input.time)) return 'Tournament time must be HH:mm';
   if (!input.division) return 'Division is required';
   if (!TOURNAMENT_DIVISIONS.has(input.division)) return 'Division must be Мужской, Женский, or Микст';
   if (!TOURNAMENT_LEVELS.has(input.level)) return 'Level must be hard, medium, or easy';
@@ -115,6 +149,23 @@ export function validateTournamentInput(input: ReturnType<typeof normalizeTourna
       const label = input.format === THAI_ADMIN_FORMAT ? THAI_ADMIN_FORMAT : IPT_MIXED_FORMAT;
       return `${label} requires exactly ${expectedParticipants} players`;
     }
+  }
+  if (isGoAdminFormat(input.format)) {
+    const rawDeclared = Number(input.settings?.goDeclaredTeamCount ?? input.settings?.declaredTeamCount);
+    if (Number.isFinite(rawDeclared)) {
+      const declared = Math.floor(rawDeclared);
+      if (declared < GO_ADMIN_MIN_DECLARED_TEAMS || declared > GO_ADMIN_MAX_DECLARED_TEAMS) {
+        return `GO declared team count must be between ${GO_ADMIN_MIN_DECLARED_TEAMS} and ${GO_ADMIN_MAX_DECLARED_TEAMS}.`;
+      }
+    }
+    const goSettings = normalizeGoAdminSettings(input.settings, input.participants?.length ?? 0);
+    const declaredParticipants = Math.max(
+      GO_ADMIN_MIN_DECLARED_TEAMS,
+      Math.floor(Number(goSettings.declaredTeamCount) || 0),
+    ) * 2;
+    const structuralParticipantCount = Math.max(input.participants?.length ?? 0, declaredParticipants);
+    const goError = validateGoSetup(goSettings, structuralParticipantCount);
+    if (goError) return goError;
   }
   return null;
 }

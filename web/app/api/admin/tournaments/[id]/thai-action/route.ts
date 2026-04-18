@@ -27,6 +27,19 @@ export async function POST(
     const action = String(body.action || '').trim().toLowerCase();
     const seed = Math.trunc(Number(body.seed) || 0);
 
+    const ALLOWED_ACTIONS = [
+      'bootstrap_r1',
+      'preview_draw',
+      'preview_r2_seed',
+      'confirm_r2_seed',
+      'reshuffle_r1',
+      'finish_r1',
+      'finish_r2',
+    ] as const;
+    if (!ALLOWED_ACTIONS.includes(action as (typeof ALLOWED_ACTIONS)[number])) {
+      return NextResponse.json({ error: 'Unsupported Thai admin action' }, { status: 400 });
+    }
+
     let preview;
     let r2SeedDraft;
 
@@ -42,8 +55,6 @@ export async function POST(
       await runThaiOperatorAction(id, action, {
         seed: seed >= 1 ? seed : undefined,
       });
-    } else {
-      return NextResponse.json({ error: 'Unsupported Thai admin action' }, { status: 400 });
     }
 
     const payload = await resolveSudyamBootstrap(id, 'thai');

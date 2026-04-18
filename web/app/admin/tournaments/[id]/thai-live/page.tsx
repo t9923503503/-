@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { ThaiTournamentControlClient } from '@/components/thai-live/ThaiTournamentControlClient';
+import { resolveSudyamBootstrap, type SudyamBootstrapPayload } from '@/lib/sudyam-bootstrap';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,11 +17,20 @@ export async function generateMetadata({
   };
 }
 
+async function loadInitialPayload(tournamentId: string): Promise<SudyamBootstrapPayload | null> {
+  try {
+    return await resolveSudyamBootstrap(tournamentId, 'thai');
+  } catch {
+    return null;
+  }
+}
+
 export default async function AdminThaiTournamentLivePage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <ThaiTournamentControlClient tournamentId={id} />;
+  const initialPayload = await loadInitialPayload(id);
+  return <ThaiTournamentControlClient tournamentId={id} initialPayload={initialPayload} />;
 }

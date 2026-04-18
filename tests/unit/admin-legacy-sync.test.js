@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildLegacyIptTournamentState,
   buildLegacyPlayerDbState,
+  buildGoAutoLayoutSuggestion,
   IPT_MIXED_FORMAT,
   IPT_MIXED_POINT_LIMIT_MAX,
   IPT_MIXED_POINT_LIMIT_MIN,
@@ -14,6 +15,7 @@ import {
   isKotcAdminFormat,
   normalizeKotcAdminSettings,
   normalizeKotcJudgeModule,
+  normalizeGoAdminSettings,
   normalizeThaiAdminSettings,
   normalizeThaiRosterMode,
   validateIptMixedRoster,
@@ -245,5 +247,51 @@ describe('admin legacy IPT sync helpers', () => {
       ratingMix: 0,
     });
     expect(typeof snapshot.synced_at).toBe('string');
+  });
+
+  it('normalizes GO seeding mode aliases to fixedPairs', () => {
+    expect(normalizeGoAdminSettings({ goSeedingMode: 'fixedPairs' }).seedingMode).toBe('fixedPairs');
+    expect(normalizeGoAdminSettings({ goSeedingMode: 'fixed_pairs' }).seedingMode).toBe('fixedPairs');
+    expect(normalizeGoAdminSettings({ goSeedingMode: 'fixed-pairs' }).seedingMode).toBe('fixedPairs');
+    expect(normalizeGoAdminSettings({ goSeedingMode: 'fixed_pair' }).seedingMode).toBe('fixedPairs');
+  });
+
+  it('builds GO auto layout suggestion with minimal empty slots and tie-breakers', () => {
+    expect(buildGoAutoLayoutSuggestion(29)).toEqual({
+      declaredTeamCount: 29,
+      groupCount: 10,
+      groupSize: 3,
+      emptySlots: 1,
+    });
+    expect(buildGoAutoLayoutSuggestion(2)).toEqual({
+      declaredTeamCount: 2,
+      groupCount: 1,
+      groupSize: 3,
+      emptySlots: 1,
+    });
+    expect(buildGoAutoLayoutSuggestion(36)).toEqual({
+      declaredTeamCount: 36,
+      groupCount: 9,
+      groupSize: 4,
+      emptySlots: 0,
+    });
+    expect(buildGoAutoLayoutSuggestion(48)).toEqual({
+      declaredTeamCount: 48,
+      groupCount: 12,
+      groupSize: 4,
+      emptySlots: 0,
+    });
+  });
+
+  it('normalizes declared GO team count from explicit setting and from layout fallback', () => {
+    expect(normalizeGoAdminSettings({ goDeclaredTeamCount: 29 }).declaredTeamCount).toBe(29);
+    expect(
+      normalizeGoAdminSettings({
+        goGroupCount: 10,
+        goGroupFormulaHard: 1,
+        goGroupFormulaMedium: 1,
+        goGroupFormulaLite: 1,
+      }).declaredTeamCount,
+    ).toBe(30);
   });
 });

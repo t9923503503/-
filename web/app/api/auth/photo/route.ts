@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { existsSync } from 'fs';
 import { writeFile, mkdir } from 'fs/promises';
 import { Buffer } from 'buffer';
 import path from 'path';
@@ -27,6 +28,7 @@ function getPhotoStorageDirs(): string[] {
 
   const addPublicRoot = (candidate: string) => {
     const resolved = path.resolve(candidate);
+    if (!existsSync(resolved)) return;
     dirs.add(path.join(resolved, 'images', 'users'));
   };
 
