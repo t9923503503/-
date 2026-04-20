@@ -46,6 +46,8 @@ describe('Thai admin live source contract', () => {
     const overridesRoute = read('web/app/api/admin/overrides/route.ts');
     const syncLib = read('web/lib/thai-live/sync-tournament-results.ts');
     const adminQueries = read('web/lib/admin-queries.ts');
+    const triggerMigration = read('migrations/057_fix_achievement_trigger_tournament_id_ambiguity.sql');
+    const grantMigration = read('migrations/058_grant_player_achievements_to_app_role.sql');
     const control = read('web/components/thai-live/ThaiTournamentControlClient.tsx');
 
     expect(syncLib).toContain('isThaiNextTournamentForRatingSync');
@@ -54,6 +56,11 @@ describe('Thai admin live source contract', () => {
     expect(overridesRoute).toContain('syncThaiStandingsToTournamentResultsOrThrowBadRequest');
     expect(adminQueries).toContain('if (process.env.DATABASE_URL)');
     expect(adminQueries).toContain('return pgQueries.upsertTournamentResults(tournamentId, results);');
+    expect(triggerMigration).toContain('v_tournament_id uuid;');
+    expect(triggerMigration).toContain('MIN(tr.balls) AS min_balls');
+    expect(triggerMigration).toContain('tournament_stats.min_balls');
+    expect(grantMigration).toContain("rolname = 'lpbvolley'");
+    expect(grantMigration).toContain('GRANT INSERT, SELECT ON TABLE public.player_achievements TO lpbvolley');
     expect(control).toContain('автоматически попадут в общий рейтинг и архив');
     expect(control).toContain('Пересчитать Thai в рейтинг / архив');
   });
