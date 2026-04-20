@@ -45,12 +45,15 @@ describe('Thai admin live source contract', () => {
     const tournamentsRoute = read('web/app/api/admin/tournaments/route.ts');
     const overridesRoute = read('web/app/api/admin/overrides/route.ts');
     const syncLib = read('web/lib/thai-live/sync-tournament-results.ts');
+    const adminQueries = read('web/lib/admin-queries.ts');
     const control = read('web/components/thai-live/ThaiTournamentControlClient.tsx');
 
     expect(syncLib).toContain('isThaiNextTournamentForRatingSync');
     expect(syncLib).toContain('syncThaiStandingsToTournamentResultsOrThrowBadRequest');
     expect(tournamentsRoute).toContain('syncThaiStandingsToTournamentResultsOrThrowBadRequest');
     expect(overridesRoute).toContain('syncThaiStandingsToTournamentResultsOrThrowBadRequest');
+    expect(adminQueries).toContain('if (process.env.DATABASE_URL)');
+    expect(adminQueries).toContain('return pgQueries.upsertTournamentResults(tournamentId, results);');
     expect(control).toContain('автоматически попадут в общий рейтинг и архив');
     expect(control).toContain('Пересчитать Thai в рейтинг / архив');
   });
@@ -81,6 +84,9 @@ describe('Thai admin live source contract', () => {
     expect(lib).toContain('getThaiTournamentFunStats');
     expect(board).toContain('ThaiSpectatorFunStats');
     expect(board).toContain('data.funStats');
+    expect(board).toContain('История очков');
+    expect(board).toContain('pointHistory.length');
+    expect(board).toContain('side-out');
     expect(panel).toContain('/live/thai/');
     expect(control).toContain('/live/thai/');
   });

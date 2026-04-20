@@ -187,6 +187,9 @@ export async function upsertTournamentResults(
   tournamentId: string,
   results: Parameters<typeof pgQueries.upsertTournamentResults>[1]
 ) {
+  if (process.env.DATABASE_URL) {
+    return pgQueries.upsertTournamentResults(tournamentId, results);
+  }
   return useRemote()
     ? remoteQueries.upsertTournamentResults(tournamentId, results)
     : pgQueries.upsertTournamentResults(tournamentId, results);
