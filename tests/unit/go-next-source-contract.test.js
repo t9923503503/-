@@ -55,7 +55,7 @@ describe('GO Next backend source contract', () => {
 
     expect(courtPage).toContain('getGoJudgeSnapshotByPin');
     expect(courtPage).toContain('GoJudgeScreen');
-    expect(manifest).toContain('LPVOLLEY Judge');
+    expect(manifest).toContain('LPVOLLEY Судья');
     expect(manifestRoute).toContain("Content-Type': 'application/manifest+json");
     expect(rootManifestRoute).toContain("Content-Type': 'application/manifest+json");
     expect(judgeScreen).toContain('/api/go/judge/');
