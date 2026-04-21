@@ -25,12 +25,25 @@ export function generateViewport(): Viewport {
 
 export default async function ThaiTournamentJudgePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ tournamentId: string }>;
+  searchParams?: Promise<{ round?: string; court?: string }>;
 }) {
   try {
     const { tournamentId } = await params;
-    const snapshot = await getThaiJudgeTournamentSnapshot(tournamentId);
+    const resolvedSearchParams = (await searchParams) ?? {};
+    const selectedRoundType =
+      resolvedSearchParams.round === 'r1' || resolvedSearchParams.round === 'r2'
+        ? resolvedSearchParams.round
+        : undefined;
+    const parsedCourtNo = Number(resolvedSearchParams.court);
+    const selectedCourtNo =
+      Number.isInteger(parsedCourtNo) && parsedCourtNo > 0 ? parsedCourtNo : undefined;
+    const snapshot = await getThaiJudgeTournamentSnapshot(tournamentId, {
+      selectedRoundType,
+      selectedCourtNo,
+    });
     return <ThaiTournamentJudgeWorkspace initialSnapshot={snapshot} />;
   } catch (error) {
     if (isThaiJudgeError(error) && error.status === 404) {

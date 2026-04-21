@@ -5,15 +5,15 @@ import { ThaiSpectatorFunStats } from '@/components/thai-live/ThaiSpectatorFunSt
 function formatThaiStage(stage: string | undefined): string {
   switch (stage) {
     case 'r1_live':
-      return 'R1 LIVE';
+      return 'Раунд 1 · идёт';
     case 'r1_finished':
-      return 'R1 FINISHED';
+      return 'Раунд 1 · завершён';
     case 'r2_live':
-      return 'R2 LIVE';
+      return 'Раунд 2 · идёт';
     case 'r2_finished':
-      return 'R2 FINISHED';
+      return 'Раунд 2 · завершён';
     default:
-      return 'SETUP';
+      return 'Подготовка';
   }
 }
 
@@ -33,8 +33,64 @@ function variantLabel(variant: string): string {
   return v || 'THAI';
 }
 
+function formatPointHistoryScore(score: { team1: number; team2: number }): string {
+  return `${score.team1}:${score.team2}`;
+}
+
+function getSpectatorHistoryStreak(
+  history: Array<{ kind: 'rally' | 'correction'; scoringSide: 1 | 2 | null }>,
+  index: number,
+): number {
+  const current = history[index];
+  if (!current || current.kind !== 'rally' || (current.scoringSide !== 1 && current.scoringSide !== 2)) return 0;
+  let streak = 1;
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const previous = history[cursor];
+    if (!previous || previous.kind !== 'rally' || previous.scoringSide !== current.scoringSide) break;
+    streak += 1;
+  }
+  return streak;
+}
+
+function groupProgressRowsByPool(
+  rows: ThaiSpectatorBoardPayload['progress'],
+): Array<{ poolLabel: string; rows: ThaiSpectatorBoardPayload['progress'] }> {
+  const grouped = new Map<string, ThaiSpectatorBoardPayload['progress']>();
+  for (const row of rows) {
+    const key = row.poolLabel || 'Без пула';
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(row);
+    grouped.set(key, bucket);
+  }
+  return Array.from(grouped.entries()).map(([poolLabel, poolRows]) => ({
+    poolLabel,
+    rows: [...poolRows].sort((left, right) => {
+      const leftR2 = left.r2Place ?? Number.MAX_SAFE_INTEGER;
+      const rightR2 = right.r2Place ?? Number.MAX_SAFE_INTEGER;
+      if (leftR2 !== rightR2) return leftR2 - rightR2;
+      const leftR1 = left.r1Place ?? Number.MAX_SAFE_INTEGER;
+      const rightR1 = right.r1Place ?? Number.MAX_SAFE_INTEGER;
+      if (leftR1 !== rightR1) return leftR1 - rightR1;
+      return left.playerName.localeCompare(right.playerName, 'ru');
+    }),
+  }));
+}
+
+function formatRoundPlace(value: number | null): string {
+  return value == null ? '—' : String(value);
+}
+
+function renderPlaceShift(row: ThaiSpectatorBoardPayload['progress'][number]): string | null {
+  if (row.r1Place == null || row.r2Place == null) return null;
+  if (row.r1Place === row.r2Place) return 'без изменений';
+  const delta = row.r1Place - row.r2Place;
+  if (delta > 0) return `↑ +${delta}`;
+  return `↓ ${delta}`;
+}
+
 export function ThaiSpectatorBoard({ data }: { data: ThaiSpectatorBoardPayload }) {
   const variant = String(data.variant || '').trim().toUpperCase();
+  const progressGroups = groupProgressRowsByPool(data.progress);
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4 px-4">
@@ -88,7 +144,7 @@ export function ThaiSpectatorBoard({ data }: { data: ThaiSpectatorBoardPayload }
             <div className="text-[10px] uppercase tracking-[0.28em] text-[#78809a]">Лимит очков</div>
             <div className="mt-2 text-2xl font-black tracking-[0.06em] text-white">
               {data.pointLimitR1 !== data.pointLimitR2
-                ? `R1 ${data.pointLimitR1} / R2 ${data.pointLimitR2}`
+                ? `Раунд 1 ${data.pointLimitR1} / Раунд 2 ${data.pointLimitR2}`
                 : data.pointLimitR1}
             </div>
           </div>
@@ -184,13 +240,67 @@ export function ThaiSpectatorBoard({ data }: { data: ThaiSpectatorBoardPayload }
                         </div>
                         <div className="mt-2 space-y-2 text-sm text-white/85">
                           {tour.matches.map((match) => (
-                            <div key={match.matchId} className="flex items-center justify-between gap-3">
-                              <div className="min-w-0 text-white/82">
-                                {match.team1Label} vs {match.team2Label}
+                            <div key={match.matchId} className="rounded-2xl border border-white/8 bg-black/15 px-3 py-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0 text-white/82">
+                                  {match.team1Label} vs {match.team2Label}
+                                </div>
+                                <div className="shrink-0 font-semibold text-[#ffd24a]">
+                                  {match.team1Score ?? '-'}:{match.team2Score ?? '-'}
+                                </div>
                               </div>
-                              <div className="shrink-0 font-semibold text-[#ffd24a]">
-                                {match.team1Score ?? '-'}:{match.team2Score ?? '-'}
-                              </div>
+
+                              {match.pointHistory.length ? (
+                                <details className="mt-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-2">
+                                  <summary className="cursor-pointer list-none text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8f7c4a]">
+                                    История очков · {match.pointHistory.length}
+                                  </summary>
+                                  <div className="mt-3 max-h-60 space-y-2 overflow-y-auto pr-1">
+                                    {match.pointHistory.map((event, index) => {
+                                      const streak = getSpectatorHistoryStreak(match.pointHistory, index);
+                                      const teamLabel =
+                                        event.scoringSide === 1
+                                          ? match.team1Label
+                                          : event.scoringSide === 2
+                                            ? match.team2Label
+                                            : 'Коррекция';
+                                      return (
+                                        <div
+                                          key={`${match.matchId}-history-${event.seqNo}`}
+                                          className={`rounded-[14px] border px-3 py-2 ${
+                                            event.kind === 'correction'
+                                              ? 'border-white/10 bg-white/5 text-white/78'
+                                              : event.scoringSide === 1
+                                                ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100'
+                                                : 'border-orange-400/20 bg-orange-500/10 text-orange-100'
+                                          }`}
+                                        >
+                                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                                            <span className="text-[11px] text-white/45">{formatPointHistoryScore(event.scoreBefore)}</span>
+                                            <span className="font-black">→</span>
+                                            <span className="font-semibold">{teamLabel}</span>
+                                            {event.kind === 'rally' ? (
+                                              <span className="text-[12px] italic text-white/68">
+                                                (подача: {event.serverPlayerBefore?.playerName ?? 'не задана'})
+                                              </span>
+                                            ) : null}
+                                            <span className="ml-auto font-black text-[#ffd24a]">
+                                              {formatPointHistoryScore(event.scoreAfter)}
+                                            </span>
+                                          </div>
+                                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-white/55">
+                                            {event.isSideOut ? <span className="rounded-full border border-white/10 px-2 py-0.5">side-out</span> : null}
+                                            {streak >= 2 ? (
+                                              <span className="rounded-full border border-white/10 px-2 py-0.5">{streak} подряд</span>
+                                            ) : null}
+                                            {event.kind === 'correction' ? <span>Коррекция счёта</span> : null}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </details>
+                              ) : null}
                             </div>
                           ))}
                         </div>
@@ -255,29 +365,71 @@ export function ThaiSpectatorBoard({ data }: { data: ThaiSpectatorBoardPayload }
       {data.progress.length ? (
         <section className="rounded-[24px] border border-[#3a3016] bg-[linear-gradient(180deg,rgba(20,18,32,0.98),rgba(12,12,24,0.98))] px-5 py-5 shadow-[0_18px_50px_rgba(0,0,0,0.26)]">
           <div className="text-[10px] uppercase tracking-[0.3em] text-[#8f7c4a]">Прогресс</div>
-          <h2 className="mt-2 font-heading text-2xl uppercase tracking-[0.08em] text-[#ffd24a]">Места по раундам</h2>
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-left text-xs text-white/82">
-              <thead className="text-[10px] uppercase tracking-[0.22em] text-[#7d8498]">
-                <tr>
-                  <th className="pb-2 pr-3">Игрок</th>
-                  <th className="pb-2 pr-3">Пул</th>
-                  <th className="pb-2 px-2 text-center">R1</th>
-                  <th className="pb-2 pl-2 text-center">R2</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.progress.map((row) => (
-                  <tr key={row.playerId} className="border-t border-white/6">
-                    <td className="py-2 pr-3 font-medium text-white">{row.playerName}</td>
-                    <td className="py-2 pr-3 text-[#aeb6c8]">{row.poolLabel}</td>
-                    <td className="py-2 px-2 text-center">{row.r1Place ?? '—'}</td>
-                    <td className="py-2 pl-2 text-center">{row.r2Place ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <h2 className="mt-2 font-heading text-2xl uppercase tracking-[0.08em] text-[#ffd24a]">
+            Места внутри пула по раундам
+          </h2>
+          <p className="mt-3 max-w-3xl text-sm leading-relaxed text-white/72">
+            Здесь показано не общее место по всему турниру, а место игрока внутри своего пула
+            на завершённом раунде. Поэтому одинаковые места могут повторяться в разных пулах.
+          </p>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            {progressGroups.map((group) => (
+              <div
+                key={group.poolLabel}
+                className="rounded-[18px] border border-white/8 bg-[#10101a] p-3"
+              >
+                <div className="text-[10px] uppercase tracking-[0.26em] text-[#8f7c4a]">
+                  {group.poolLabel}
+                </div>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="min-w-full text-left text-xs text-white/82">
+                    <thead className="text-[10px] uppercase tracking-[0.22em] text-[#7d8498]">
+                      <tr>
+                        <th className="pb-2 pr-3">Игрок</th>
+                        <th className="pb-2 pl-2 text-center">Раунд 1 → Раунд 2</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.rows.map((row) => (
+                        <tr key={row.playerId} className="border-t border-white/6">
+                          <td className="py-2 pr-3 font-medium text-white">{row.playerName}</td>
+                          <td className="py-2 pl-2 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-white/82">
+                                {formatRoundPlace(row.r1Place)}
+                              </span>
+                              <span className="text-white/45">→</span>
+                              <span className="rounded-full border border-[#5b4713] bg-[#18140d] px-2.5 py-1 text-[11px] font-semibold text-[#ffd24a]">
+                                {formatRoundPlace(row.r2Place)}
+                              </span>
+                              {renderPlaceShift(row) ? (
+                                <span
+                                  className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
+                                    row.r1Place === row.r2Place
+                                      ? 'border border-white/10 bg-white/5 text-white/65'
+                                      : (row.r1Place ?? 0) > (row.r2Place ?? 0)
+                                      ? 'border border-emerald-400/20 bg-emerald-500/10 text-emerald-200'
+                                      : 'border border-orange-400/20 bg-orange-500/10 text-orange-200'
+                                  }`}
+                                >
+                                  {renderPlaceShift(row)}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
           </div>
+          <p className="mt-3 text-xs leading-relaxed text-[#aeb6c8]">
+            Пример: запись `3 → 1` означает, что в первом раунде игрок был третьим в своём пуле,
+            а во втором стал первым. Метка `↑ +2` показывает, на сколько позиций он поднялся, а
+            `без изменений` значит, что место между раундами не поменялось.
+          </p>
         </section>
       ) : null}
 

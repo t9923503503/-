@@ -23,6 +23,41 @@ export interface ThaiJudgePlayerView {
   role: ThaiPlayerRole;
 }
 
+export interface ThaiJudgeScoreLine {
+  team1: number;
+  team2: number;
+}
+
+export interface ThaiJudgeServerPlayerRef {
+  playerId: string;
+  playerName: string;
+  role: ThaiPlayerRole;
+  teamSide: 1 | 2;
+}
+
+export interface ThaiJudgeServeState {
+  servingSide: 1 | 2;
+  team1Order: string[];
+  team2Order: string[];
+  team1CurrentIndex: number;
+  team2CurrentIndex: number;
+}
+
+export type ThaiJudgePointHistoryKind = 'rally' | 'correction';
+
+export interface ThaiJudgePointHistoryEvent {
+  seqNo: number;
+  kind: ThaiJudgePointHistoryKind;
+  scoringSide: 1 | 2 | null;
+  scoreBefore: ThaiJudgeScoreLine;
+  scoreAfter: ThaiJudgeScoreLine;
+  servingSideBefore: 1 | 2 | null;
+  serverPlayerBefore: ThaiJudgeServerPlayerRef | null;
+  servingSideAfter: 1 | 2 | null;
+  serverPlayerAfter: ThaiJudgeServerPlayerRef | null;
+  isSideOut: boolean;
+}
+
 export interface ThaiJudgeTeamView {
   side: 1 | 2;
   label: string;
@@ -37,6 +72,7 @@ export interface ThaiJudgeMatchView {
   team2Score: number | null;
   team1: ThaiJudgeTeamView;
   team2: ThaiJudgeTeamView;
+  pointHistory: ThaiJudgePointHistoryEvent[];
 }
 
 export interface ThaiJudgeTourView {
@@ -177,6 +213,7 @@ export interface ThaiJudgeConfirmPayload {
     matchId: string;
     team1Score: number;
     team2Score: number;
+    pointHistory?: ThaiJudgePointHistoryEvent[];
   }>;
 }
 
@@ -266,6 +303,7 @@ export interface ThaiOperatorTourMatchSummary {
   team1Score: number | null;
   team2Score: number | null;
   status: ThaiMatchStatus;
+  pointHistory: ThaiJudgePointHistoryEvent[];
 }
 
 export interface ThaiOperatorTourSummary {

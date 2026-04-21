@@ -24,6 +24,11 @@ describe('Thai judge v2 source contract', () => {
     expect(tournamentPage).toContain('getThaiJudgeTournamentSnapshot');
     expect(tournamentPage).toContain('ThaiTournamentJudgeWorkspace');
     expect(tournamentPage).toContain('Судейский турнир');
+    expect(tournamentPage).toContain('searchParams');
+    expect(tournamentPage).toContain("resolvedSearchParams.round === 'r1' || resolvedSearchParams.round === 'r2'");
+    expect(tournamentPage).toContain('resolvedSearchParams.court');
+    expect(tournamentPage).toContain('selectedRoundType,');
+    expect(tournamentPage).toContain('selectedCourtNo,');
     expect(manifestPage).toContain('LPVOLLEY Судья');
     expect(manifestRoute).toContain('LPVOLLEY Судья');
     expect(tournamentRoute).toContain('getThaiJudgeTournamentSnapshot');
@@ -56,6 +61,14 @@ describe('Thai judge v2 source contract', () => {
     expect(workspace).toContain('Черновик сохранён');
     expect(workspace).toContain('Ввести');
     expect(workspace).toContain('handleScoreTap');
+    expect(workspace).toContain('pointHistoryByMatch');
+    expect(workspace).toContain('serveStateByMatch');
+    expect(workspace).toContain('applyThaiJudgeRally');
+    expect(workspace).toContain('buildThaiJudgeServeStateFromSetup');
+    expect(workspace).toContain('Настройка подачи');
+    expect(workspace).toContain('Подача:');
+    expect(workspace).toContain('История очков');
+    expect(workspace).toContain('side-out');
     expect(workspace).toContain('resolveJudgeHeadline(snapshot)');
     expect(workspace).toContain('resolveJudgeSlotPair(snapshot)');
     expect(workspace).toContain('canAutoRefreshToNextStage');
@@ -83,6 +96,8 @@ describe('Thai judge v2 source contract', () => {
     expect(types).toContain('export interface ThaiJudgeTournamentCourtTabItem');
     expect(types).toContain('export interface ThaiJudgeTournamentRoundItem');
     expect(types).toContain('export interface ThaiJudgeTournamentSnapshot');
+    expect(types).toContain('export interface ThaiJudgePointHistoryEvent');
+    expect(types).toContain('pointHistory: ThaiJudgePointHistoryEvent[];');
     expect(types).toContain('roundNav: ThaiJudgeRoundNavItem[];');
     expect(types).toContain('courtNav: ThaiJudgeCourtNavItem[];');
     expect(types).toContain('activeSnapshot: ThaiJudgeSnapshot;');
@@ -93,6 +108,8 @@ describe('Thai judge v2 source contract', () => {
     expect(service).toContain('async function loadJudgeCourtNavTx');
     expect(service).toContain('async function loadJudgeRoundNavTx');
     expect(service).toContain('async function loadJudgeTournamentSnapshotTx');
+    expect(service).toContain('point_history');
+    expect(service).toContain('validatePointHistoryForMatch');
     expect(service).toContain('judgeSnapshotTimestamp');
     expect(service).toContain('getThaiJudgeTournamentSnapshot(');
     expect(service).toContain('getThaiJudgeTournamentSnapshotByPin');

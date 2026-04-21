@@ -42,6 +42,9 @@ import type {
   ThaiJudgeCourtNavItem,
   ThaiJudgeCourtSummary,
   ThaiJudgeMatchView,
+  ThaiJudgePointHistoryEvent,
+  ThaiJudgeScoreLine,
+  ThaiJudgeServerPlayerRef,
   ThaiJudgeRoundNavItem,
   ThaiJudgeSnapshot,
   ThaiJudgeStateSummary,
@@ -144,6 +147,7 @@ interface LoadedMatch {
   status: ThaiMatchStatus;
   team1Score: number | null;
   team2Score: number | null;
+  pointHistory: ThaiJudgePointHistoryEvent[];
   players: LoadedMatchPlayer[];
 }
 
@@ -235,6 +239,62 @@ function tourStatusFromValue(value: unknown): ThaiTourStatus {
 
 function roleFromValue(value: unknown): ThaiPlayerRole {
   return String(value || '').trim().toLowerCase() === 'secondary' ? 'secondary' : 'primary';
+}
+
+function normalizeThaiJudgeScoreLine(value: unknown): ThaiJudgeScoreLine | null {
+  if (!value || typeof value !== 'object') return null;
+  const team1 = Math.trunc(Number((value as ThaiJudgeScoreLine).team1));
+  const team2 = Math.trunc(Number((value as ThaiJudgeScoreLine).team2));
+  if (!Number.isFinite(team1) || !Number.isFinite(team2) || team1 < 0 || team2 < 0) return null;
+  return { team1, team2 };
+}
+
+function normalizeThaiJudgeServerPlayerRef(value: unknown): ThaiJudgeServerPlayerRef | null {
+  if (!value || typeof value !== 'object') return null;
+  const teamSide = asNum((value as ThaiJudgeServerPlayerRef).teamSide, 1) === 2 ? 2 : 1;
+  const playerId = String((value as ThaiJudgeServerPlayerRef).playerId || '').trim();
+  const playerName = String((value as ThaiJudgeServerPlayerRef).playerName || '').trim();
+  if (!playerId || !playerName) return null;
+  return {
+    playerId,
+    playerName,
+    role: roleFromValue((value as ThaiJudgeServerPlayerRef).role),
+    teamSide,
+  };
+}
+
+function normalizeThaiJudgePointHistoryEvent(value: unknown): ThaiJudgePointHistoryEvent | null {
+  if (!value || typeof value !== 'object') return null;
+  const kind = String((value as ThaiJudgePointHistoryEvent).kind || '').trim().toLowerCase();
+  if (kind !== 'rally' && kind !== 'correction') return null;
+  const scoreBefore = normalizeThaiJudgeScoreLine((value as ThaiJudgePointHistoryEvent).scoreBefore);
+  const scoreAfter = normalizeThaiJudgeScoreLine((value as ThaiJudgePointHistoryEvent).scoreAfter);
+  if (!scoreBefore || !scoreAfter) return null;
+  const seqNo = Math.trunc(Number((value as ThaiJudgePointHistoryEvent).seqNo) || 0);
+  if (!Number.isFinite(seqNo) || seqNo < 1) return null;
+  const scoringSideRaw = (value as ThaiJudgePointHistoryEvent).scoringSide;
+  const servingSideBeforeRaw = (value as ThaiJudgePointHistoryEvent).servingSideBefore;
+  const servingSideAfterRaw = (value as ThaiJudgePointHistoryEvent).servingSideAfter;
+  return {
+    seqNo,
+    kind,
+    scoringSide: scoringSideRaw === 1 || scoringSideRaw === 2 ? scoringSideRaw : null,
+    scoreBefore,
+    scoreAfter,
+    servingSideBefore: servingSideBeforeRaw === 1 || servingSideBeforeRaw === 2 ? servingSideBeforeRaw : null,
+    serverPlayerBefore: normalizeThaiJudgeServerPlayerRef((value as ThaiJudgePointHistoryEvent).serverPlayerBefore),
+    servingSideAfter: servingSideAfterRaw === 1 || servingSideAfterRaw === 2 ? servingSideAfterRaw : null,
+    serverPlayerAfter: normalizeThaiJudgeServerPlayerRef((value as ThaiJudgePointHistoryEvent).serverPlayerAfter),
+    isSideOut: Boolean((value as ThaiJudgePointHistoryEvent).isSideOut),
+  };
+}
+
+function normalizeThaiJudgePointHistory(value: unknown): ThaiJudgePointHistoryEvent[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((event) => normalizeThaiJudgePointHistoryEvent(event))
+    .filter((event): event is ThaiJudgePointHistoryEvent => Boolean(event))
+    .sort((left, right) => left.seqNo - right.seqNo);
 }
 
 function zoneFromCourtLabel(label: string): ThaiZoneKey | null {
@@ -696,6 +756,7 @@ async function loadMatchRowsByTourTx(
         m.status AS match_status,
         m.team1_score,
         m.team2_score,
+        m.point_history,
         mp.player_id,
         mp.team_side,
         mp.player_role,
@@ -720,6 +781,7 @@ async function loadMatchRowsByTourTx(
       status: matchStatusFromValue(row.match_status),
       team1Score: row.team1_score == null ? null : asNum(row.team1_score),
       team2Score: row.team2_score == null ? null : asNum(row.team2_score),
+      pointHistory: normalizeThaiJudgePointHistory(row.point_history),
       players: [],
     };
     existing.players.push({
@@ -823,6 +885,7 @@ function buildMatchViews(matches: LoadedMatch[]): ThaiJudgeMatchView[] {
       team2Score: match.team2Score,
       team1: buildTeamView(1, team1Players),
       team2: buildTeamView(2, team2Players),
+      pointHistory: match.pointHistory,
     };
   });
 }
@@ -1156,6 +1219,7 @@ async function buildCourtAggregateViewTx(
         team1Score: match.team1Score,
         team2Score: match.team2Score,
         status: match.status,
+        pointHistory: match.pointHistory,
       })),
     })),
     standingsGroups,
@@ -1808,11 +1872,110 @@ async function loadJudgeSnapshotByPinTx(client: PoolClient, pin: string): Promis
   };
 }
 
-function normalizeConfirmPayload(payload: ThaiJudgeConfirmPayload): Map<string, { team1Score: number; team2Score: number }> {
+function scoreLinesEqual(left: ThaiJudgeScoreLine, right: ThaiJudgeScoreLine): boolean {
+  return left.team1 === right.team1 && left.team2 === right.team2;
+}
+
+function validatePointHistoryForMatch(input: {
+  match: LoadedMatch;
+  history: ThaiJudgePointHistoryEvent[];
+  finalScore: ThaiJudgeScoreLine;
+  pointLimit: number;
+}): ThaiJudgePointHistoryEvent[] {
+  if (!input.history.length) return [];
+
+  const playersById = new Map(input.match.players.map((player) => [player.playerId, player] as const));
+  let runningScore: ThaiJudgeScoreLine = { team1: 0, team2: 0 };
+
+  for (let index = 0; index < input.history.length; index += 1) {
+    const event = input.history[index]!;
+    if (event.seqNo !== index + 1) {
+      throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: нарушена последовательность истории очков`);
+    }
+    if (!scoreLinesEqual(event.scoreBefore, runningScore)) {
+      throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: история очков не совпадает с текущим счётом`);
+    }
+    if (
+      event.scoreBefore.team1 > input.pointLimit ||
+      event.scoreBefore.team2 > input.pointLimit ||
+      event.scoreAfter.team1 > input.pointLimit ||
+      event.scoreAfter.team2 > input.pointLimit
+    ) {
+      throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: история очков выходит за лимит ${input.pointLimit}`);
+    }
+
+    if (event.serverPlayerBefore) {
+      const player = playersById.get(event.serverPlayerBefore.playerId);
+      if (!player || player.teamSide !== event.serverPlayerBefore.teamSide || player.playerRole !== event.serverPlayerBefore.role) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: история подачи содержит чужого игрока`);
+      }
+    }
+    if (event.serverPlayerAfter) {
+      const player = playersById.get(event.serverPlayerAfter.playerId);
+      if (!player || player.teamSide !== event.serverPlayerAfter.teamSide || player.playerRole !== event.serverPlayerAfter.role) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: история подачи содержит чужого игрока`);
+      }
+    }
+
+    if (event.kind === 'rally') {
+      if (event.scoringSide !== 1 && event.scoringSide !== 2) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: у розыгрыша не указана команда, взявшая очко`);
+      }
+      const deltaTeam1 = event.scoreAfter.team1 - event.scoreBefore.team1;
+      const deltaTeam2 = event.scoreAfter.team2 - event.scoreBefore.team2;
+      const isTeam1Point = event.scoringSide === 1;
+      if (deltaTeam1 !== (isTeam1Point ? 1 : 0) || deltaTeam2 !== (isTeam1Point ? 0 : 1)) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: история очков содержит неверный переход счёта`);
+      }
+      if ((event.servingSideBefore !== 1 && event.servingSideBefore !== 2) || (event.servingSideAfter !== 1 && event.servingSideAfter !== 2)) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: у розыгрыша потеряно состояние подачи`);
+      }
+      if (!event.serverPlayerBefore || !event.serverPlayerAfter) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: у розыгрыша нет подающего`);
+      }
+      if (event.serverPlayerBefore.teamSide !== event.servingSideBefore) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: подающий до розыгрыша не совпадает с подачей`);
+      }
+      if (event.serverPlayerAfter.teamSide !== event.servingSideAfter) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: подающий после розыгрыша не совпадает с подачей`);
+      }
+      const expectedSideOut = event.scoringSide !== event.servingSideBefore;
+      if (event.isSideOut !== expectedSideOut) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: неверно отмечен side-out`);
+      }
+      if (expectedSideOut && event.servingSideAfter !== event.scoringSide) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: после side-out подача должна перейти победителю розыгрыша`);
+      }
+      if (!expectedSideOut && event.servingSideAfter !== event.servingSideBefore) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: подача не должна меняться после очка на своей подаче`);
+      }
+    } else {
+      if (event.scoringSide !== null) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: correction не должен содержать scoringSide`);
+      }
+      if (event.isSideOut) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: correction не может быть side-out`);
+      }
+      if (event.servingSideAfter != null && event.serverPlayerAfter && event.serverPlayerAfter.teamSide !== event.servingSideAfter) {
+        throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: correction содержит неконсистентную подачу`);
+      }
+    }
+
+    runningScore = event.scoreAfter;
+  }
+
+  if (!scoreLinesEqual(runningScore, input.finalScore)) {
+    throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: история очков не сходится с итоговым счётом`);
+  }
+
+  return input.history;
+}
+
+function normalizeConfirmPayload(payload: ThaiJudgeConfirmPayload): Map<string, { team1Score: number; team2Score: number; pointHistory: ThaiJudgePointHistoryEvent[] }> {
   if (!payload || !Array.isArray(payload.matches)) {
     throw new ThaiJudgeError(400, 'Invalid match payload');
   }
-  const result = new Map<string, { team1Score: number; team2Score: number }>();
+  const result = new Map<string, { team1Score: number; team2Score: number; pointHistory: ThaiJudgePointHistoryEvent[] }>();
   for (const row of payload.matches) {
     const matchId = String(row?.matchId || '').trim();
     if (!matchId || result.has(matchId)) {
@@ -1820,7 +1983,11 @@ function normalizeConfirmPayload(payload: ThaiJudgeConfirmPayload): Map<string, 
     }
     const team1Score = Math.max(0, Math.trunc(Number(row?.team1Score) || 0));
     const team2Score = Math.max(0, Math.trunc(Number(row?.team2Score) || 0));
-    result.set(matchId, { team1Score, team2Score });
+    result.set(matchId, {
+      team1Score,
+      team2Score,
+      pointHistory: normalizeThaiJudgePointHistory(row?.pointHistory),
+    });
   }
   return result;
 }
@@ -2694,6 +2861,7 @@ export async function adminCorrectThaiTourScores(
           UPDATE thai_match
           SET team1_score = $2,
               team2_score = $3,
+              point_history = '[]'::jsonb,
               status = 'confirmed',
               updated_at = now()
           WHERE id = $1
@@ -2754,14 +2922,20 @@ export async function confirmThaiTourByPin(
 
     const pointLimit = getThaiPointLimitForRound(court.settings, court.roundType);
     for (const match of loadedMatches) {
-      const scores = normalizedPayload.get(match.matchId);
-      if (!scores) {
+      const payloadMatch = normalizedPayload.get(match.matchId);
+      if (!payloadMatch) {
         throw new ThaiJudgeError(409, 'Tour payload does not match current court snapshot');
       }
-      const scoreError = validateThaiMatchScore(scores.team1Score, scores.team2Score, pointLimit);
+      const scoreError = validateThaiMatchScore(payloadMatch.team1Score, payloadMatch.team2Score, pointLimit);
       if (scoreError) {
         throw new ThaiJudgeError(422, scoreError);
       }
+      validatePointHistoryForMatch({
+        match,
+        history: payloadMatch.pointHistory,
+        finalScore: { team1: payloadMatch.team1Score, team2: payloadMatch.team2Score },
+        pointLimit,
+      });
     }
 
     for (const match of loadedMatches) {
@@ -2771,11 +2945,12 @@ export async function confirmThaiTourByPin(
           UPDATE thai_match
           SET team1_score = $2,
               team2_score = $3,
+              point_history = $4::jsonb,
               status = 'confirmed',
               updated_at = now()
           WHERE id = $1
         `,
-        [match.matchId, scores.team1Score, scores.team2Score],
+        [match.matchId, scores.team1Score, scores.team2Score, JSON.stringify(scores.pointHistory)],
       );
     }
 
