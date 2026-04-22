@@ -1,15 +1,29 @@
-/**
- * Таблица очков за место (как в SPA `assets/js/state/app-state.js` и `web/lib/queries.ts`).
- * Профи: полные очки. Новички (Thai M/N и т.п.): round(очки / 2).
- */
 export const RATING_POINTS_TABLE = [
-  100, 90, 82, 76, 70, 65, 60, 56, 52, 48, // 1-10  HARD
-  44, 42, 40, 38, 36, 34, 32, 30, 28, 26, // 11-20 MEDIUM
-  24, 22, 20, 18, 16, 14, 12, 10, 8, 7, // 21-30
-  6, 5, 4, 3, 2, 2, 1, 1, 1, 1, // 31-40 LITE
+  100, 90, 82, 76, 70, 65, 60, 56, 52, 48,
+  44, 42, 40, 38, 36, 34, 32, 30, 28, 26,
+  24, 22, 20, 18, 16, 14, 12, 10, 8, 7,
+  6, 5, 4, 3, 2, 2, 1, 1, 1, 1,
 ] as const;
 
 export type RatingPool = 'pro' | 'novice';
+export type TournamentRatingLevel = 'hard' | 'advance' | 'medium' | 'lite';
+
+export const RATING_LEVEL_TABLES: Record<TournamentRatingLevel, readonly number[]> = {
+  hard: [100, 90, 82, 76],
+  advance: [70, 65, 60, 56, 52],
+  medium: [48, 44, 42, 40],
+  lite: [38, 36, 34, 32],
+} as const;
+
+export function normalizeTournamentRatingLevel(level: string | null | undefined): TournamentRatingLevel {
+  const normalized = String(level || '').trim().toLowerCase();
+  if (normalized === 'advance' || normalized === 'advanced') return 'advance';
+  if (normalized === 'medium' || normalized === 'mid') return 'medium';
+  if (normalized === 'lite' || normalized === 'light' || normalized === 'easy' || normalized === 'novice') {
+    return 'lite';
+  }
+  return 'hard';
+}
 
 export function pointsForPlace(place: number): number {
   const p = Math.floor(Number(place));
@@ -17,7 +31,14 @@ export function pointsForPlace(place: number): number {
   return RATING_POINTS_TABLE[p - 1];
 }
 
-/** Рейтинговые очки с учётом пула: новички — половина от таблицы мест, с округлением. */
+export function pointsForLevelPlace(place: number, level: TournamentRatingLevel = 'hard'): number {
+  const normalizedLevel = normalizeTournamentRatingLevel(level);
+  const table = RATING_LEVEL_TABLES[normalizedLevel];
+  const p = Math.floor(Number(place));
+  if (p < 1 || p > table.length) return 1;
+  return table[p - 1];
+}
+
 export function ratingPointsForPlace(place: number, pool: RatingPool = 'pro'): number {
   const base = pointsForPlace(place);
   if (pool === 'novice') {
@@ -26,21 +47,29 @@ export function ratingPointsForPlace(place: number, pool: RatingPool = 'pro'): n
   return base;
 }
 
-/**
- * Для UI и архива: если в БД уже записаны рейтинговые очки (>0) — показываем их;
- * иначе считаем по месту и пулу (старые строки без backfill).
- */
+export function ratingPointsForLevelPlace(
+  place: number,
+  level: TournamentRatingLevel = 'hard',
+  pool: RatingPool = 'pro',
+): number {
+  const base = pointsForLevelPlace(place, level);
+  if (pool === 'novice') {
+    return Math.round(base / 2);
+  }
+  return base;
+}
+
 export function effectiveRatingPtsFromStored(
   place: number,
   pool: RatingPool,
   storedRatingPts: number | null | undefined,
+  level?: TournamentRatingLevel | null,
 ): number {
-  const computed = ratingPointsForPlace(place, pool);
+  const computed = level ? ratingPointsForLevelPlace(place, level, pool) : ratingPointsForPlace(place, pool);
   const s = storedRatingPts == null ? Number.NaN : Number(storedRatingPts);
   return Number.isFinite(s) && s > 0 ? s : computed;
 }
 
-/** SQL-фрагмент: эффективные очки из места и rating_pool (pro по умолчанию). */
 export function sqlEffectiveRatingPointsExpr(trAlias = 'tr'): string {
   return `CASE
     WHEN COALESCE(${trAlias}.rating_pts, 0) > 0
