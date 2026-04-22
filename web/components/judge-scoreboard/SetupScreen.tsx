@@ -1,8 +1,9 @@
-'use client';
+﻿'use client';
 
 import { useMemo, useState } from 'react';
-import type { MatchConfig, MatchState, Preset, TeamId } from '@/lib/judge-scoreboard/types';
+import type { MatchConfig, MatchState, Preset, TeamPlayer } from '@/lib/judge-scoreboard/types';
 import { PRESETS } from '@/lib/judge-scoreboard/presets';
+import { MAX_TEAM_PLAYERS, normalizeTeamPlayers } from '@/lib/judge-scoreboard/serve';
 
 interface Props {
   courtId: string;
@@ -11,7 +12,8 @@ interface Props {
     preset: Preset;
     teamA: string;
     teamB: string;
-    firstServer: TeamId;
+    teamAPlayers: TeamPlayer[];
+    teamBPlayers: TeamPlayer[];
     matchName: string;
     judgeName: string;
     groupLabel: string;
@@ -36,6 +38,24 @@ function courtToNumber(court: string): string {
   return normalized || '1';
 }
 
+function toEditableRoster(label: string, prefix: 'a' | 'b'): string[] {
+  return normalizeTeamPlayers(undefined, label, prefix).map((player) => player.name);
+}
+
+function toRosterPayload(players: string[], prefix: 'a' | 'b'): TeamPlayer[] {
+  return players
+    .map((name, index) => ({
+      id: `${prefix}-${index + 1}`,
+      name: String(name || '').trim(),
+    }))
+    .filter((player) => player.name.length > 0);
+}
+
+function normalizeRosterDraft(players: string[]): string[] {
+  const cleaned = players.map((player) => String(player || '').trimStart()).slice(0, MAX_TEAM_PLAYERS);
+  return cleaned.length > 0 ? cleaned : [''];
+}
+
 export function SetupScreen({
   courtId,
   savedState,
@@ -50,12 +70,12 @@ export function SetupScreen({
   const [timeoutsPerTeam, setTimeoutsPerTeam] = useState<MatchConfig['timeoutsPerTeam']>(1);
   const [timeoutDurationSec, setTimeoutDurationSec] = useState<MatchConfig['timeoutDurationSec']>(45);
   const [lockScoreDuringTimeout, setLockScoreDuringTimeout] = useState(false);
-  const [autoServeOnPoint, setAutoServeOnPoint] = useState(true);
   const [timerModeMinutes, setTimerModeMinutes] = useState<MatchConfig['timerModeMinutes']>(0);
   const [division, setDivision] = useState<MatchConfig['division']>('MM');
   const [teamA, setTeamA] = useState('ОБУХОВ / ПАНИЧКИН');
   const [teamB, setTeamB] = useState('ГАДАБОРШЕВ / ГРУЗИН');
-  const [firstServer, setFirstServer] = useState<TeamId>('A');
+  const [teamAPlayers, setTeamAPlayers] = useState<string[]>(() => toEditableRoster('ОБУХОВ / ПАНИЧКИН', 'a'));
+  const [teamBPlayers, setTeamBPlayers] = useState<string[]>(() => toEditableRoster('ГАДАБОРШЕВ / ГРУЗИН', 'b'));
   const [matchName, setMatchName] = useState('');
   const [judgeName, setJudgeName] = useState('');
   const [groupLabel, setGroupLabel] = useState('GROUP B');
@@ -65,6 +85,37 @@ export function SetupScreen({
   const canStart = teamA.trim().length > 0 && teamB.trim().length > 0;
   const canResume =
     savedState && savedState.core.status !== 'setup' && savedState.core.status !== 'finished';
+
+  const updateRosterPlayer = (
+    team: 'A' | 'B',
+    index: number,
+    value: string,
+  ) => {
+    const setter = team === 'A' ? setTeamAPlayers : setTeamBPlayers;
+    setter((current) => {
+      const next = [...normalizeRosterDraft(current)];
+      next[index] = value;
+      return normalizeRosterDraft(next);
+    });
+  };
+
+  const addRosterPlayer = (team: 'A' | 'B') => {
+    const setter = team === 'A' ? setTeamAPlayers : setTeamBPlayers;
+    setter((current) => {
+      const next = normalizeRosterDraft(current);
+      if (next.length >= MAX_TEAM_PLAYERS) return next;
+      return [...next, ''];
+    });
+  };
+
+  const removeRosterPlayer = (team: 'A' | 'B') => {
+    const setter = team === 'A' ? setTeamAPlayers : setTeamBPlayers;
+    setter((current) => {
+      const next = normalizeRosterDraft(current);
+      if (next.length <= 1) return next;
+      return next.slice(0, -1);
+    });
+  };
 
   const startWithConfig = () => {
     if (!canStart) return;
@@ -79,7 +130,7 @@ export function SetupScreen({
         timeoutsPerTeam,
         timeoutDurationSec,
         lockScoreDuringTimeout,
-        autoServeOnPoint,
+        autoServeOnPoint: true,
         timerModeMinutes,
         division,
       },
@@ -89,13 +140,68 @@ export function SetupScreen({
       preset: derivedPreset,
       teamA,
       teamB,
-      firstServer,
+      teamAPlayers: toRosterPayload(teamAPlayers, 'a'),
+      teamBPlayers: toRosterPayload(teamBPlayers, 'b'),
       matchName: matchName.trim() || `КОРТ ${normalizedCourt} · МАТЧ`,
       judgeName: judgeName.trim(),
       groupLabel: groupLabel.trim() || 'GROUP B',
       courtId: normalizedCourt,
     });
   };
+
+  const renderRosterEditor = (
+    team: 'A' | 'B',
+    title: string,
+    players: string[],
+    accentClass: string,
+    cardClass: string,
+  ) => (
+    <div className={`rounded-2xl border p-3 ${cardClass}`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className={`text-xs uppercase tracking-widest ${accentClass}`}>{title}</p>
+          <p className="text-[11px] uppercase tracking-widest text-white/45">
+            {players.length} / {MAX_TEAM_PLAYERS} игроков в очереди подачи
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => removeRosterPlayer(team)}
+            disabled={players.length <= 1}
+            className="min-h-[38px] rounded-xl border border-white/15 bg-black/20 px-3 text-xs font-black uppercase tracking-widest text-white/70 disabled:opacity-30"
+            style={{ fontFamily: 'Bebas Neue, sans-serif' }}
+          >
+            - игрок
+          </button>
+          <button
+            type="button"
+            onClick={() => addRosterPlayer(team)}
+            disabled={players.length >= MAX_TEAM_PLAYERS}
+            className="min-h-[38px] rounded-xl border border-white/15 bg-white/10 px-3 text-xs font-black uppercase tracking-widest text-white disabled:opacity-30"
+            style={{ fontFamily: 'Bebas Neue, sans-serif' }}
+          >
+            + игрок
+          </button>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {players.map((player, index) => (
+          <label key={`${team}-${index}`} className="block text-[11px] uppercase tracking-widest text-white/55">
+            Игрок {index + 1}
+            <input
+              type="text"
+              value={player}
+              onChange={(event) => updateRosterPlayer(team, index, event.target.value)}
+              maxLength={48}
+              placeholder={`Игрок ${team}${index + 1}`}
+              className="mt-1 min-h-[44px] w-full rounded-xl border border-white/15 bg-[#0b1527] px-3 text-sm text-white"
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div
@@ -290,20 +396,18 @@ export function SetupScreen({
             />
             Блокировать очки во время timeout
           </label>
-          <label className="flex min-h-[44px] items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-xs uppercase tracking-widest text-white/80">
-            <input
-              type="checkbox"
-              checked={autoServeOnPoint}
-              onChange={(e) => setAutoServeOnPoint(e.target.checked)}
-              className="h-4 w-4"
-            />
-            Авто смена подачи при очке
-          </label>
         </div>
       </section>
 
       <section className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-        <p className="mb-2 text-xs uppercase tracking-widest text-white/50">Матч</p>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-widest text-white/50">Матч</p>
+            <p className="text-[11px] uppercase tracking-widest text-white/35">
+              Очередность подачи выбирается отдельно перед каждым сетом
+            </p>
+          </div>
+        </div>
         <div className="grid gap-2 md:grid-cols-2">
           <input
             type="text"
@@ -343,34 +447,12 @@ export function SetupScreen({
             onChange={(e) => setGroupLabel(e.target.value.toUpperCase())}
             maxLength={24}
             placeholder="GROUP B"
-            className="min-h-[46px] rounded-xl border border-white/10 bg-white/5 px-3 text-base uppercase text-white"
+            className="min-h-[46px] rounded-xl border border-white/10 bg-white/5 px-3 text-base uppercase text-white md:col-span-2"
           />
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setFirstServer('A')}
-              className={`min-h-[46px] rounded-xl border text-sm font-black uppercase tracking-widest ${
-                firstServer === 'A'
-                  ? 'border-yellow-300 bg-yellow-400/20 text-yellow-100'
-                  : 'border-white/15 bg-white/5 text-white/60'
-              }`}
-              style={{ fontFamily: 'Bebas Neue, sans-serif' }}
-            >
-              Подача A
-            </button>
-            <button
-              type="button"
-              onClick={() => setFirstServer('B')}
-              className={`min-h-[46px] rounded-xl border text-sm font-black uppercase tracking-widest ${
-                firstServer === 'B'
-                  ? 'border-yellow-300 bg-yellow-400/20 text-yellow-100'
-                  : 'border-white/15 bg-white/5 text-white/60'
-              }`}
-              style={{ fontFamily: 'Bebas Neue, sans-serif' }}
-            >
-              Подача B
-            </button>
-          </div>
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {renderRosterEditor('A', 'Команда A · состав', teamAPlayers, 'text-red-200', 'border-red-400/25 bg-red-500/10')}
+          {renderRosterEditor('B', 'Команда B · состав', teamBPlayers, 'text-sky-200', 'border-sky-400/25 bg-sky-500/10')}
         </div>
       </section>
 

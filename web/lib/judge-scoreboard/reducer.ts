@@ -5,6 +5,13 @@ import {
   isMatchWon,
   shouldSwapSides,
 } from './rules';
+import {
+  advanceServeTeamState,
+  cloneTeamPlayers,
+  createServeTeamState,
+  getServePlayerRef,
+  normalizeTeamPlayers,
+} from './serve';
 import type {
   MatchConfig,
   MatchCore,
@@ -14,10 +21,11 @@ import type {
   MatchStatus,
   QueueMatch,
   TeamId,
+  TeamPlayer,
 } from './types';
 
-const HISTORY_LIMIT = 200;
-const EVENT_LIMIT = 200;
+const HISTORY_LIMIT = 300;
+const EVENT_LIMIT = 1200;
 
 function makeEventId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -30,8 +38,10 @@ export type Action =
       config: MatchConfig;
       teamA: string;
       teamB: string;
-      firstServer: TeamId;
+      teamAPlayers: TeamPlayer[];
+      teamBPlayers: TeamPlayer[];
     }
+  | { type: 'APPLY_SET_SERVE_SETUP'; teamAOrder: TeamPlayer[]; teamBOrder: TeamPlayer[]; firstServer: TeamId; swapSides: boolean }
   | { type: 'ADD_POINT'; team: TeamId; delta: 1 | 2 | 3 }
   | { type: 'REMOVE_POINT'; team: TeamId }
   | { type: 'UNDO' }
@@ -79,16 +89,28 @@ function makeDefaultQueue(courtId: string): QueueMatch[] {
   }));
 }
 
+function makeDefaultTeamPlayers(team: TeamId): TeamPlayer[] {
+  return normalizeTeamPlayers(null, '', team === 'A' ? 'a' : 'b');
+}
+
 function makeEmptyCore(): MatchCore {
+  const teamAPlayers = makeDefaultTeamPlayers('A');
+  const teamBPlayers = makeDefaultTeamPlayers('B');
   return {
     teamA: 'КОМАНДА A',
     teamB: 'КОМАНДА B',
+    teamAPlayers,
+    teamBPlayers,
     scoreA: 0,
     scoreB: 0,
     setsA: 0,
     setsB: 0,
     currentSet: 1,
-    server: 'A',
+    servingTeam: null,
+    serveState: {
+      A: createServeTeamState(teamAPlayers, 'a'),
+      B: createServeTeamState(teamBPlayers, 'b'),
+    },
     leftTeam: 'A',
     status: 'setup',
     winner: null,
@@ -101,6 +123,54 @@ function makeEmptyCore(): MatchCore {
     timeoutEndsAt: null,
     lastActionAt: 0,
     warning: null,
+  };
+}
+
+function cloneCore(core: MatchCore): MatchCore {
+  return {
+    ...core,
+    teamAPlayers: cloneTeamPlayers(core.teamAPlayers),
+    teamBPlayers: cloneTeamPlayers(core.teamBPlayers),
+    serveState: {
+      A: {
+        ...core.serveState.A,
+        order: cloneTeamPlayers(core.serveState.A.order),
+      },
+      B: {
+        ...core.serveState.B,
+        order: cloneTeamPlayers(core.serveState.B.order),
+      },
+    },
+  };
+}
+
+function scoreSnapshot(core: MatchCore) {
+  return { A: core.scoreA, B: core.scoreB };
+}
+
+function buildEventBase(prevCore: MatchCore): Pick<MatchEvent, 'setNumber' | 'scoreBefore' | 'servingTeamBefore' | 'serverPlayerBefore'> {
+  const servingTeamBefore = prevCore.servingTeam;
+  return {
+    setNumber: prevCore.currentSet,
+    scoreBefore: scoreSnapshot(prevCore),
+    servingTeamBefore,
+    serverPlayerBefore: servingTeamBefore ? getServePlayerRef(prevCore.serveState[servingTeamBefore]) : null,
+  };
+}
+
+function buildAfterServeFields(nextCore: MatchCore): Pick<MatchEvent, 'scoreAfter' | 'servingTeamAfter' | 'serverPlayerAfter'> {
+  const servingTeamAfter = nextCore.servingTeam;
+  return {
+    scoreAfter: scoreSnapshot(nextCore),
+    servingTeamAfter,
+    serverPlayerAfter: servingTeamAfter ? getServePlayerRef(nextCore.serveState[servingTeamAfter]) : null,
+  };
+}
+
+function resetServeStateForNewSet(core: MatchCore): MatchCore['serveState'] {
+  return {
+    A: createServeTeamState(core.serveState.A.order.length ? core.serveState.A.order : core.teamAPlayers, 'a'),
+    B: createServeTeamState(core.serveState.B.order.length ? core.serveState.B.order : core.teamBPlayers, 'b'),
   };
 }
 
@@ -147,7 +217,7 @@ function applySetFinish(
   if (matchWinner) {
     return {
       nextCore: {
-        ...prevCore,
+        ...cloneCore(prevCore),
         setsA,
         setsB,
         status: 'finished',
@@ -161,68 +231,98 @@ function applySetFinish(
 
   return {
     nextCore: {
-      ...prevCore,
+      ...cloneCore(prevCore),
       setsA,
       setsB,
       currentSet: prevCore.currentSet + 1,
       scoreA: 0,
       scoreB: 0,
+      servingTeam: null,
+      serveState: resetServeStateForNewSet(prevCore),
+      status: 'set_setup',
       timeoutActiveFor: null,
       timeoutEndsAt: null,
       lastSideSwapTotal: 0,
       pendingSideSwap: false,
       warning: null,
     },
-    status: 'playing',
+    status: 'set_setup',
     winner: null,
   };
 }
 
-function applyScoreChange(state: MatchState, team: TeamId, delta: number): MatchState {
+function applyRallyPointOnce(state: MatchState, team: TeamId): MatchState {
   const prevCore = state.core;
   if (prevCore.status !== 'playing') return state;
   if (state.config.lockScoreDuringTimeout && prevCore.timeoutActiveFor) {
-    return { ...state, core: { ...prevCore, warning: 'Идет тайм-аут: ввод очков заблокирован.' } };
+    return { ...state, core: { ...cloneCore(prevCore), warning: 'Идет тайм-аут: ввод очков заблокирован.' } };
   }
 
-  let scoreA = prevCore.scoreA + (team === 'A' ? delta : 0);
-  let scoreB = prevCore.scoreB + (team === 'B' ? delta : 0);
-  if (scoreA < 0) scoreA = 0;
-  if (scoreB < 0) scoreB = 0;
+  const nextCore = cloneCore(prevCore);
+  const resolvedServingTeam = prevCore.servingTeam ?? team;
+  const sideOut = resolvedServingTeam !== team;
+
+  if (team === 'A') nextCore.scoreA += 1;
+  if (team === 'B') nextCore.scoreB += 1;
+
+  if (sideOut) {
+    nextCore.serveState[resolvedServingTeam] = advanceServeTeamState(nextCore.serveState[resolvedServingTeam]);
+  }
+  nextCore.servingTeam = team;
 
   const interval = getSideSwapInterval(state.config, prevCore.currentSet);
-  let server: TeamId = prevCore.server;
-  if (delta > 0 && state.config.autoServeOnPoint) {
-    server = team;
+  if (shouldSwapSides(nextCore.scoreA, nextCore.scoreB, prevCore.lastSideSwapTotal, interval)) {
+    nextCore.pendingSideSwap = true;
   }
 
-  let pendingSideSwap = prevCore.pendingSideSwap;
-  const total = scoreA + scoreB;
-  if (shouldSwapSides(scoreA, scoreB, prevCore.lastSideSwapTotal, interval)) {
-    pendingSideSwap = true;
-  }
-
-  const nextCore: MatchCore = {
-    ...prevCore,
-    scoreA,
-    scoreB,
-    server,
-    pendingSideSwap,
-    lastActionAt: Date.now(),
-    warning: null,
-  };
+  nextCore.lastActionAt = Date.now();
+  nextCore.warning = null;
 
   const event: MatchEvent = {
     id: makeEventId(),
-    type: delta > 0 ? 'add_point' : 'remove_point',
+    type: 'rally',
     team,
-    timestamp: Date.now(),
+    timestamp: nextCore.lastActionAt,
+    scoringTeam: team,
+    isSideOut: sideOut,
+    ...buildEventBase(prevCore),
+    ...buildAfterServeFields(nextCore),
   };
 
   return {
     ...state,
     core: nextCore,
-    history: pushHistory(state.history, prevCore),
+    history: pushHistory(state.history, cloneCore(prevCore)),
+    events: pushEvent(state.events, event),
+  };
+}
+
+function applyManualCorrection(state: MatchState, team: TeamId, delta: -1 | 1): MatchState {
+  const prevCore = state.core;
+  if (prevCore.status !== 'playing' && prevCore.status !== 'finished') return state;
+
+  const nextCore = cloneCore(prevCore);
+  if (team === 'A') nextCore.scoreA = Math.max(0, nextCore.scoreA + delta);
+  if (team === 'B') nextCore.scoreB = Math.max(0, nextCore.scoreB + delta);
+  nextCore.warning = null;
+  nextCore.lastActionAt = Date.now();
+
+  const event: MatchEvent = {
+    id: makeEventId(),
+    type: 'correction',
+    team,
+    timestamp: nextCore.lastActionAt,
+    note: delta > 0 ? 'manual_plus' : 'manual_minus',
+    scoringTeam: team,
+    isSideOut: false,
+    ...buildEventBase(prevCore),
+    ...buildAfterServeFields(nextCore),
+  };
+
+  return {
+    ...state,
+    core: nextCore,
+    history: pushHistory(state.history, cloneCore(prevCore)),
     events: pushEvent(state.events, event),
   };
 }
@@ -230,17 +330,25 @@ function applyScoreChange(state: MatchState, team: TeamId, delta: number): Match
 export function reducer(state: MatchState, action: Action): MatchState {
   switch (action.type) {
     case 'START_MATCH': {
+      const teamAPlayers = normalizeTeamPlayers(action.teamAPlayers, action.teamA, 'a');
+      const teamBPlayers = normalizeTeamPlayers(action.teamBPlayers, action.teamB, 'b');
       const core: MatchCore = {
         teamA: action.teamA.trim() || 'КОМАНДА A',
         teamB: action.teamB.trim() || 'КОМАНДА B',
+        teamAPlayers,
+        teamBPlayers,
         scoreA: 0,
         scoreB: 0,
         setsA: 0,
         setsB: 0,
         currentSet: 1,
-        server: action.firstServer,
+        servingTeam: null,
+        serveState: {
+          A: createServeTeamState(teamAPlayers, 'a'),
+          B: createServeTeamState(teamBPlayers, 'b'),
+        },
         leftTeam: 'A',
-        status: 'playing',
+        status: 'set_setup',
         winner: null,
         sidesSwappedCount: 0,
         lastSideSwapTotal: 0,
@@ -261,41 +369,88 @@ export function reducer(state: MatchState, action: Action): MatchState {
       };
     }
 
-    case 'ADD_POINT':
-      return applyScoreChange(state, action.team, action.delta);
+    case 'APPLY_SET_SERVE_SETUP': {
+      const prevCore = state.core;
+      const teamAOrder = normalizeTeamPlayers(action.teamAOrder, prevCore.teamA, 'a');
+      const teamBOrder = normalizeTeamPlayers(action.teamBOrder, prevCore.teamB, 'b');
+      const nextCore = cloneCore(prevCore);
+      nextCore.serveState = {
+        A: createServeTeamState(teamAOrder, 'a'),
+        B: createServeTeamState(teamBOrder, 'b'),
+      };
+      nextCore.servingTeam = action.firstServer;
+      nextCore.status = 'playing';
+      nextCore.warning = null;
+      nextCore.lastActionAt = Date.now();
+      if (action.swapSides) {
+        nextCore.leftTeam = prevCore.leftTeam === 'A' ? 'B' : 'A';
+        nextCore.sidesSwappedCount += 1;
+      }
+
+      const event: MatchEvent = {
+        id: makeEventId(),
+        type: 'serve_setup',
+        team: action.firstServer,
+        timestamp: nextCore.lastActionAt,
+        note: action.swapSides ? 'swap_sides=1' : 'swap_sides=0',
+        scoringTeam: null,
+        isSideOut: false,
+        ...buildEventBase(prevCore),
+        ...buildAfterServeFields(nextCore),
+      };
+
+      return {
+        ...state,
+        core: nextCore,
+        history: pushHistory(state.history, cloneCore(prevCore)),
+        events: pushEvent(state.events, event),
+      };
+    }
+
+    case 'ADD_POINT': {
+      let nextState = state;
+      for (let index = 0; index < action.delta; index += 1) {
+        nextState = applyRallyPointOnce(nextState, action.team);
+      }
+      return nextState;
+    }
 
     case 'REMOVE_POINT':
-      return applyScoreChange(state, action.team, -1);
+      return applyManualCorrection(state, action.team, -1);
 
     case 'UNDO': {
       if (state.history.length === 0) return state;
-      const prev = state.history[state.history.length - 1];
+      const prev = cloneCore(state.history[state.history.length - 1]);
       return {
         ...state,
         core: { ...prev, warning: null, lastActionAt: Date.now() },
         history: state.history.slice(0, -1),
-        events: pushEvent(state.events, {
-          id: makeEventId(),
-          type: 'undo',
-          timestamp: Date.now(),
-        }),
+        events: state.events.slice(0, -1),
       };
     }
 
     case 'ACCEPT_SIDE_SWAP': {
       const prevCore = state.core;
       const total = prevCore.scoreA + prevCore.scoreB;
+      const nextCore = cloneCore(prevCore);
+      nextCore.leftTeam = prevCore.leftTeam === 'A' ? 'B' : 'A';
+      nextCore.sidesSwappedCount = prevCore.sidesSwappedCount + 1;
+      nextCore.lastSideSwapTotal = total;
+      nextCore.pendingSideSwap = false;
+      nextCore.warning = null;
+
       return {
         ...state,
-        core: {
-          ...prevCore,
-          leftTeam: prevCore.leftTeam === 'A' ? 'B' : 'A',
-          sidesSwappedCount: prevCore.sidesSwappedCount + 1,
-          lastSideSwapTotal: total,
-          pendingSideSwap: false,
-          warning: null,
-        },
-        history: pushHistory(state.history, prevCore),
+        core: nextCore,
+        history: pushHistory(state.history, cloneCore(prevCore)),
+        events: pushEvent(state.events, {
+          id: makeEventId(),
+          type: 'swap_sides',
+          timestamp: Date.now(),
+          note: 'auto_side_swap',
+          ...buildEventBase(prevCore),
+          ...buildAfterServeFields(nextCore),
+        }),
       };
     }
 
@@ -304,7 +459,7 @@ export function reducer(state: MatchState, action: Action): MatchState {
       return {
         ...state,
         core: {
-          ...prevCore,
+          ...cloneCore(prevCore),
           pendingSideSwap: false,
           lastSideSwapTotal: prevCore.scoreA + prevCore.scoreB,
           warning: null,
@@ -314,32 +469,42 @@ export function reducer(state: MatchState, action: Action): MatchState {
 
     case 'MANUAL_SWAP_SIDES': {
       const prevCore = state.core;
+      const nextCore = cloneCore(prevCore);
+      nextCore.leftTeam = prevCore.leftTeam === 'A' ? 'B' : 'A';
+      nextCore.sidesSwappedCount = prevCore.sidesSwappedCount + 1;
+      nextCore.warning = null;
       return {
         ...state,
-        core: {
-          ...prevCore,
-          leftTeam: prevCore.leftTeam === 'A' ? 'B' : 'A',
-          sidesSwappedCount: prevCore.sidesSwappedCount + 1,
-          warning: null,
-        },
-        history: pushHistory(state.history, prevCore),
+        core: nextCore,
+        history: pushHistory(state.history, cloneCore(prevCore)),
+        events: pushEvent(state.events, {
+          id: makeEventId(),
+          type: 'swap_sides',
+          timestamp: Date.now(),
+          note: 'manual_side_swap',
+          ...buildEventBase(prevCore),
+          ...buildAfterServeFields(nextCore),
+        }),
       };
     }
 
     case 'TOGGLE_SERVER': {
       const prevCore = state.core;
+      const nextCore = cloneCore(prevCore);
+      nextCore.servingTeam = prevCore.servingTeam === 'A' ? 'B' : 'A';
+      nextCore.warning = null;
+      nextCore.lastActionAt = Date.now();
       return {
         ...state,
-        core: {
-          ...prevCore,
-          server: prevCore.server === 'A' ? 'B' : 'A',
-          warning: null,
-        },
-        history: pushHistory(state.history, prevCore),
+        core: nextCore,
+        history: pushHistory(state.history, cloneCore(prevCore)),
         events: pushEvent(state.events, {
           id: makeEventId(),
           type: 'switch_serve',
-          timestamp: Date.now(),
+          timestamp: nextCore.lastActionAt,
+          note: 'manual_override',
+          ...buildEventBase(prevCore),
+          ...buildAfterServeFields(nextCore),
         }),
       };
     }
@@ -347,21 +512,24 @@ export function reducer(state: MatchState, action: Action): MatchState {
     case 'DISPUTED_BALL': {
       const prevCore = state.core;
       if (prevCore.status !== 'playing') return state;
-      const nextCore: MatchCore = {
-        ...prevCore,
-        scoreA: prevCore.scoreA + 1,
-        scoreB: prevCore.scoreB + 1,
-        warning: null,
-      };
+      const nextCore = cloneCore(prevCore);
+      nextCore.scoreA += 1;
+      nextCore.scoreB += 1;
+      nextCore.warning = null;
+      nextCore.lastActionAt = Date.now();
       return {
         ...state,
         core: nextCore,
-        history: pushHistory(state.history, prevCore),
+        history: pushHistory(state.history, cloneCore(prevCore)),
         events: pushEvent(state.events, {
           id: makeEventId(),
           type: 'disputed_ball',
-          timestamp: Date.now(),
-          note: 'special event',
+          timestamp: nextCore.lastActionAt,
+          note: 'special_event',
+          scoringTeam: null,
+          isSideOut: false,
+          ...buildEventBase(prevCore),
+          ...buildAfterServeFields(nextCore),
         }),
       };
     }
@@ -370,31 +538,31 @@ export function reducer(state: MatchState, action: Action): MatchState {
       const prevCore = state.core;
       if (prevCore.status !== 'playing') return state;
       if (prevCore.timeoutActiveFor) {
-        return { ...state, core: { ...prevCore, warning: 'Тайм-аут уже активен.' } };
+        return { ...state, core: { ...cloneCore(prevCore), warning: 'Тайм-аут уже активен.' } };
       }
       if (action.team === 'A' && prevCore.timeoutAUsed >= state.config.timeoutsPerTeam) {
-        return { ...state, core: { ...prevCore, warning: 'Лимит тайм-аутов A исчерпан.' } };
+        return { ...state, core: { ...cloneCore(prevCore), warning: 'Лимит тайм-аутов A исчерпан.' } };
       }
       if (action.team === 'B' && prevCore.timeoutBUsed >= state.config.timeoutsPerTeam) {
-        return { ...state, core: { ...prevCore, warning: 'Лимит тайм-аутов B исчерпан.' } };
+        return { ...state, core: { ...cloneCore(prevCore), warning: 'Лимит тайм-аутов B исчерпан.' } };
       }
-      const nextCore: MatchCore = {
-        ...prevCore,
-        timeoutAUsed: action.team === 'A' ? prevCore.timeoutAUsed + 1 : prevCore.timeoutAUsed,
-        timeoutBUsed: action.team === 'B' ? prevCore.timeoutBUsed + 1 : prevCore.timeoutBUsed,
-        timeoutActiveFor: action.team,
-        timeoutEndsAt: action.now + state.config.timeoutDurationSec * 1000,
-        warning: null,
-      };
+      const nextCore = cloneCore(prevCore);
+      nextCore.timeoutAUsed = action.team === 'A' ? prevCore.timeoutAUsed + 1 : prevCore.timeoutAUsed;
+      nextCore.timeoutBUsed = action.team === 'B' ? prevCore.timeoutBUsed + 1 : prevCore.timeoutBUsed;
+      nextCore.timeoutActiveFor = action.team;
+      nextCore.timeoutEndsAt = action.now + state.config.timeoutDurationSec * 1000;
+      nextCore.warning = null;
       return {
         ...state,
         core: nextCore,
-        history: pushHistory(state.history, prevCore),
+        history: pushHistory(state.history, cloneCore(prevCore)),
         events: pushEvent(state.events, {
           id: makeEventId(),
           type: 'timeout',
           team: action.team,
           timestamp: action.now,
+          ...buildEventBase(prevCore),
+          ...buildAfterServeFields(nextCore),
         }),
       };
     }
@@ -405,7 +573,7 @@ export function reducer(state: MatchState, action: Action): MatchState {
       return {
         ...state,
         core: {
-          ...prevCore,
+          ...cloneCore(prevCore),
           timeoutActiveFor: null,
           timeoutEndsAt: null,
           warning: null,
@@ -419,17 +587,21 @@ export function reducer(state: MatchState, action: Action): MatchState {
       const target = getCurrentTarget(state.config, prevCore.currentSet);
       const verdict = canEndSetNow(prevCore.scoreA, prevCore.scoreB, target, state.config.winByTwo);
       if (!verdict.ok && !action.force) {
-        return { ...state, core: { ...prevCore, warning: verdict.reason } };
+        return { ...state, core: { ...cloneCore(prevCore), warning: verdict.reason } };
       }
       const { nextCore } = applySetFinish(prevCore, state.config);
       return {
         ...state,
         core: nextCore,
-        history: pushHistory(state.history, prevCore),
+        history: pushHistory(state.history, cloneCore(prevCore)),
         events: pushEvent(state.events, {
           id: makeEventId(),
           type: 'end_set',
           timestamp: Date.now(),
+          team: prevCore.scoreA > prevCore.scoreB ? 'A' : 'B',
+          scoringTeam: prevCore.scoreA > prevCore.scoreB ? 'A' : 'B',
+          ...buildEventBase(prevCore),
+          ...buildAfterServeFields(nextCore),
         }),
       };
     }
@@ -442,17 +614,26 @@ export function reducer(state: MatchState, action: Action): MatchState {
           : prevCore.scoreA > prevCore.scoreB
             ? 'A'
             : 'B';
+      const nextCore = cloneCore(prevCore);
+      nextCore.status = 'finished';
+      nextCore.winner = winner;
+      nextCore.timeoutActiveFor = null;
+      nextCore.timeoutEndsAt = null;
+      nextCore.warning = null;
       return {
         ...state,
-        core: {
-          ...prevCore,
-          status: 'finished',
-          winner,
-          timeoutActiveFor: null,
-          timeoutEndsAt: null,
-          warning: null,
-        },
-        history: pushHistory(state.history, prevCore),
+        core: nextCore,
+        history: pushHistory(state.history, cloneCore(prevCore)),
+        events: pushEvent(state.events, {
+          id: makeEventId(),
+          type: 'end_set',
+          timestamp: Date.now(),
+          note: 'finish_match',
+          team: winner ?? undefined,
+          scoringTeam: winner,
+          ...buildEventBase(prevCore),
+          ...buildAfterServeFields(nextCore),
+        }),
       };
     }
 
@@ -480,7 +661,7 @@ export function reducer(state: MatchState, action: Action): MatchState {
       return {
         ...state,
         core: {
-          ...prevCore,
+          ...cloneCore(prevCore),
           teamA: action.team === 'A' ? trimmed : prevCore.teamA,
           teamB: action.team === 'B' ? trimmed : prevCore.teamB,
         },
@@ -490,6 +671,8 @@ export function reducer(state: MatchState, action: Action): MatchState {
     case 'LOAD_QUEUE_MATCH': {
       const match = state.meta.queueMatches.find((item) => item.id === action.id);
       if (!match) return state;
+      const teamAPlayers = normalizeTeamPlayers(match.teamAPlayers, match.teamA, 'a');
+      const teamBPlayers = normalizeTeamPlayers(match.teamBPlayers, match.teamB, 'b');
       return {
         ...state,
         meta: {
@@ -499,21 +682,31 @@ export function reducer(state: MatchState, action: Action): MatchState {
           courtId: match.courtId || state.meta.courtId,
         },
         core: {
-          ...state.core,
+          ...cloneCore(state.core),
           teamA: match.teamA,
           teamB: match.teamB,
+          teamAPlayers,
+          teamBPlayers,
           scoreA: 0,
           scoreB: 0,
           setsA: 0,
           setsB: 0,
           currentSet: 1,
-          status: 'playing',
+          servingTeam: null,
+          serveState: {
+            A: createServeTeamState(teamAPlayers, 'a'),
+            B: createServeTeamState(teamBPlayers, 'b'),
+          },
+          status: 'set_setup',
           winner: null,
           timeoutAUsed: 0,
           timeoutBUsed: 0,
           timeoutActiveFor: null,
           timeoutEndsAt: null,
           warning: null,
+          leftTeam: 'A',
+          lastSideSwapTotal: 0,
+          pendingSideSwap: false,
         },
         history: [],
         events: [],
@@ -540,7 +733,7 @@ export function reducer(state: MatchState, action: Action): MatchState {
       return {
         ...state,
         core: {
-          ...state.core,
+          ...cloneCore(state.core),
           warning: null,
         },
       };
