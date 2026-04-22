@@ -48,6 +48,7 @@ export type ThaiJudgePointHistoryKind = 'rally' | 'correction';
 export interface ThaiJudgePointHistoryEvent {
   seqNo: number;
   kind: ThaiJudgePointHistoryKind;
+  recordedAt?: string | null;
   scoringSide: 1 | 2 | null;
   scoreBefore: ThaiJudgeScoreLine;
   scoreAfter: ThaiJudgeScoreLine;
