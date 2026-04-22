@@ -47,7 +47,72 @@ function isPointHistoryEvent(value: unknown): value is ThaiJudgePointHistoryEven
   const validKind = event.kind === 'rally' || event.kind === 'correction';
   const validScoreBefore = isScoreLine(event.scoreBefore);
   const validScoreAfter = isScoreLine(event.scoreAfter);
-  return validKind && validScoreBefore && validScoreAfter && Number.isFinite(Number(event.seqNo));
+  const validRecordedAt =
+    event.recordedAt == null ||
+    (typeof event.recordedAt === 'string' && Number.isFinite(Date.parse(event.recordedAt)));
+  return validKind && validScoreBefore && validScoreAfter && Number.isFinite(Number(event.seqNo)) && validRecordedAt;
+}
+
+function clampDraftScore(value: unknown, pointLimit: number): number {
+  const parsed = Math.trunc(Number(value));
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(pointLimit, parsed));
+}
+
+function scoreLinesEqual(left: ThaiJudgeScoreLine, right: ThaiJudgeScoreLine): boolean {
+  return left.team1 === right.team1 && left.team2 === right.team2;
+}
+
+function isZeroScore(score: ThaiJudgeScoreLine): boolean {
+  return score.team1 === 0 && score.team2 === 0;
+}
+
+function buildSynthesizedCorrectionEvent(
+  score: ThaiJudgeScoreLine,
+  recordedAt: string | null,
+): ThaiJudgePointHistoryEvent[] {
+  if (isZeroScore(score)) return [];
+  return [
+    {
+      seqNo: 1,
+      kind: 'correction',
+      recordedAt,
+      scoringSide: null,
+      scoreBefore: { team1: 0, team2: 0 },
+      scoreAfter: score,
+      servingSideBefore: null,
+      serverPlayerBefore: null,
+      servingSideAfter: null,
+      serverPlayerAfter: null,
+      isSideOut: false,
+    },
+  ];
+}
+
+function isUsableDraftHistory(
+  history: ThaiJudgePointHistoryEvent[],
+  finalScore: ThaiJudgeScoreLine,
+  pointLimit: number,
+): boolean {
+  if (!history.length) return isZeroScore(finalScore);
+
+  let runningScore: ThaiJudgeScoreLine = { team1: 0, team2: 0 };
+  for (let index = 0; index < history.length; index += 1) {
+    const event = history[index]!;
+    if (event.seqNo !== index + 1) return false;
+    if (!scoreLinesEqual(event.scoreBefore, runningScore)) return false;
+    if (
+      event.scoreBefore.team1 > pointLimit ||
+      event.scoreBefore.team2 > pointLimit ||
+      event.scoreAfter.team1 > pointLimit ||
+      event.scoreAfter.team2 > pointLimit
+    ) {
+      return false;
+    }
+    runningScore = event.scoreAfter;
+  }
+
+  return scoreLinesEqual(runningScore, finalScore);
 }
 
 export function buildThaiJudgeDraftKey(input: {
@@ -176,14 +241,50 @@ export function resolveThaiJudgeDraftState(input: {
     };
   }
 
+  const pointLimit = Math.max(0, Math.trunc(Number(input.snapshot.pointLimit) || 0));
+  const matchIds = new Set(input.snapshot.matches.map((match) => match.matchId));
+  const sanitizedScores: Record<string, ThaiJudgeScoreLine> = {};
+  const sanitizedServeStateByMatch: Record<string, ThaiJudgeServeState> = {};
+  const sanitizedPointHistoryByMatch: Record<string, ThaiJudgePointHistoryEvent[]> = {};
+
+  for (const matchId of Object.keys(input.draft.scores)) {
+    if (!matchIds.has(matchId)) continue;
+    const rawScore = input.draft.scores[matchId];
+    if (!rawScore) continue;
+
+    const sanitizedScore: ThaiJudgeScoreLine = {
+      team1: clampDraftScore(rawScore.team1, pointLimit),
+      team2: clampDraftScore(rawScore.team2, pointLimit),
+    };
+
+    if (sanitizedScore.team1 === sanitizedScore.team2 && !isZeroScore(sanitizedScore)) {
+      continue;
+    }
+
+    const draftHistory = input.draft.pointHistoryByMatch[matchId] ?? [];
+    const sanitizedHistory = isUsableDraftHistory(draftHistory, sanitizedScore, pointLimit)
+      ? draftHistory
+      : buildSynthesizedCorrectionEvent(sanitizedScore, null);
+
+    if (!isZeroScore(sanitizedScore)) {
+      sanitizedScores[matchId] = sanitizedScore;
+    }
+    if (sanitizedHistory.length) {
+      sanitizedPointHistoryByMatch[matchId] = sanitizedHistory;
+    }
+    if (input.draft.serveStateByMatch[matchId] && isUsableDraftHistory(draftHistory, sanitizedScore, pointLimit)) {
+      sanitizedServeStateByMatch[matchId] = input.draft.serveStateByMatch[matchId]!;
+    }
+  }
+
   return {
-    initialScores: input.draft.scores,
-    initialServeStateByMatch: input.draft.serveStateByMatch,
-    initialPointHistoryByMatch: input.draft.pointHistoryByMatch,
+    initialScores: sanitizedScores,
+    initialServeStateByMatch: sanitizedServeStateByMatch,
+    initialPointHistoryByMatch: sanitizedPointHistoryByMatch,
     restoredFromDraft:
-      Object.keys(input.draft.scores).length > 0 ||
-      Object.keys(input.draft.serveStateByMatch).length > 0 ||
-      Object.keys(input.draft.pointHistoryByMatch).length > 0,
+      Object.keys(sanitizedScores).length > 0 ||
+      Object.keys(sanitizedServeStateByMatch).length > 0 ||
+      Object.keys(sanitizedPointHistoryByMatch).length > 0,
     shouldClearDraft: false,
   };
 }

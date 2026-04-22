@@ -6,6 +6,7 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 DEFAULT_ENV_FILE="$SCRIPT_DIR/deploy-server.env"
+BUILD_WORK_DIR=""
 
 PULL_ENABLED=1
 ROOT_INSTALL_ENABLED=1
@@ -41,12 +42,20 @@ on_error() {
 
 trap 'on_error ${LINENO}' ERR
 
+cleanup() {
+  if [[ -n "${BUILD_WORK_DIR:-}" && -d "${BUILD_WORK_DIR}" ]]; then
+    rm -rf "${BUILD_WORK_DIR}"
+  fi
+}
+
+trap cleanup EXIT
+
 usage() {
   cat <<'EOF'
 Usage: ./scripts/deploy-server.sh [options]
 
 Runs the server-side deployment cycle for this repository:
-git pull -> optional npm ci -> root build -> web build -> standalone sync ->
+git fetch -> clean export build -> optional npm ci -> root build -> web build -> standalone sync ->
 static sync -> optional migrations -> service restart -> healthchecks.
 
 Options:
@@ -99,6 +108,20 @@ run_in_dir() {
     cd "$dir"
     bash -lc "$cmd"
   )
+}
+
+make_clean_build_workspace() {
+  local git_ref="$1"
+
+  BUILD_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/deploy-server.XXXXXX")"
+  BUILD_APP_DIR="${BUILD_WORK_DIR}/app"
+  BUILD_WEB_DIR="${BUILD_APP_DIR}/web"
+  BUILD_STATIC_BUILD_DIR="${BUILD_APP_DIR}/dist"
+
+  ensure_dir "$BUILD_APP_DIR"
+  log "Exporting ${git_ref} into clean build workspace ${BUILD_APP_DIR}"
+  git -C "$APP_DIR" archive "$git_ref" | tar -x -C "$BUILD_APP_DIR"
+  [[ -d "$BUILD_WEB_DIR" ]] || die "Clean build workspace is missing web/: ${BUILD_WEB_DIR}"
 }
 
 http_code_allowed() {
@@ -211,7 +234,7 @@ probe_next_route_assets() {
     fi
   done < <(
     printf '%s' "$page_html" \
-      | grep -oE '/_next/static/[^"'"'"'"'"'"'"'"'<>[:space:]]+' \
+      | grep -oE '/_next/static/[^"<>[:space:]]+' \
       | sort -u
   )
 
@@ -339,23 +362,82 @@ sync_static_mirror() {
 }
 
 sync_standalone_assets() {
-  local standalone_web_dir="${WEB_DIR}/.next/standalone/web"
+  local source_web_dir="${1:-$WEB_DIR}"
+  local standalone_web_dir="${source_web_dir}/.next/standalone/web"
   local standalone_static_dir="${standalone_web_dir}/.next/static"
   local standalone_public_dir="${standalone_web_dir}/public"
 
-  [[ -d "${WEB_DIR}/.next/static" ]] || die "Missing ${WEB_DIR}/.next/static. Run web build first."
+  [[ -d "${source_web_dir}/.next/static" ]] || die "Missing ${source_web_dir}/.next/static. Run web build first."
   [[ -d "${standalone_web_dir}" ]] || die "Missing ${standalone_web_dir}. Run web build first."
 
   ensure_dir "$standalone_static_dir"
   ensure_dir "$standalone_public_dir"
 
   log "Sync standalone static assets"
-  rsync -a --delete "${WEB_DIR}/.next/static/" "${standalone_static_dir}/"
+  rsync -a --delete "${source_web_dir}/.next/static/" "${standalone_static_dir}/"
 
-  if [[ -d "${WEB_DIR}/public" ]]; then
+  if [[ -d "${source_web_dir}/public" ]]; then
     log "Sync standalone public assets"
-    rsync -a --delete "${WEB_DIR}/public/" "${standalone_public_dir}/"
+    rsync -a --delete "${source_web_dir}/public/" "${standalone_public_dir}/"
   fi
+}
+
+verify_standalone_runtime_ready() {
+  local source_web_dir="${1:-$WEB_DIR}"
+  local standalone_web_dir="${source_web_dir}/.next/standalone/web"
+  local required_manifest="${source_web_dir}/.next/required-server-files.json"
+  local relative_path
+  local target_path
+
+  [[ -d "$standalone_web_dir" ]] || die "Standalone runtime is missing: ${standalone_web_dir}"
+  [[ -f "${standalone_web_dir}/server.js" ]] || die "Standalone runtime is incomplete: missing ${standalone_web_dir}/server.js"
+  [[ -d "${standalone_web_dir}/.next/server" ]] || die "Standalone runtime is incomplete: missing ${standalone_web_dir}/.next/server"
+
+  if [[ ! -f "$required_manifest" ]]; then
+    die "Missing ${required_manifest}. Run web build first."
+  fi
+
+  while IFS= read -r relative_path; do
+    [[ -n "$relative_path" ]] || continue
+    [[ "$relative_path" == .next/* ]] || continue
+    target_path="${standalone_web_dir}/${relative_path}"
+    [[ -e "$target_path" ]] || die "Standalone runtime is incomplete: missing ${target_path}"
+  done < <(
+    node -e "const fs=require('fs'); const manifest=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); for (const file of (manifest.files || [])) { if (typeof file === 'string') console.log(file); }" "$required_manifest"
+  )
+
+  log "Standalone runtime is ready for restart"
+}
+
+sync_next_runtime_artifacts() {
+  local source_web_dir="$1"
+  local target_web_dir="${WEB_DIR}"
+  local manifest
+
+  [[ -d "${source_web_dir}/.next" ]] || die "Missing built Next artifacts in ${source_web_dir}/.next"
+  ensure_dir "${target_web_dir}/.next"
+
+  if [[ "$BACKUP_ENABLED" == "1" ]]; then
+    backup_tree_if_exists "${target_web_dir}/.next/standalone" "web-standalone"
+    backup_tree_if_exists "${target_web_dir}/.next/static" "web-next-static"
+    backup_tree_if_exists "${target_web_dir}/.next/server" "web-next-server"
+    backup_tree_if_exists "${target_web_dir}/.next/required-server-files.json" "web-required-server-files.json"
+  fi
+
+  log "Sync built Next runtime artifacts into ${target_web_dir}/.next"
+  rsync -a --delete "${source_web_dir}/.next/standalone/" "${target_web_dir}/.next/standalone/"
+  rsync -a --delete "${source_web_dir}/.next/static/" "${target_web_dir}/.next/static/"
+  rsync -a --delete "${source_web_dir}/.next/server/" "${target_web_dir}/.next/server/"
+  for manifest in \
+    required-server-files.json \
+    routes-manifest.json \
+    build-manifest.json \
+    prerender-manifest.json \
+    app-build-manifest.json; do
+    if [[ -f "${source_web_dir}/.next/${manifest}" ]]; then
+      rsync -a "${source_web_dir}/.next/${manifest}" "${target_web_dir}/.next/${manifest}"
+    fi
+  done
 }
 
 resolve_sync_mode() {
@@ -531,6 +613,8 @@ esac
 [[ -d "$WEB_DIR" ]] || die "WEB_DIR not found: ${WEB_DIR}"
 
 require_cmd git bash npm rsync
+require_cmd tar mktemp
+require_cmd node
 if [[ "$HEALTHCHECK_ENABLED" == "1" ]]; then
   require_cmd curl grep sed sort
 fi
@@ -543,16 +627,9 @@ if [[ "$STATIC_TARGET_DIR" == "$APP_DIR" && "$ALLOW_SYNC_TO_APP_DIR" != "1" ]]; 
   die "STATIC_TARGET_DIR points to APP_DIR. Set ALLOW_SYNC_TO_APP_DIR=1 in env after you confirm nginx serves from the repo checkout."
 fi
 
-if [[ "$PRE_PULL_RESET" == "auto" ]]; then
-  if [[ "$STATIC_SYNC_MODE" == "overlay" && "$STATIC_TARGET_DIR" == "$APP_DIR" ]]; then
-    PRE_PULL_RESET="1"
-  else
-    PRE_PULL_RESET="0"
-  fi
-fi
-
 TIMESTAMP="$(date '+%Y%m%d-%H%M%S')"
 CURRENT_BACKUP_DIR="${BACKUP_DIR}/${TIMESTAMP}-$(sanitize_label "${DEPLOY_LABEL:-server-deploy}")"
+BUILD_GIT_REF="HEAD"
 
 log "APP_DIR=${APP_DIR}"
 log "WEB_DIR=${WEB_DIR}"
@@ -560,6 +637,7 @@ log "STATIC_BUILD_DIR=${STATIC_BUILD_DIR}"
 log "STATIC_TARGET_DIR=${STATIC_TARGET_DIR}"
 log "STATIC_SYNC_MODE=${STATIC_SYNC_MODE}"
 log "SERVICE_NAME=${SERVICE_NAME}"
+log "BUILD_GIT_REF=${BUILD_GIT_REF}"
 
 if [[ "$BACKUP_ENABLED" == "1" ]]; then
   ensure_dir "$CURRENT_BACKUP_DIR"
@@ -567,40 +645,43 @@ if [[ "$BACKUP_ENABLED" == "1" ]]; then
 fi
 
 if [[ "$PULL_ENABLED" == "1" ]]; then
-  if [[ "$PRE_PULL_RESET" == "1" ]]; then
-    warn "Resetting tracked files in ${APP_DIR} before git pull because static deploy overlays the git checkout."
-    git -C "$APP_DIR" reset --hard HEAD
-  fi
-
   log "Fetching ${REMOTE_NAME}/${APP_BRANCH}"
   git -C "$APP_DIR" fetch --prune "$REMOTE_NAME"
-  git -C "$APP_DIR" checkout "$APP_BRANCH"
-  git -C "$APP_DIR" pull --ff-only "$REMOTE_NAME" "$APP_BRANCH"
+  BUILD_GIT_REF="${REMOTE_NAME}/${APP_BRANCH}"
+else
+  log "Skipping git fetch; building from ${BUILD_GIT_REF} in the current checkout"
 fi
 
+make_clean_build_workspace "$BUILD_GIT_REF"
+
 if [[ "$ROOT_INSTALL_ENABLED" == "1" ]]; then
-  run_in_dir "$APP_DIR" "$ROOT_INSTALL_COMMAND"
+  run_in_dir "$BUILD_APP_DIR" "$ROOT_INSTALL_COMMAND"
 fi
 
 if [[ "$ROOT_BUILD_ENABLED" == "1" ]]; then
-  run_in_dir "$APP_DIR" "$ROOT_BUILD_COMMAND"
+  run_in_dir "$BUILD_APP_DIR" "$ROOT_BUILD_COMMAND"
 fi
 
 if [[ "$WEB_INSTALL_ENABLED" == "1" ]]; then
-  run_in_dir "$WEB_DIR" "$WEB_INSTALL_COMMAND"
+  run_in_dir "$BUILD_WEB_DIR" "$WEB_INSTALL_COMMAND"
 fi
 
 if [[ "$WEB_BUILD_ENABLED" == "1" ]]; then
-  backup_tree_if_exists "${WEB_DIR}/.next/standalone" "web-standalone"
-  backup_tree_if_exists "${WEB_DIR}/.next/static" "web-next-static"
-  run_in_dir "$WEB_DIR" "$WEB_BUILD_COMMAND"
+  run_in_dir "$BUILD_WEB_DIR" "$WEB_BUILD_COMMAND"
 fi
 
 if [[ "$STANDALONE_SYNC_ENABLED" == "1" ]]; then
-  sync_standalone_assets
+  sync_standalone_assets "$BUILD_WEB_DIR"
 fi
 
+if [[ "$RESTART_SERVICE" == "1" || "$HEALTHCHECK_ENABLED" == "1" ]]; then
+  verify_standalone_runtime_ready "$BUILD_WEB_DIR"
+fi
+
+sync_next_runtime_artifacts "$BUILD_WEB_DIR"
+
 if [[ "$STATIC_SYNC_ENABLED" == "1" ]]; then
+  STATIC_BUILD_DIR="${BUILD_STATIC_BUILD_DIR}"
   [[ -d "$STATIC_BUILD_DIR" ]] || die "STATIC_BUILD_DIR not found: ${STATIC_BUILD_DIR}"
 
   case "$STATIC_SYNC_MODE" in

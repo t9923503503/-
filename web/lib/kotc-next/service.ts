@@ -908,6 +908,28 @@ function buildLiveState(pairs: PairRow[], raund: RaundRow, stats: RaundStatRow[]
   };
 }
 
+function buildJudgeRaundInstanceKey(raund: RaundRow): string {
+  return [
+    raund.raundId,
+    raund.startedAt ?? 'not-started',
+    raund.finishedAt ?? 'not-finished',
+    raund.status,
+  ].join(':');
+}
+
+function buildJudgeRaundRevision(raund: RaundRow, events: KotcNextGameEvent[]): number {
+  const eventScore = events.length * 100;
+  const queueScore = raund.queueOrder.length * 10;
+  const statusScore =
+    raund.status === 'running'
+      ? 3
+      : raund.status === 'finished'
+        ? 2
+        : 1;
+  const timerScore = raund.startedAt ? 1 : 0;
+  return eventScore + queueScore + statusScore + timerScore;
+}
+
 async function ensureBlankRaundStatsTx(client: PoolClient, raundId: string, pairCount: number): Promise<void> {
   for (let pairIdx = 0; pairIdx < pairCount; pairIdx += 1) {
     await client.query(
@@ -1837,6 +1859,9 @@ export async function getKotcNextJudgeSnapshotByPin(pin: string): Promise<KotcNe
       roundNav,
       courtNav,
       raundHistory,
+      currentEvents,
+      currentRaundInstanceKey: buildJudgeRaundInstanceKey(currentRaund),
+      currentRaundRevision: buildJudgeRaundRevision(currentRaund, currentEvents),
       canUndo: currentEvents.length > 0 && currentRaund.status !== 'finished',
     };
   });

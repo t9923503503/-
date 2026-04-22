@@ -118,6 +118,9 @@ export interface KotcNextJudgeSnapshot {
   roundNav: KotcNextJudgeRoundNavItem[];
   courtNav: KotcNextJudgeCourtNavItem[];
   raundHistory: KotcNextRaundHistoryEntry[];
+  currentEvents: KotcNextGameEvent[];
+  currentRaundInstanceKey: string;
+  currentRaundRevision: number;
   canUndo: boolean; // true if there is at least one game event to undo
 }
 

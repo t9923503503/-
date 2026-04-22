@@ -10,9 +10,18 @@ describe('deploy next asset health source contract', () => {
   it('checks referenced Next static assets during deploy healthchecks', () => {
     const source = read('scripts/deploy-server.sh');
 
+    expect(source).toContain('make_clean_build_workspace() {');
+    expect(source).toContain('git -C "$APP_DIR" archive "$git_ref" | tar -x -C "$BUILD_APP_DIR"');
+    expect(source).toContain('sync_next_runtime_artifacts() {');
     expect(source).toContain('probe_next_route_assets() {');
+    expect(source).toContain('verify_standalone_runtime_ready() {');
+    expect(source).toContain('Standalone runtime is incomplete');
+    expect(source).toContain('Standalone runtime is ready for restart');
     expect(source).toContain('NEXT_ASSET_HEALTHCHECK_URLS="${NEXT_ASSET_HEALTHCHECK_URLS:-}"');
     expect(source).toContain("| grep -oE '/_next/static/");
+    expect(source).toContain('require_cmd node');
+    expect(source).toContain('verify_standalone_runtime_ready');
+    expect(source).toContain('sync_next_runtime_artifacts "$BUILD_WEB_DIR"');
     expect(source).toContain('probe_next_route_assets "$page_url" "Next assets"');
     expect(source).toContain('die "${label}: asset ${asset} returned ${code}"');
   });

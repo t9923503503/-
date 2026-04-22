@@ -41,6 +41,7 @@ describe('thai judge draft helpers', () => {
     const activeSnapshot = {
       kind: 'active',
       tourStatus: 'pending',
+      pointLimit: 15,
       matches: [
         { matchId: 'm1', team1Score: null, team2Score: null, pointHistory: [] },
         { matchId: 'm2', team1Score: null, team2Score: null, pointHistory: [] },
@@ -93,37 +94,20 @@ describe('thai judge draft helpers', () => {
       }),
     ).toEqual({
       initialScores: { m1: { team1: 14, team2: 11 } },
-      initialServeStateByMatch: {
-        m1: {
-          servingSide: 1,
-          team1Order: ['a1', 'a2'],
-          team2Order: ['b1', 'b2'],
-          team1CurrentIndex: 0,
-          team2CurrentIndex: 0,
-        },
-      },
+      initialServeStateByMatch: {},
       initialPointHistoryByMatch: {
         m1: [
           {
             seqNo: 1,
-            kind: 'rally',
-            scoringSide: 1,
+            kind: 'correction',
+            recordedAt: null,
+            scoringSide: null,
             scoreBefore: { team1: 0, team2: 0 },
-            scoreAfter: { team1: 1, team2: 0 },
-            servingSideBefore: 1,
-            serverPlayerBefore: {
-              playerId: 'a1',
-              playerName: 'Иванов',
-              role: 'primary',
-              teamSide: 1,
-            },
-            servingSideAfter: 1,
-            serverPlayerAfter: {
-              playerId: 'a1',
-              playerName: 'Иванов',
-              role: 'primary',
-              teamSide: 1,
-            },
+            scoreAfter: { team1: 14, team2: 11 },
+            servingSideBefore: null,
+            serverPlayerBefore: null,
+            servingSideAfter: null,
+            serverPlayerAfter: null,
             isSideOut: false,
           },
         ],
@@ -137,6 +121,7 @@ describe('thai judge draft helpers', () => {
     const finishedSnapshot = {
       kind: 'finished',
       tourStatus: 'confirmed',
+      pointLimit: 15,
       matches: [],
     };
 
@@ -157,6 +142,63 @@ describe('thai judge draft helpers', () => {
       initialPointHistoryByMatch: {},
       restoredFromDraft: false,
       shouldClearDraft: true,
+    });
+  });
+
+  test('resolveThaiJudgeDraftState synthesizes correction history for score-only drafts and clamps to point limit', () => {
+    const activeSnapshot = {
+      kind: 'active',
+      tourStatus: 'pending',
+      pointLimit: 12,
+      matches: [
+        { matchId: 'm1', team1Score: null, team2Score: null, pointHistory: [] },
+        { matchId: 'm2', team1Score: null, team2Score: null, pointHistory: [] },
+      ],
+    };
+
+    expect(
+      resolveThaiJudgeDraftState({
+        snapshot: activeSnapshot,
+        draft: {
+          version: 2,
+          savedAt: '2026-04-22T06:20:00.000Z',
+          scores: {
+            m1: { team1: 23, team2: 1 },
+          },
+          serveStateByMatch: {
+            m1: {
+              servingSide: 1,
+              team1Order: ['a1', 'a2'],
+              team2Order: ['b1', 'b2'],
+              team1CurrentIndex: 0,
+              team2CurrentIndex: 0,
+            },
+          },
+          pointHistoryByMatch: {},
+        },
+      }),
+    ).toEqual({
+      initialScores: { m1: { team1: 12, team2: 1 } },
+      initialServeStateByMatch: {},
+      initialPointHistoryByMatch: {
+        m1: [
+          {
+            seqNo: 1,
+            kind: 'correction',
+            recordedAt: null,
+            scoringSide: null,
+            scoreBefore: { team1: 0, team2: 0 },
+            scoreAfter: { team1: 12, team2: 1 },
+            servingSideBefore: null,
+            serverPlayerBefore: null,
+            servingSideAfter: null,
+            serverPlayerAfter: null,
+            isSideOut: false,
+          },
+        ],
+      },
+      restoredFromDraft: true,
+      shouldClearDraft: false,
     });
   });
 });

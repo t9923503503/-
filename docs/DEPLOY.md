@@ -19,6 +19,7 @@
 - `npm ci` + `npm run build` в корне;
 - `npm ci` + `npm run build` в `web/`;
 - синхронизирует `web/.next/static` и `web/public` в `web/.next/standalone/web/*`;
+- перед рестартом сервиса проверяет, что standalone runtime действительно полный (`server.js`, `.next/server/*`, файлы из `required-server-files.json`);
 - выкладывает `dist/` в целевой static-root;
 - опционально запускает миграции;
 - делает backup, `systemctl restart` и HTTP healthcheck.

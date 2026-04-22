@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { KotcNextJudgeSnapshot, KotcNextPairLiveState } from '@/lib/kotc-next';
+import { useScreenWakeLock } from '@/components/kotc-live/wake-lock';
 
 type JudgeAction = 'start' | 'king-point' | 'takeover' | 'undo' | 'finish' | 'reset';
 type ManualSlot = 'king' | 'challenger';
@@ -19,6 +20,12 @@ type ToastTone = 'info' | 'success' | 'error';
 interface ToastState {
   tone: ToastTone;
   message: string;
+}
+
+interface JudgeUiPrefs {
+  showStandings: boolean;
+  showArrowHelp: boolean;
+  showScoreHistory: boolean;
 }
 
 type JudgeSound = 'score' | 'error';
@@ -89,11 +96,137 @@ function draftKey(pin: string): string {
   return `kotcn:judge:${String(pin || '').trim().toUpperCase()}`;
 }
 
+function uiPrefsKey(pin: string): string {
+  return `kotcn:judge-ui:${String(pin || '').trim().toUpperCase()}`;
+}
+
+function vibrate(ms: number): void {
+  if (typeof navigator === 'undefined' || !('vibrate' in navigator)) return;
+  try {
+    navigator.vibrate(ms);
+  } catch {
+    // ignore unsupported/blocked haptics
+  }
+}
+
 function formatRemaining(ms: number): string {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatTournamentMeta(snapshot: KotcNextJudgeSnapshot): string {
+  const rawDate = String(snapshot.tournamentDate || '').trim();
+  const rawTime = String(snapshot.tournamentTime || '').trim();
+  const dateSource = rawTime ? `${rawDate}T${rawTime}` : rawDate;
+  const parsed = new Date(dateSource);
+  const hasDate = rawDate.length > 0;
+  if (hasDate && Number.isFinite(parsed.getTime())) {
+    const dateText = new Intl.DateTimeFormat('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(parsed);
+    const timeText = rawTime
+      ? new Intl.DateTimeFormat('ru-RU', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(parsed)
+      : '';
+    return [snapshot.tournamentName, dateText, timeText].filter(Boolean).join(' · ');
+  }
+  return [snapshot.tournamentName, rawDate, rawTime.slice(0, 5)].filter(Boolean).join(' · ');
+}
+
+function getPairShortLabel(snapshot: KotcNextJudgeSnapshot, pairIdx: number): string {
+  const pair = snapshot.pairs.find((item) => item.pairIdx === pairIdx) ?? null;
+  if (!pair) return `#${pairIdx + 1}`;
+  const names = [pair.primaryPlayer?.name || '', pair.secondaryPlayer?.name || '']
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .map((value) => value.split(/\s+/)[0] || value)
+    .map((value) => value.slice(0, 10));
+  if (!names.length) return pair.label.slice(0, 18);
+  return names.join(' / ');
+}
+
+function snapshotProgressScore(snapshot: KotcNextJudgeSnapshot): number {
+  const aggregateStats = snapshot.liveState.pairs.reduce(
+    (total, pair) => total + pair.kingWins + pair.takeovers + pair.gamesPlayed,
+    0,
+  );
+  const statusScore =
+    snapshot.liveState.status === 'running' ? 3 : snapshot.liveState.status === 'finished' ? 2 : 1;
+  const startedAtScore = snapshot.liveState.timerStartedAt ? 1 : 0;
+  return (
+    snapshot.liveState.currentRaundNo * 1000 +
+    aggregateStats * 10 +
+    snapshot.liveState.queueOrder.length +
+    statusScore +
+    startedAtScore
+  );
+}
+
+function readStoredDraft(pin: string): KotcNextJudgeSnapshot | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(draftKey(pin));
+    if (!raw) return null;
+    return JSON.parse(raw) as KotcNextJudgeSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function clearStoredDraft(pin: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(draftKey(pin));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function shouldPreferLocalDraft(
+  localSnapshot: KotcNextJudgeSnapshot | null,
+  serverSnapshot: KotcNextJudgeSnapshot,
+): localSnapshot is KotcNextJudgeSnapshot {
+  if (!localSnapshot) return false;
+  if (localSnapshot.pinCode !== serverSnapshot.pinCode) return false;
+  if (localSnapshot.currentRaundInstanceKey !== serverSnapshot.currentRaundInstanceKey) return false;
+  if (localSnapshot.liveState.status === 'finished') return false;
+  if (localSnapshot.currentRaundRevision !== serverSnapshot.currentRaundRevision) {
+    return localSnapshot.currentRaundRevision > serverSnapshot.currentRaundRevision;
+  }
+  return snapshotProgressScore(localSnapshot) > snapshotProgressScore(serverSnapshot);
+}
+
+function readUiPrefs(pin: string): JudgeUiPrefs | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(uiPrefsKey(pin));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<JudgeUiPrefs> | null;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      showStandings: parsed.showStandings !== false,
+      showArrowHelp: parsed.showArrowHelp !== false,
+      showScoreHistory: parsed.showScoreHistory !== false,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function formatEventClock(playedAt: string): string {
+  const parsed = new Date(playedAt);
+  if (!Number.isFinite(parsed.getTime())) return '--:--:--';
+  return new Intl.DateTimeFormat('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(parsed);
 }
 
 function pairLabel(snapshot: KotcNextJudgeSnapshot, pairIdx: number): string {
@@ -102,6 +235,14 @@ function pairLabel(snapshot: KotcNextJudgeSnapshot, pairIdx: number): string {
 
 function pairStat(snapshot: KotcNextJudgeSnapshot, pairIdx: number): KotcNextPairLiveState | null {
   return snapshot.liveState.pairs.find((pair) => pair.pairIdx === pairIdx) ?? null;
+}
+
+function describeEvent(snapshot: KotcNextJudgeSnapshot, event: KotcNextJudgeSnapshot['currentEvents'][number]): string {
+  const king = pairLabel(snapshot, event.kingPairIdx);
+  const challenger = pairLabel(snapshot, event.challengerPairIdx);
+  return event.eventType === 'takeover'
+    ? `${challenger} забрал трон у ${king}`
+    : `${king} взял очко против ${challenger}`;
 }
 
 function formatRoundType(roundType: string): string {
@@ -220,15 +361,48 @@ export function KotcNextJudgeScreen({
 }) {
   const router = useRouter();
   const audioContextRef = useRef<AudioContext | null>(null);
+  const restoredDraftPinRef = useRef<string | null>(null);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [submitting, setSubmitting] = useState<PendingAction | null>(null);
   const [online, setOnline] = useState(true);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [nowTs, setNowTs] = useState(() => Date.now());
+  const [restoredDraft, setRestoredDraft] = useState(false);
+  const [showStandings, setShowStandings] = useState(true);
+  const [showArrowHelp, setShowArrowHelp] = useState(true);
+  const [showScoreHistory, setShowScoreHistory] = useState(true);
+
+  useScreenWakeLock(true);
 
   useEffect(() => {
     setSnapshot(initialSnapshot);
+    setRestoredDraft(false);
   }, [initialSnapshot]);
+
+  useEffect(() => {
+    const prefs = readUiPrefs(initialSnapshot.pinCode);
+    if (!prefs) return;
+    setShowStandings(prefs.showStandings);
+    setShowArrowHelp(prefs.showArrowHelp);
+    setShowScoreHistory(prefs.showScoreHistory);
+  }, [initialSnapshot.pinCode]);
+
+  useEffect(() => {
+    if (restoredDraftPinRef.current === initialSnapshot.pinCode) return;
+    const localDraft = readStoredDraft(initialSnapshot.pinCode);
+    if (!shouldPreferLocalDraft(localDraft, initialSnapshot)) return;
+
+    restoredDraftPinRef.current = initialSnapshot.pinCode;
+    setSnapshot(localDraft);
+    setRestoredDraft(true);
+    setToast({
+      tone: 'info',
+      message: 'Восстановлен локальный черновик судьи. Обновляем данные сервера…',
+    });
+    if (typeof window !== 'undefined' && window.navigator.onLine) {
+      startTransition(() => router.refresh());
+    }
+  }, [initialSnapshot, router]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -267,6 +441,15 @@ export function KotcNextJudgeScreen({
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const shouldDropDraft =
+      snapshot.liveState.status === 'finished' ||
+      (snapshot.liveState.status === 'pending' && snapshot.currentEvents.length === 0);
+
+    if (shouldDropDraft) {
+      clearStoredDraft(snapshot.pinCode);
+      return;
+    }
+
     window.localStorage.setItem(draftKey(snapshot.pinCode), JSON.stringify(snapshot));
   }, [snapshot]);
 
@@ -275,6 +458,14 @@ export function KotcNextJudgeScreen({
     const timeoutId = window.setTimeout(() => setToast(null), 2600);
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(
+      uiPrefsKey(snapshot.pinCode),
+      JSON.stringify({ showStandings, showArrowHelp, showScoreHistory } satisfies JudgeUiPrefs),
+    );
+  }, [showStandings, showArrowHelp, showScoreHistory, snapshot.pinCode]);
 
   const remainingMs = useMemo(() => {
     if (!snapshot.liveState.timerStartedAt) {
@@ -311,10 +502,16 @@ export function KotcNextJudgeScreen({
   const canStart = snapshot.liveState.status === 'pending';
   const canPlay = snapshot.liveState.status === 'running';
   const canManualAdjust = snapshot.liveState.status !== 'finished';
+  const timerDanger = canPlay && remainingMs === 0;
+  const timerWarning = canPlay && remainingMs > 0 && remainingMs <= 30_000;
   const currentKing = pairLabel(snapshot, snapshot.liveState.kingPairIdx);
   const currentChallenger = pairLabel(snapshot, snapshot.liveState.challengerPairIdx);
   const kingStat = pairStat(snapshot, snapshot.liveState.kingPairIdx);
   const challengerStat = pairStat(snapshot, snapshot.liveState.challengerPairIdx);
+  const scoreHistory = useMemo(
+    () => [...snapshot.currentEvents].sort((left, right) => right.seqNo - left.seqNo),
+    [snapshot.currentEvents],
+  );
 
   function ensureAudioContext(): AudioContext | null {
     if (typeof window === 'undefined') return null;
@@ -360,12 +557,16 @@ export function KotcNextJudgeScreen({
 
     if (action === 'king-point' || action === 'takeover') {
       playJudgeSound('score');
+      vibrate(35);
     }
 
     setSubmitting(action);
     try {
       const next = await requestJudgeAction(snapshot.pinCode, snapshot.liveState.currentRaundNo, action);
       setSnapshot(next);
+      if (action === 'start' || action === 'finish' || action === 'undo') {
+        vibrate(action === 'undo' ? 18 : 24);
+      }
       setToast({
         tone: 'success',
         message:
@@ -394,6 +595,15 @@ export function KotcNextJudgeScreen({
     }
   }
 
+  async function runUndoAction() {
+    if (submitting || !snapshot.canUndo || !canPlay) return;
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Отменить последнее начисление очка или смену трона?');
+      if (!confirmed) return;
+    }
+    await runAction('undo');
+  }
+
   async function runManualPairAction(slot: ManualSlot, direction: ManualDirection) {
     if (submitting) return;
     if (typeof window !== 'undefined' && !window.navigator.onLine) {
@@ -403,6 +613,7 @@ export function KotcNextJudgeScreen({
     }
 
     playJudgeSound('error');
+    vibrate(18);
     const key = manualActionKey(slot, direction);
     setSubmitting(key);
     try {
@@ -441,6 +652,7 @@ export function KotcNextJudgeScreen({
     try {
       const next = await requestResetRaundAction(snapshot.pinCode, snapshot.liveState.currentRaundNo);
       setSnapshot(next);
+      vibrate(24);
       setToast({ tone: 'success', message: 'Раунд сброшен.' });
     } catch (error) {
       setToast({
@@ -480,10 +692,7 @@ export function KotcNextJudgeScreen({
               <h1 className="mt-1 text-[28px] font-heading uppercase tracking-[0.06em] text-white sm:text-4xl sm:tracking-[0.08em]">
                 Король корта
               </h1>
-              <p className="mt-1 text-[11px] text-white/45 sm:text-xs">
-                {snapshot.tournamentName} · {snapshot.tournamentDate}
-                {snapshot.tournamentTime ? ` · ${snapshot.tournamentTime}` : ''}
-              </p>
+              <p className="mt-1 text-[11px] text-white/45 sm:text-xs">{formatTournamentMeta(snapshot)}</p>
             </div>
             <div className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] sm:px-3 sm:text-[11px] sm:tracking-[0.24em] ${connectionClasses(online)}`}>
               {online ? 'ONLINE' : 'OFFLINE'}
@@ -583,16 +792,21 @@ export function KotcNextJudgeScreen({
               return (
                 <div
                   key={`queue-${pairIdx}-${index}`}
-                  className={`flex h-12 w-12 items-center justify-center rounded-full border text-xl font-black sm:h-16 sm:w-16 sm:text-2xl ${
+                  className={`min-w-[92px] rounded-[18px] border px-3 py-2 text-left sm:min-w-[132px] sm:px-4 sm:py-3 ${
                     active
                       ? index === 0
-                        ? 'border-[#f6d40f] text-[#ffd400]'
-                        : 'border-[#2fd35a] text-[#2fd35a]'
-                      : 'border-white/10 text-white/28'
+                        ? 'border-[#f6d40f] bg-[#16140a] text-[#ffd400]'
+                        : 'border-[#2fd35a] bg-[#0a1b12] text-[#8dffab]'
+                      : 'border-white/10 bg-white/[0.03] text-white/72'
                   }`}
                   title={pairLabel(snapshot, pairIdx)}
                 >
-                  {index + 1}
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/42">
+                    {index === 0 ? 'KING' : index === 1 ? 'NEXT' : `Q${index - 1}`}
+                  </div>
+                  <div className="mt-1 text-sm font-black leading-tight sm:text-base">
+                    {getPairShortLabel(snapshot, pairIdx)}
+                  </div>
                 </div>
               );
             })}
@@ -601,15 +815,24 @@ export function KotcNextJudgeScreen({
           <div className="mt-4 grid gap-3 lg:mt-5 lg:grid-cols-[1fr_auto] lg:items-end lg:gap-4">
             <div>
               <div className="text-[11px] uppercase tracking-[0.2em] text-white/42 sm:text-[12px] sm:tracking-[0.26em]">Осталось</div>
-              <div className={`mt-1 text-5xl font-black leading-none tracking-[0.01em] sm:text-6xl sm:tracking-[0.02em] ${remainingMs === 0 && canPlay ? 'text-red-400' : 'text-[#ffd400]'}`}>
+              <div className={`mt-1 text-5xl font-black leading-none tracking-[0.01em] sm:text-6xl sm:tracking-[0.02em] ${timerDanger ? 'text-red-400' : timerWarning ? 'text-orange-300' : 'text-[#ffd400]'}`}>
                 {formatRemaining(remainingMs)}
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] uppercase tracking-[0.15em] text-white/42 sm:gap-2 sm:text-xs sm:tracking-[0.2em]">
-                <span>{formatRoundStatus(snapshot.liveState.status)}</span>
-                <span>·</span>
-                <span>{snapshot.courtLabel}</span>
-                <span>·</span>
-                <span>{snapshot.params.ppc} пар</span>
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.15em] sm:text-xs sm:tracking-[0.2em]">
+                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-white/72">
+                  {formatRoundStatus(snapshot.liveState.status)}
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-white/72">
+                  {snapshot.courtLabel}
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-white/72">
+                  {snapshot.params.ppc} пар
+                </span>
+                {restoredDraft ? (
+                  <span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-amber-100">
+                    LOCAL DRAFT
+                  </span>
+                ) : null}
               </div>
             </div>
 
@@ -618,7 +841,7 @@ export function KotcNextJudgeScreen({
                 type="button"
                 disabled={!canStart || submitting !== null}
                 onClick={() => void runAction('start')}
-                className="rounded-[18px] border border-[#3ee04d]/30 bg-[#31d848] px-4 py-3 text-base font-black uppercase tracking-[0.05em] text-white shadow-[0_18px_50px_rgba(49,216,72,0.24)] transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 disabled:shadow-none sm:rounded-[22px] sm:px-6 sm:py-4 sm:text-lg sm:tracking-[0.06em]"
+                className="min-h-[62px] rounded-[20px] border border-[#3ee04d]/30 bg-[#31d848] px-4 py-3 text-base font-black uppercase tracking-[0.05em] text-white shadow-[0_18px_50px_rgba(49,216,72,0.24)] transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 disabled:shadow-none sm:min-h-[72px] sm:rounded-[22px] sm:px-6 sm:py-4 sm:text-lg sm:tracking-[0.06em]"
               >
                 {submitting === 'start' ? 'Старт…' : 'Старт'}
               </button>
@@ -626,7 +849,7 @@ export function KotcNextJudgeScreen({
                 type="button"
                 disabled={!canPlay || submitting !== null}
                 onClick={() => void runFinishAction()}
-                className="rounded-[18px] border border-red-400/30 bg-red-500/10 px-4 py-3 text-base font-black uppercase tracking-[0.05em] text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 sm:rounded-[22px] sm:px-6 sm:py-4 sm:text-lg sm:tracking-[0.06em]"
+                className="min-h-[62px] rounded-[20px] border border-red-400/30 bg-red-500/10 px-4 py-3 text-base font-black uppercase tracking-[0.05em] text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 sm:min-h-[72px] sm:rounded-[22px] sm:px-6 sm:py-4 sm:text-lg sm:tracking-[0.06em]"
               >
                 {submitting === 'finish' ? 'Финиш…' : 'Финиш'}
               </button>
@@ -660,12 +883,14 @@ export function KotcNextJudgeScreen({
 
             <div className="mt-3 sm:mt-4">
               <h2 className="text-xl font-black leading-tight text-white sm:text-3xl">{currentKing}</h2>
-              <p className="mt-2 text-[11px] leading-4 text-white/55 sm:text-sm sm:leading-5">
-                Стрелки сверху вручную крутят порядок короля без начисления очков. Используйте их, если очередь на корте сбилась.
-              </p>
+              {showArrowHelp ? (
+                <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-white/48 sm:text-xs sm:tracking-[0.18em]">
+                  Ручная перестановка пары короля без начисления очка
+                </p>
+              ) : null}
             </div>
 
-            <div className="mt-4 grid grid-cols-[1fr_92px] gap-3 sm:mt-6 sm:grid-cols-[1fr_132px] sm:gap-4">
+            <div className="mt-4 grid grid-cols-[1fr_124px] gap-3 sm:mt-6 sm:grid-cols-[1fr_168px] sm:gap-4">
               <div>
                 <div className="text-[72px] font-black leading-none text-[#ffd400] sm:text-[96px]">
                   {kingStat?.kingWins ?? 0}
@@ -680,19 +905,10 @@ export function KotcNextJudgeScreen({
                   type="button"
                   disabled={!canPlay || submitting !== null}
                   onClick={() => void runAction('king-point')}
-                  className="rounded-[18px] border border-[#2fd35a] bg-[#35d64c] px-3 py-4 text-center text-4xl font-black text-white transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/30 sm:rounded-[22px] sm:px-4 sm:py-5 sm:text-5xl"
+                  className="min-h-[132px] rounded-[22px] border border-[#2fd35a] bg-[#35d64c] px-3 py-5 text-center text-5xl font-black text-white transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/30 sm:min-h-[168px] sm:rounded-[26px] sm:px-4 sm:py-6 sm:text-6xl"
                 >
                   +1
-                  <div className="mt-1.5 text-[10px] uppercase tracking-[0.12em] sm:mt-2 sm:text-sm sm:tracking-[0.16em]">Очко</div>
-                </button>
-                <button
-                  type="button"
-                  disabled={!snapshot.canUndo || !canPlay || submitting !== null}
-                  onClick={() => void runAction('undo')}
-                  className="rounded-[18px] border border-[#5c531f] bg-[#1d1a07] px-3 py-3 text-center text-[32px] font-black text-white transition hover:bg-[#2a250b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/30 sm:rounded-[22px] sm:px-4 sm:py-4 sm:text-3xl"
-                >
-                  -1
-                  <div className="mt-1.5 text-[10px] uppercase tracking-[0.12em] sm:mt-2 sm:text-sm sm:tracking-[0.16em]">Отмена</div>
+                  <div className="mt-2 text-[11px] uppercase tracking-[0.12em] sm:mt-3 sm:text-sm sm:tracking-[0.16em]">Очко короля</div>
                 </button>
               </div>
             </div>
@@ -717,12 +933,14 @@ export function KotcNextJudgeScreen({
 
             <div className="mt-3 sm:mt-4">
               <h2 className="text-xl font-black leading-tight text-white sm:text-3xl">{currentChallenger}</h2>
-              <p className="mt-2 text-[11px] leading-4 text-white/55 sm:text-sm sm:leading-5">
-                Стрелки претендента меняют только challenger и очередь за ним, не трогая очки и статистику раунда.
-              </p>
+              {showArrowHelp ? (
+                <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-white/48 sm:text-xs sm:tracking-[0.18em]">
+                  Ручная перестановка претендента и очереди за ним
+                </p>
+              ) : null}
             </div>
 
-            <div className="mt-4 grid grid-cols-[1fr_92px] gap-3 sm:mt-6 sm:grid-cols-[1fr_132px] sm:gap-4">
+            <div className="mt-4 grid grid-cols-[1fr_124px] gap-3 sm:mt-6 sm:grid-cols-[1fr_168px] sm:gap-4">
               <div>
                 <div className="text-[72px] font-black leading-none text-white sm:text-[96px]">
                   {challengerStat?.kingWins ?? 0}
@@ -737,19 +955,10 @@ export function KotcNextJudgeScreen({
                   type="button"
                   disabled={!canPlay || submitting !== null}
                   onClick={() => void runAction('takeover')}
-                  className="rounded-[18px] border border-[#2fd35a] bg-[#35d64c] px-3 py-4 text-center text-4xl font-black text-white transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/30 sm:rounded-[22px] sm:px-4 sm:py-5 sm:text-5xl"
+                  className="min-h-[132px] rounded-[22px] border border-[#2fd35a] bg-[#35d64c] px-3 py-5 text-center text-5xl font-black text-white transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/30 sm:min-h-[168px] sm:rounded-[26px] sm:px-4 sm:py-6 sm:text-6xl"
                 >
                   +1
-                  <div className="mt-1.5 text-[10px] uppercase tracking-[0.12em] sm:mt-2 sm:text-sm sm:tracking-[0.16em]">Очко</div>
-                </button>
-                <button
-                  type="button"
-                  disabled={!snapshot.canUndo || !canPlay || submitting !== null}
-                  onClick={() => void runAction('undo')}
-                  className="rounded-[18px] border border-[#1d3d75] bg-[#0c1a36] px-3 py-3 text-center text-[32px] font-black text-white transition hover:bg-[#12264b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/30 sm:rounded-[22px] sm:px-4 sm:py-4 sm:text-3xl"
-                >
-                  -1
-                  <div className="mt-1.5 text-[10px] uppercase tracking-[0.12em] sm:mt-2 sm:text-sm sm:tracking-[0.16em]">Отмена</div>
+                  <div className="mt-2 text-[11px] uppercase tracking-[0.12em] sm:mt-3 sm:text-sm sm:tracking-[0.16em]">Смена трона</div>
                 </button>
               </div>
             </div>
@@ -762,16 +971,33 @@ export function KotcNextJudgeScreen({
               <div className="text-[11px] uppercase tracking-[0.18em] text-white/44 sm:text-[12px] sm:tracking-[0.26em]">Турнирная таблица</div>
               <div className="mt-1 text-[11px] text-white/55 sm:text-sm">Очки короля, захваты трона и сыгранные игры по текущему корту.</div>
             </div>
-            <button
-              type="button"
-              onClick={() => startTransition(() => router.refresh())}
-              className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:text-sm"
-            >
-              Обновить
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowStandings((value) => !value)}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:text-sm"
+              >
+                {showStandings ? 'Свернуть таблицу' : 'Развернуть таблицу'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowArrowHelp((value) => !value)}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:text-sm"
+              >
+                {showArrowHelp ? 'Скрыть подсказки стрелок' : 'Показать подсказки стрелок'}
+              </button>
+              <button
+                type="button"
+                onClick={() => startTransition(() => router.refresh())}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:text-sm"
+              >
+                Обновить
+              </button>
+            </div>
           </div>
 
-          <div className="mt-3 overflow-hidden rounded-[18px] border border-white/8 sm:mt-4 sm:rounded-[24px]">
+          {showStandings ? (
+            <div className="mt-3 overflow-hidden rounded-[18px] border border-white/8 sm:mt-4 sm:rounded-[24px]">
             <table className="min-w-full text-left">
               <thead className="bg-[#1f1f1f] text-[10px] uppercase tracking-[0.14em] text-white/38 sm:text-[12px] sm:tracking-[0.2em]">
                 <tr>
@@ -815,7 +1041,8 @@ export function KotcNextJudgeScreen({
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          ) : null}
 
           <div className="mt-3 grid gap-2.5 sm:mt-4 sm:gap-3 sm:grid-cols-2">
             <div className="rounded-[18px] border border-white/8 bg-[#101010] px-3 py-3 sm:rounded-[22px] sm:px-4 sm:py-4">
@@ -846,7 +1073,60 @@ export function KotcNextJudgeScreen({
           </div>
         </section>
 
-        <section className="grid grid-cols-2 gap-2.5 sm:gap-4">
+        <section className="rounded-[22px] border border-white/8 bg-[#171717] px-3 py-3 shadow-[0_20px_60px_rgba(0,0,0,0.32)] sm:rounded-[28px] sm:px-4 sm:py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-white/44 sm:text-[12px] sm:tracking-[0.26em]">История начисления очков</div>
+              <div className="mt-1 text-[11px] text-white/55 sm:text-sm">Последние очки и смены трона с точным временем.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowScoreHistory((value) => !value)}
+              className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:text-sm"
+            >
+              {showScoreHistory ? 'Свернуть историю' : 'Развернуть историю'}
+            </button>
+          </div>
+
+          {showScoreHistory ? (
+            <div className="mt-3 space-y-2 sm:mt-4">
+              {scoreHistory.length ? (
+                scoreHistory.map((event) => (
+                  <div
+                    key={event.id}
+                    className="rounded-[18px] border border-white/8 bg-[#101010] px-3 py-3 sm:px-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/42">
+                        #{event.seqNo} · {event.eventType === 'takeover' ? 'Смена трона' : 'Очко'}
+                      </div>
+                      <div className="text-[11px] font-semibold text-white/58 sm:text-sm">
+                        {formatEventClock(event.playedAt)}
+                      </div>
+                    </div>
+                    <div className="mt-2 text-sm font-semibold text-white sm:text-base">
+                      {describeEvent(snapshot, event)}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-[18px] border border-white/8 bg-[#101010] px-3 py-3 text-sm text-white/62 sm:px-4">
+                  История пока пустая.
+                </div>
+              )}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="grid gap-2.5 sm:grid-cols-3 sm:gap-4">
+          <button
+            type="button"
+            disabled={!snapshot.canUndo || !canPlay || submitting !== null}
+            onClick={() => void runUndoAction()}
+            className="rounded-[18px] border border-amber-300/25 bg-amber-500/10 px-3 py-3 text-sm font-black uppercase tracking-[0.08em] text-amber-100 transition hover:bg-amber-500/18 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 sm:rounded-[22px] sm:px-4 sm:py-4 sm:text-base"
+          >
+            {submitting === 'undo' ? 'Отмена…' : 'Отмена последнего'}
+          </button>
           <button
             type="button"
             disabled={submitting !== null || snapshot.liveState.status === 'finished'}
