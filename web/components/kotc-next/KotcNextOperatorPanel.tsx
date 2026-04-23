@@ -1,11 +1,30 @@
 'use client';
 
+import { memo, useMemo } from 'react';
 import { makeQrDataUrl } from '@/public/shared/qr-gen.js';
 import { resolveAbsoluteJudgeUrl } from '@/lib/thai-ui-helpers';
 import type { SudyamBootstrapPayload } from '@/lib/sudyam-bootstrap';
 import type { KotcNextCourtOperatorView, KotcNextOperatorState, KotcNextR2SeedZone } from '@/lib/kotc-next';
 import { zoneLabel } from '@/lib/kotc-next-config';
 import { KotcNextR2SeedEditor } from './KotcNextR2SeedEditor';
+
+const QrCodeImage = memo(function QrCodeImage({ judgeUrl, label }: { judgeUrl: string; label: string }) {
+  const dataUrl = useMemo(
+    () =>
+      makeQrDataUrl(
+        typeof window === 'undefined' ? judgeUrl : resolveAbsoluteJudgeUrl(judgeUrl, window.location.origin),
+        { scale: 4, margin: 1, dark: '#17130b', light: '#ffffff' },
+      ),
+    [judgeUrl],
+  );
+  return (
+    <img
+      src={dataUrl}
+      alt={`QR для корта ${label}`}
+      className="h-20 w-20 rounded-2xl border border-[#2e2a1d] bg-white p-2"
+    />
+  );
+});
 
 export type KotcNextOperatorBootstrapPhase = 'idle' | 'bootstrapping' | 'blocked' | 'error';
 
@@ -80,6 +99,7 @@ export function KotcNextOperatorPanel({
   bootstrap: {
     phase: KotcNextOperatorBootstrapPhase;
     message: string | null;
+    lastUpdatedAt?: Date | null;
     onBootstrapR1: () => void;
     onRefresh: () => void;
   };
@@ -187,7 +207,7 @@ export function KotcNextOperatorPanel({
           </div>
         ) : null}
 
-        <div className="mt-4 flex flex-wrap gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={bootstrap.onRefresh}
@@ -195,6 +215,11 @@ export function KotcNextOperatorPanel({
           >
             Обновить
           </button>
+          {bootstrap.lastUpdatedAt ? (
+            <span className="text-[11px] text-white/35 tracking-[0.16em]">
+              {new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(bootstrap.lastUpdatedAt)}
+            </span>
+          ) : null}
           {canBootstrapR1 ? (
             <button
               type="button"
@@ -202,7 +227,7 @@ export function KotcNextOperatorPanel({
               disabled={bootstrap.phase === 'bootstrapping'}
               className="inline-flex rounded-full border border-[#5b4713] bg-[#ffd24a] px-4 py-2 text-sm font-semibold text-[#17130b] transition hover:bg-[#ffe07f] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {bootstrap.phase === 'bootstrapping' ? 'Запускаем R1…' : 'Bootstrap R1'}
+              {bootstrap.phase === 'bootstrapping' ? 'Запускаем R1…' : 'Запустить R1'}
             </button>
           ) : null}
           {operatorState?.canPreviewR2Seed ? (
@@ -212,7 +237,7 @@ export function KotcNextOperatorPanel({
               disabled={actions.r2SeedLoading}
               className="inline-flex rounded-full border border-[#5b4713] bg-[#ffd24a] px-4 py-2 text-sm font-semibold text-[#17130b] transition hover:bg-[#ffe07f] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {actions.r2SeedLoading ? 'Собираем зоны…' : 'Preview R2 zones'}
+              {actions.r2SeedLoading ? 'Собираем зоны…' : 'Предпросмотр зон R2'}
             </button>
           ) : null}
           {operatorState?.canFinishR1 ? (
@@ -222,7 +247,7 @@ export function KotcNextOperatorPanel({
               disabled={actions.pendingAction === 'finish_r1'}
               className="inline-flex rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-100 transition hover:border-red-300/50 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {actions.pendingAction === 'finish_r1' ? 'Finishing R1...' : '■ Finish R1'}
+              {actions.pendingAction === 'finish_r1' ? 'Завершаем R1…' : '■ Завершить R1'}
             </button>
           ) : null}
           {operatorState?.canFinishR2 ? (
@@ -232,7 +257,7 @@ export function KotcNextOperatorPanel({
               disabled={actions.pendingAction === 'finish_r2'}
               className="inline-flex rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-100 transition hover:border-red-300/50 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {actions.pendingAction === 'finish_r2' ? 'Finishing R2...' : '■ Finish R2'}
+              {actions.pendingAction === 'finish_r2' ? 'Завершаем R2…' : '■ Завершить R2'}
             </button>
           ) : null}
           {activeCourt ? (
@@ -289,23 +314,12 @@ export function KotcNextOperatorPanel({
 
               <div className="grid gap-4 xl:grid-cols-2">
                 {round.courts.map((court) => {
-                  const qrDataUrl = makeQrDataUrl(
-                    resolveAbsoluteJudgeUrl(
-                      court.judgeUrl,
-                      typeof window === 'undefined' ? '' : window.location.origin,
-                    ),
-                    {
-                      scale: 4,
-                      margin: 1,
-                      dark: '#17130b',
-                      light: '#ffffff',
-                    },
-                  );
                   const standings = pickStandings(court);
+                  const isLive = court.status === 'live';
                   return (
                     <article
                       key={court.courtId}
-                      className="rounded-[24px] border border-[#2d3144] bg-[linear-gradient(180deg,rgba(20,24,37,0.98),rgba(10,13,24,0.98))] px-4 py-4 shadow-[0_18px_50px_rgba(0,0,0,0.26)]"
+                      className={`rounded-[24px] border bg-[linear-gradient(180deg,rgba(20,24,37,0.98),rgba(10,13,24,0.98))] px-4 py-4 transition-shadow ${isLive ? 'border-[#2fd35a] shadow-[0_18px_50px_rgba(47,211,90,0.12)]' : 'border-[#2d3144] shadow-[0_18px_50px_rgba(0,0,0,0.26)]'}`}
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
@@ -324,11 +338,7 @@ export function KotcNextOperatorPanel({
                             </span>
                           </div>
                         </div>
-                        <img
-                          src={qrDataUrl}
-                          alt={`QR for court ${court.label}`}
-                          className="h-20 w-20 rounded-2xl border border-[#2e2a1d] bg-white p-2"
-                        />
+                        <QrCodeImage judgeUrl={court.judgeUrl} label={court.label} />
                       </div>
 
                       <div className="mt-4 grid gap-2">

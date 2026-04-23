@@ -371,6 +371,7 @@ export function KotcNextJudgeScreen({
   const [showStandings, setShowStandings] = useState(true);
   const [showArrowHelp, setShowArrowHelp] = useState(true);
   const [showScoreHistory, setShowScoreHistory] = useState(true);
+  const [pendingConfirm, setPendingConfirm] = useState<'finish' | 'reset' | 'undo' | null>(null);
 
   useScreenWakeLock(true);
 
@@ -458,6 +459,12 @@ export function KotcNextJudgeScreen({
     const timeoutId = window.setTimeout(() => setToast(null), 2600);
     return () => window.clearTimeout(timeoutId);
   }, [toast]);
+
+  useEffect(() => {
+    if (!pendingConfirm || typeof window === 'undefined') return;
+    const timeoutId = window.setTimeout(() => setPendingConfirm(null), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [pendingConfirm]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -597,10 +604,11 @@ export function KotcNextJudgeScreen({
 
   async function runUndoAction() {
     if (submitting || !snapshot.canUndo || !canPlay) return;
-    if (typeof window !== 'undefined') {
-      const confirmed = window.confirm('Отменить последнее начисление очка или смену трона?');
-      if (!confirmed) return;
+    if (pendingConfirm !== 'undo') {
+      setPendingConfirm('undo');
+      return;
     }
+    setPendingConfirm(null);
     await runAction('undo');
   }
 
@@ -643,10 +651,11 @@ export function KotcNextJudgeScreen({
       setToast({ tone: 'error', message: 'Нет сети. Сброс раунда недоступен офлайн.' });
       return;
     }
-    if (typeof window !== 'undefined') {
-      const confirmed = window.confirm('Сбросить текущий раунд? Очередь и игровые события будут очищены.');
-      if (!confirmed) return;
+    if (pendingConfirm !== 'reset') {
+      setPendingConfirm('reset');
+      return;
     }
+    setPendingConfirm(null);
 
     setSubmitting('reset');
     try {
@@ -666,16 +675,11 @@ export function KotcNextJudgeScreen({
 
   async function runFinishAction() {
     if (submitting || !canPlay) return;
-    if (typeof window !== 'undefined') {
-      const confirmations = [
-        'Завершить текущий раунд? После финиша результат будет зафиксирован.',
-        `Подтвердите финиш для ${snapshot.courtLabel} (${formatRoundType(snapshot.roundType)}).`,
-        'Последнее подтверждение: точно нажать «Финиш» сейчас?',
-      ];
-      for (const confirmationMessage of confirmations) {
-        if (!window.confirm(confirmationMessage)) return;
-      }
+    if (pendingConfirm !== 'finish') {
+      setPendingConfirm('finish');
+      return;
     }
+    setPendingConfirm(null);
     await runAction('finish');
   }
 
@@ -860,6 +864,40 @@ export function KotcNextJudgeScreen({
         {toast ? (
           <div className={`rounded-[18px] border px-4 py-3 text-sm font-medium shadow-[0_12px_40px_rgba(0,0,0,0.22)] ${toneClasses(toast.tone)}`}>
             {toast.message}
+          </div>
+        ) : null}
+
+        {pendingConfirm ? (
+          <div className="rounded-[18px] border border-orange-400/40 bg-orange-500/12 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.22)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-orange-100">
+                {pendingConfirm === 'finish'
+                  ? `Завершить раунд на ${snapshot.courtLabel}? Результат будет зафиксирован.`
+                  : pendingConfirm === 'reset'
+                    ? 'Сбросить раунд? Игровые события будут очищены.'
+                    : 'Отменить последнее действие?'}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pendingConfirm === 'finish') void runFinishAction();
+                    else if (pendingConfirm === 'reset') void runResetRaundAction();
+                    else void runUndoAction();
+                  }}
+                  className="rounded-full border border-orange-300/40 bg-orange-500/20 px-4 py-1.5 text-sm font-bold text-orange-100 transition hover:bg-orange-500/35"
+                >
+                  Да, подтвердить
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingConfirm(null)}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-bold text-white/70 transition hover:bg-white/10"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
           </div>
         ) : null}
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { startTransition, useEffect, useState } from 'react';
+import { startTransition, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SudyamBootstrapPayload } from '@/lib/sudyam-bootstrap';
 import type { KotcNextR2SeedZone } from '@/lib/kotc-next';
@@ -30,6 +30,8 @@ export function KotcNextTournamentWorkspace({
     initialData.kotcOperatorState?.r2SeedDraft ?? null,
   );
   const [r2SeedLoading, setR2SeedLoading] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date>(() => new Date());
+  const actionInProgressRef = useRef(false);
 
   useEffect(() => {
     setActiveData(initialData);
@@ -38,7 +40,21 @@ export function KotcNextTournamentWorkspace({
     setPendingAction(null);
     setR2SeedDraft(initialData.kotcOperatorState?.r2SeedDraft ?? null);
     setR2SeedLoading(false);
+    setLastUpdatedAt(new Date());
   }, [initialData]);
+
+  useEffect(() => {
+    actionInProgressRef.current = phase === 'bootstrapping' || pendingAction !== null;
+  }, [phase, pendingAction]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!actionInProgressRef.current) {
+        startTransition(() => router.refresh());
+      }
+    }, 10_000);
+    return () => clearInterval(timer);
+  }, [router]);
 
   async function runKotcAction(
     action:
@@ -108,6 +124,7 @@ export function KotcNextTournamentWorkspace({
       bootstrap={{
         phase,
         message,
+        lastUpdatedAt,
         onBootstrapR1: () => void runKotcAction('bootstrap_r1'),
         onRefresh: () => startTransition(() => router.refresh()),
       }}
