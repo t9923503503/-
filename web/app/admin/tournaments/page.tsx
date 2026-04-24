@@ -61,6 +61,8 @@ import {
   type KotcJudgeModule,
   validateThaiRoster,
 } from '@/lib/admin-legacy-sync';
+import { normalizeTournamentInput } from '@/lib/admin-validators';
+import { validateTournamentInput } from '@/lib/admin-validators';
 import { buildSudyamLaunchUrl, getSudyamFormatForTournament } from '@/lib/sudyam-launch';
 import {
   inferThaiJudgeModuleFromSettings,
@@ -306,16 +308,23 @@ function normalizeGender(value: unknown): 'M' | 'W' {
 function normalizeDraftPayloadForm(input: unknown): Omit<Row, 'id' | 'participantCount'> | null {
   if (!input || typeof input !== 'object') return null;
   const row = input as Partial<Row>;
+  const normalizedMeta = normalizeTournamentInput({
+    date: normalizeDateInputValue(row.date),
+    time: row.time,
+    division: row.division,
+    level: row.level,
+    status: row.status,
+  });
   return {
     name: String(row.name ?? ''),
-    date: normalizeDateInputValue(row.date),
-    time: String(row.time ?? DEFAULT_TOURNAMENT_TIME),
+    date: normalizedMeta.date || normalizeDateInputValue(row.date),
+    time: normalizedMeta.time || DEFAULT_TOURNAMENT_TIME,
     location: String(row.location ?? DEFAULT_TOURNAMENT_LOCATION),
     format: String(row.format ?? 'Round Robin'),
-    division: String(row.division ?? 'Мужской'),
-    level: String(row.level ?? 'medium'),
+    division: normalizedMeta.division || 'Мужской',
+    level: normalizedMeta.level || 'medium',
     capacity: Math.max(0, Math.floor(Number(row.capacity ?? 0) || 0)),
-    status: String(row.status ?? 'open'),
+    status: normalizedMeta.status || 'draft',
     settings: normalizeSettings((row.settings ?? {}) as Partial<TournamentSettings>),
   };
 }
@@ -1391,16 +1400,24 @@ export default function AdminTournamentsPage() {
       ? goSettings.goEnabledPlayoffLeagues
       : (['hard', 'medium', 'lite'] as GoPlayoffLeague[]);
     const currentCounts = goSettings.goMixedTeamCounts ?? {};
-    const differs = leagues.some(
-      (league) => Number(currentCounts[league] ?? NaN) !== Number(fixedPairsPlayoffCounts[league] ?? NaN),
-    );
-    if (!differs) return;
-    const nextSizes = { ...(goSettings.goBracketSizes ?? {}) };
+    const nextCounts: TournamentSettings['goMixedTeamCounts'] = {};
+    const nextSizes: TournamentSettings['goBracketSizes'] = {};
+    let shouldSync = false;
     leagues.forEach((league) => {
-      const teamCount = clampGoMixedLeagueTeamCount(league, Number(fixedPairsPlayoffCounts[league] ?? 0));
-      nextSizes[league] = getGoMixedBracketSize(teamCount);
+      const maxAvailable = clampGoMixedLeagueTeamCount(league, Number(fixedPairsPlayoffCounts[league] ?? 0));
+      const currentValue = Number(currentCounts[league] ?? NaN);
+      const nextValue =
+        !Number.isFinite(currentValue) || currentValue > maxAvailable
+          ? maxAvailable
+          : clampGoMixedLeagueTeamCount(league, currentValue);
+      if (!Number.isFinite(currentValue) || currentValue !== nextValue) {
+        shouldSync = true;
+      }
+      nextCounts[league] = nextValue;
+      nextSizes[league] = getGoMixedBracketSize(nextValue);
     });
-    updateSettings({ goMixedTeamCounts: fixedPairsPlayoffCounts, goBracketSizes: nextSizes });
+    if (!shouldSync) return;
+    updateSettings({ goMixedTeamCounts: nextCounts, goBracketSizes: nextSizes });
   }, [fixedPairsPlayoffCounts, goSettings, isFixedPairsSeeding, isGoFormat]);
 
   function resetComposer() {
@@ -2345,6 +2362,13 @@ export default function AdminTournamentsPage() {
 
   function buildTournamentPayload(forceStatus?: string) {
     const normalizedDate = normalizeDateInputValue(form.date);
+    const normalizedMeta = normalizeTournamentInput({
+      date: normalizedDate,
+      time: form.time,
+      division: form.division,
+      level: form.level,
+      status: forceStatus ?? form.status,
+    });
     const mergedSettings =
       isThaiFormat && thaiSettings
         ? {
@@ -2376,10 +2400,17 @@ export default function AdminTournamentsPage() {
       mergedSettings,
       payload: {
         ...form,
-        status: forceStatus ?? form.status,
-        date: normalizedDate,
+        name: String(form.name ?? '').trim(),
+        status: normalizedMeta.status,
+        date: normalizedMeta.date || normalizedDate,
+        time: normalizedMeta.time || form.time,
         format: isExactThaiFormat ? THAI_ADMIN_FORMAT : form.format,
-        division: isExactThaiFormat && thaiSettings ? getThaiDivisionLabel(thaiSettings.thaiVariant) : form.division,
+        division:
+          isExactThaiFormat && thaiSettings
+            ? getThaiDivisionLabel(thaiSettings.thaiVariant)
+            : (normalizedMeta.division || form.division),
+        level: normalizedMeta.level || form.level,
+        location: String(form.location ?? '').trim(),
         capacity: participantLimit,
         settings: payloadSettings,
         participants: draftPlayers
@@ -2453,6 +2484,14 @@ export default function AdminTournamentsPage() {
 
     const { normalizedDate, payload } = buildTournamentPayload('draft');
     if (!normalizedDate) return;
+    const validationError = validateTournamentInput(
+      normalizeTournamentInput(payload as unknown as Record<string, unknown>),
+    );
+    if (validationError) {
+      setGoAutosaveState('idle');
+      setGoAutosaveError(validationError);
+      return;
+    }
 
     goAutosaveBusyRef.current = true;
     setGoAutosaveState('saving');
@@ -3147,7 +3186,7 @@ export default function AdminTournamentsPage() {
               <label className="text-xs text-text-secondary">Пар на корт</label>
               <Stepper
                 value={kotcSettings?.kotcPpc ?? settings.kotcPpc}
-                onChange={(value) => updateSettings({ kotcPpc: value })}
+                onChange={(value) => updateSettings({ kotcPpc: value, kotcRaundCount: value })}
                 min={KOTC_ADMIN_MIN_PPC}
                 max={KOTC_ADMIN_MAX_PPC}
               />
@@ -3157,14 +3196,15 @@ export default function AdminTournamentsPage() {
               <label className="text-xs text-text-secondary">Раундов на корт</label>
               <Stepper
                 value={kotcSettings?.kotcRaundCount ?? settings.kotcRaundCount}
-                onChange={(value) => updateSettings({ kotcRaundCount: value })}
+                onChange={() => {}}
                 min={KOTC_ADMIN_MIN_RAUNDS}
                 max={KOTC_ADMIN_MAX_RAUNDS}
+                disabled
               />
             </div>
 
             <div className="flex items-center justify-between gap-3">
-              <label className="text-xs text-text-secondary">Таймер раунда</label>
+              <label className="text-xs text-text-secondary">Таймер раундов 1–2</label>
               <Stepper
                 value={kotcSettings?.kotcRaundTimerMinutes ?? settings.kotcRaundTimerMinutes}
                 onChange={(value) => updateSettings({ kotcRaundTimerMinutes: value })}
@@ -3176,7 +3216,7 @@ export default function AdminTournamentsPage() {
 
             <div className="rounded-lg border border-brand/20 bg-brand/5 px-3 py-2 text-xs text-text-secondary">
               KOTC Next: {settings.courts} корт(а), по {kotcSettings?.kotcPpc ?? settings.kotcPpc} пар на корт,
-              {` `}{playersPerCourt} игроков на площадку, {kotcSettings?.kotcRaundCount ?? settings.kotcRaundCount} раунд(а) по
+              {` `}{playersPerCourt} игроков на площадку, цикл = {kotcSettings?.kotcRaundCount ?? settings.kotcRaundCount} раунд(а) по
               {` `}{kotcSettings?.kotcRaundTimerMinutes ?? settings.kotcRaundTimerMinutes} мин.
             </div>
 
@@ -3306,9 +3346,28 @@ export default function AdminTournamentsPage() {
                 value={goSettings?.goBracketLevels ?? GO_ADMIN_DEFAULT_BRACKET_LEVELS}
                 onChange={(value) => {
                   const leagues = getGoLeaguesByBracketLevels(value);
-                  updateSettings({
+                  const autoCounts = buildAutoGoMixedTeamCounts({
+                    goGroupCount: goSettings?.goGroupCount ?? GO_ADMIN_DEFAULT_GROUPS,
+                    goGroupFormulaHard: goSettings?.goGroupFormulaHard ?? GO_ADMIN_DEFAULT_GROUP_FORMULA.hard,
+                    goGroupFormulaMedium: goSettings?.goGroupFormulaMedium ?? GO_ADMIN_DEFAULT_GROUP_FORMULA.medium,
+                    goGroupFormulaLite: goSettings?.goGroupFormulaLite ?? GO_ADMIN_DEFAULT_GROUP_FORMULA.lite,
                     goEnabledPlayoffLeagues: leagues,
-                    goBracketSizes: buildGoBracketSizesForLeagues(leagues, goSettings?.goBracketSizes),
+                  });
+                  const nextCounts: TournamentSettings['goMixedTeamCounts'] = {};
+                  const nextSizes: TournamentSettings['goBracketSizes'] = {};
+                  leagues.forEach((league) => {
+                    const teamCount = clampGoMixedLeagueTeamCount(
+                      league,
+                      Number(goSettings?.goMixedTeamCounts?.[league] ?? autoCounts[league] ?? 0),
+                    );
+                    nextCounts[league] = teamCount;
+                    nextSizes[league] = getGoMixedBracketSize(teamCount);
+                  });
+                  updateSettings({
+                    goBracketLevels: value,
+                    goEnabledPlayoffLeagues: leagues,
+                    goMixedTeamCounts: nextCounts,
+                    goBracketSizes: nextSizes,
                   });
                 }}
                 min={GO_ADMIN_MIN_BRACKET_LEVELS}
@@ -3400,7 +3459,7 @@ export default function AdminTournamentsPage() {
                 <h4 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Настройки плей-офф</h4>
                 <p className="text-xs text-text-secondary mt-1">
                   {isFixedPairsSeeding
-                    ? 'В режиме Фикс. пары количество команд считается автоматически по слотам категорий.'
+                    ? 'В режиме Фикс. пары количество команд предзаполняется по слотам категорий, но оператор может скорректировать его вручную.'
                     : 'Автопредложение считается по группам и формуле, при необходимости можно скорректировать вручную.'}
                 </p>
               </div>
@@ -3433,9 +3492,7 @@ export default function AdminTournamentsPage() {
                       const teamCount = clampGoMixedLeagueTeamCount(
                         league,
                         Number(
-                          isFixedPairsSeeding
-                            ? autoCounts[league]
-                            : (goSettings?.goMixedTeamCounts?.[league] ?? autoCounts[league] ?? minCount),
+                          goSettings?.goMixedTeamCounts?.[league] ?? autoCounts[league] ?? minCount,
                         ),
                       );
                       const bracketSize = getGoMixedBracketSize(teamCount);
@@ -3458,7 +3515,6 @@ export default function AdminTournamentsPage() {
                               }}
                               min={minCount}
                               max={16}
-                              disabled={isFixedPairsSeeding}
                             />
                           </td>
                           <td className="py-2 pr-4 font-semibold">{bracketSize}</td>
@@ -3624,7 +3680,7 @@ export default function AdminTournamentsPage() {
         </div>
         ) : null}
 
-        {isKotcFormat ? (
+        {isKotcFormat && (kotcSettings?.kotcJudgeModule ?? settings.kotcJudgeModule) !== 'next' ? (
           <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
             <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Таймеры</h3>
 

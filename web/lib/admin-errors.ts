@@ -1,6 +1,13 @@
 export function adminErrorResponse(err: unknown, context: string) {
   const message = err instanceof Error ? err.message : String(err);
   console.error(`[admin-api] ${context}:`, err);
+  const status =
+    typeof err === 'object' &&
+    err !== null &&
+    'status' in err &&
+    typeof (err as { status?: unknown }).status === 'number'
+      ? (err as { status: number }).status
+      : null;
 
   if (message.includes('tournaments_capacity_check')) {
     return Response.json({ error: 'Capacity must be at least 4' }, { status: 400 });
@@ -19,7 +26,7 @@ export function adminErrorResponse(err: unknown, context: string) {
 
   if (message.includes('tournaments_status_check')) {
     return Response.json(
-      { error: 'Status must be open, full, finished, or cancelled' },
+      { error: 'Status must be draft, open, full, finished, or cancelled' },
       { status: 400 }
     );
   }
@@ -36,6 +43,10 @@ export function adminErrorResponse(err: unknown, context: string) {
       { error: message.slice('BadRequest: '.length).trim() || 'Bad request' },
       { status: 400 }
     );
+  }
+
+  if (status && status >= 400 && status < 600) {
+    return Response.json({ error: message || 'Request failed' }, { status });
   }
 
   return Response.json({ error: 'Internal error' }, { status: 500 });

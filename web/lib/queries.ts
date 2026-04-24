@@ -42,6 +42,10 @@ function normalizeTournamentSettings(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function isDraftTournamentStatus(value: unknown): boolean {
+  return String(value ?? '').trim().toLowerCase() === 'draft';
+}
+
 export function shouldHideTournamentFromPublic(input: {
   name?: unknown;
   location?: unknown;
@@ -426,6 +430,7 @@ export async function fetchTournaments(
     const { rows } = await pool.query(query, [queryLimit]);
     const visibleRows = rows.filter((row) => {
       if (String(row.name ?? '') === PLAYER_DB_EXTERNAL_ID) return false;
+      if (isDraftTournamentStatus(row.status)) return false;
       return !shouldHideTournamentFromPublic({
         name: row.name,
         location: row.location,
@@ -519,7 +524,7 @@ export async function fetchActiveThaiJudgeTournaments(): Promise<ActiveThaiJudge
        AND r.status = 'live'
       LEFT JOIN thai_court c ON c.round_id = r.id
       WHERE LOWER(COALESCE(t.format, '')) = 'thai'
-        AND COALESCE(t.status, '') <> 'cancelled'
+        AND COALESCE(t.status, '') NOT IN ('cancelled', 'draft')
       GROUP BY t.id, t.name, t.date, t.time, t.location, t.settings, r.round_no, r.round_type, r.current_tour_no
       ORDER BY
         t.date DESC NULLS LAST,
@@ -656,6 +661,17 @@ export async function fetchTournamentById(
       photoUrl: '',
       formatCode: '',
     }));
+  }
+
+  if (
+    isDraftTournamentStatus(data.status) ||
+    shouldHideTournamentFromPublic({
+      name: data.name,
+      location: data.location,
+      settings: data.settings,
+    })
+  ) {
+    return null;
   }
 
   return enrichTournamentRuntimeState(
@@ -837,7 +853,7 @@ export async function fetchPartnerRequests(filters: PartnerFilters = {}): Promis
     `pr.status = 'pending'`,
     `COALESCE(pr.registration_type, 'solo') = 'solo'`,
     `COALESCE(pr.partner_wanted, true) = true`,
-    `COALESCE(t.status, 'open') <> 'cancelled'`,
+    `COALESCE(t.status, 'open') NOT IN ('cancelled', 'draft')`,
     `(t.date IS NULL OR t.date >= CURRENT_DATE)`,
   ];
   const params: string[] = [];
@@ -1138,9 +1154,10 @@ export async function fetchTournamentResults(tournamentId: string): Promise<Tour
   const { rows } = await pool.query(
     `SELECT tr.player_id, p.name AS player_name, p.photo_url AS player_photo_url,
             tr.place, tr.game_pts, tr.rating_pts, tr.wins, tr.diff, tr.balls,
-            tr.rating_type, tr.gender, tr.rating_pool
+            tr.rating_type, tr.gender, tr.rating_pool, COALESCE(t.level, '') AS tournament_level
      FROM tournament_results tr
      JOIN players p ON p.id = tr.player_id
+     JOIN tournaments t ON t.id = tr.tournament_id
      WHERE tr.tournament_id = $1
      ORDER BY tr.place ASC, tr.game_pts DESC`,
     [tournamentId]

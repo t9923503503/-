@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireApiRole } from '@/lib/admin-auth';
-import { upsertTournamentResults } from '@/lib/admin-queries';
+import { getTournamentById, updateTournament, upsertTournamentResults } from '@/lib/admin-queries';
 import { writeAuditLog } from '@/lib/admin-audit';
 import { adminErrorResponse } from '@/lib/admin-errors';
+import { sanitizeArchiveRows, validateArchiveRows } from '@/lib/archive-results';
+import { normalizeTournamentRatingLevel } from '@/lib/rating-points';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +17,11 @@ function normalizePlacement(value: unknown): number {
 function normalizeRatingPts(value: unknown): number | undefined {
   const parsed = Number(value ?? Number.NaN);
   if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
-  return parsed;
+  return Math.trunc(parsed);
+}
+
+function normalizeTournamentLevel(value: unknown): 'hard' | 'advance' | 'medium' | 'lite' {
+  return normalizeTournamentRatingLevel(String(value ?? ''));
 }
 
 export async function POST(
@@ -29,24 +35,36 @@ export async function POST(
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    const current = await getTournamentById(id);
+    if (!current) return NextResponse.json({ error: 'Tournament not found' }, { status: 404 });
+    const level =
+      body.level == null ? normalizeTournamentLevel(current.level) : normalizeTournamentLevel(body.level);
     const raw = Array.isArray(body.results) ? body.results : [];
-    const results = raw
-      .filter((r: unknown) => r && typeof r === 'object')
-      .map((r: Record<string, unknown>) => {
-        const poolRaw = String(r.ratingPool ?? r.rating_pool ?? '').trim().toLowerCase();
-        return {
-          playerName: String(r.playerName ?? r.player_name ?? '').trim(),
-          gender: String(r.gender ?? 'M') === 'W' ? ('W' as const) : ('M' as const),
-          placement: normalizePlacement(r.placement),
-          points: Number(r.points ?? 0),
-          ratingPts: normalizeRatingPts(r.ratingPts ?? r.rating_pts),
-          ratingPool: poolRaw === 'novice' ? ('novice' as const) : ('pro' as const),
-        };
-      })
-      .filter(
-        (r: { playerName: string; gender: 'M' | 'W'; placement: number; points: number }) =>
-          r.playerName && r.placement > 0,
+    const results = sanitizeArchiveRows(
+      raw.filter((r: unknown) => r && typeof r === 'object') as Array<Record<string, unknown>>,
+      level,
+    ).filter((row) => {
+      return (
+        row.playerName.trim() ||
+        row.placement > 0 ||
+        row.points > 0 ||
+        row.ratingPool !== 'pro' ||
+        row.ratingLevel !== level ||
+        typeof row.ratingPts === 'number'
       );
+    });
+
+    const validation = validateArchiveRows(results);
+    if (validation.errors.length) {
+      return NextResponse.json(
+        { error: 'Validation failed', validation },
+        { status: 422 },
+      );
+    }
+
+    if (normalizeTournamentLevel(current.level) !== level) {
+      await updateTournament(id, { ...current, level });
+    }
 
     const inserted = await upsertTournamentResults(id, results);
 
@@ -56,9 +74,9 @@ export async function POST(
       action: 'tournament.setResults',
       entityType: 'tournament',
       entityId: id,
-      afterState: { count: inserted },
+      afterState: { count: inserted, level, warnings: validation.warnings },
     });
-    return NextResponse.json({ ok: true, inserted });
+    return NextResponse.json({ ok: true, inserted, validation });
   } catch (err) {
     return adminErrorResponse(err, 'tournaments.results.post');
   }

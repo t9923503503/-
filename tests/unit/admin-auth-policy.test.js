@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   allowLegacyPins,
+  hasLegacyPinCredentials,
+  isLegacyModeActive,
   parseAdminCredentialsFromJson,
   requireActorIdOnLogin,
 } from '../../web/lib/admin-auth-policy.ts';
@@ -30,5 +32,40 @@ describe('admin auth policy helpers', () => {
   it('requires actor id when actor credentials configured', () => {
     expect(requireActorIdOnLogin(0)).toBe(false);
     expect(requireActorIdOnLogin(1)).toBe(true);
+  });
+
+  it('detects whether legacy pins are actually configured', () => {
+    expect(hasLegacyPinCredentials({})).toBe(false);
+    expect(hasLegacyPinCredentials({ adminPin: '  ' })).toBe(false);
+    expect(hasLegacyPinCredentials({ operatorPin: '5678' })).toBe(true);
+  });
+
+  it('treats legacy mode as active only when policy allows it and explicit pins exist', () => {
+    expect(
+      isLegacyModeActive({
+        nodeEnv: 'production',
+        overrideFlag: '',
+        actorCredentialsCount: 0,
+        adminPin: '7319',
+      })
+    ).toBe(false);
+
+    expect(
+      isLegacyModeActive({
+        nodeEnv: 'production',
+        overrideFlag: 'true',
+        actorCredentialsCount: 0,
+        adminPin: '7890',
+      })
+    ).toBe(true);
+
+    expect(
+      isLegacyModeActive({
+        nodeEnv: 'development',
+        overrideFlag: '',
+        actorCredentialsCount: 1,
+        adminPin: '7890',
+      })
+    ).toBe(false);
   });
 });

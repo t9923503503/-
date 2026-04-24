@@ -22,6 +22,8 @@ import {
   applyKingPoint,
   applyTakeover,
   applyUndo,
+  addKotcNextKingRallyTiebreakers,
+  buildKotcNextRoundPartnerIndexMap,
   calcKotcNextRaundStandings,
   getInitialKotcNextCourtState,
   seedKotcNextR2Courts,
@@ -105,6 +107,18 @@ interface PairRow {
   secondaryGender: 'M' | 'W' | null;
 }
 
+interface ResolvedPairRow {
+  pairIdx: number;
+  primarySourcePairIdx: number;
+  secondarySourcePairIdx: number;
+  primaryPlayerId: string | null;
+  primaryPlayerName: string;
+  primaryGender: 'M' | 'W' | null;
+  secondaryPlayerId: string | null;
+  secondaryPlayerName: string;
+  secondaryGender: 'M' | 'W' | null;
+}
+
 interface RaundRow {
   raundId: string;
   courtId: string;
@@ -139,6 +153,26 @@ interface AggregatePairRow {
   secondaryPlayerName: string;
   secondaryGender: 'M' | 'W' | null;
   kingWins: number;
+  bestKingStreak: number;
+  firstKingStreakSeq: number | null;
+  takeovers: number;
+  gamesPlayed: number;
+  position: number;
+  zone: KotcNextZoneKey | null;
+}
+
+interface AggregatePlayerRow {
+  courtId: string;
+  courtNo: number;
+  courtLabel: string;
+  line: 'primary' | 'secondary';
+  sourcePairIdx: number;
+  playerId: string | null;
+  playerName: string;
+  playerGender: 'M' | 'W' | null;
+  kingWins: number;
+  bestKingStreak: number;
+  firstKingStreakSeq: number | null;
   takeovers: number;
   gamesPlayed: number;
   position: number;
@@ -261,6 +295,33 @@ function pairLabel(pair: PairRow): string {
   return primary || secondary || `Pair ${pair.pairIdx + 1}`;
 }
 
+function resolvedPairLabel(pair: ResolvedPairRow): string {
+  const primary = pair.primaryPlayerName.trim();
+  const secondary = pair.secondaryPlayerName.trim();
+  if (primary && secondary) return `${primary} / ${secondary}`;
+  return primary || secondary || `Pair ${pair.pairIdx + 1}`;
+}
+
+function resolvePairsForRaund(pairs: PairRow[], raundNo: number): ResolvedPairRow[] {
+  const count = pairs.length;
+  if (!count) return [];
+  return buildKotcNextRoundPartnerIndexMap(count, raundNo).map(({ pairIdx, secondaryIdx }) => {
+    const pair = pairs[pairIdx] ?? pairs[0];
+    const secondarySource = pairs[secondaryIdx] ?? pair;
+    return {
+      pairIdx: pair.pairIdx,
+      primarySourcePairIdx: pair.pairIdx,
+      secondarySourcePairIdx: secondarySource.pairIdx,
+      primaryPlayerId: pair.primaryPlayerId,
+      primaryPlayerName: pair.primaryPlayerName,
+      primaryGender: pair.primaryGender,
+      secondaryPlayerId: secondarySource.secondaryPlayerId,
+      secondaryPlayerName: secondarySource.secondaryPlayerName,
+      secondaryGender: secondarySource.secondaryGender,
+    };
+  });
+}
+
 function inferKotcVariant(division: string, roster: RosterPlayer[]): KotcNextVariant {
   const normalizedDivision = String(division || '').trim().toLowerCase();
   const hasMen = roster.some((player) => player.gender === 'M');
@@ -367,7 +428,7 @@ async function loadTournamentTx(
         ${columns.has('settings') ? 'settings' : 'NULL::jsonb AS settings'},
         ${columns.has('kotc_judge_module') ? "COALESCE(kotc_judge_module, 'legacy') AS kotc_judge_module" : 'NULL::text AS kotc_judge_module'},
         ${columns.has('kotc_judge_bootstrap_sig') ? 'kotc_judge_bootstrap_sig' : 'NULL::text AS kotc_judge_bootstrap_sig'},
-        ${columns.has('kotc_raund_count') ? 'COALESCE(kotc_raund_count, 2) AS kotc_raund_count' : 'NULL::int AS kotc_raund_count'},
+        ${columns.has('kotc_raund_count') ? 'COALESCE(kotc_raund_count, 4) AS kotc_raund_count' : 'NULL::int AS kotc_raund_count'},
         ${columns.has('kotc_raund_timer_minutes') ? 'COALESCE(kotc_raund_timer_minutes, 10) AS kotc_raund_timer_minutes' : 'NULL::int AS kotc_raund_timer_minutes'},
         ${columns.has('kotc_ppc') ? 'COALESCE(kotc_ppc, 4) AS kotc_ppc' : 'NULL::int AS kotc_ppc'},
         ${columns.has('courts') ? 'COALESCE(courts, 1) AS courts' : 'NULL::int AS courts'}
@@ -393,7 +454,7 @@ async function loadTournamentTx(
     kotcPpc: asInt(row.kotc_ppc, asInt(rawSettings.kotcPpc ?? rawSettings.ppc, 4)),
     kotcRaundCount: asInt(
       row.kotc_raund_count,
-      asInt(rawSettings.kotcRaundCount ?? rawSettings.raundCount, 2),
+      asInt(rawSettings.kotcRaundCount ?? rawSettings.raundCount, 4),
     ),
     kotcRaundTimerMinutes: asInt(
       row.kotc_raund_timer_minutes,
@@ -736,7 +797,7 @@ async function loadCourtByPinTx(
         ${columns.has('settings') ? 't.settings' : 'NULL::jsonb AS settings'},
         ${columns.has('kotc_judge_module') ? "COALESCE(t.kotc_judge_module, 'legacy') AS kotc_judge_module" : 'NULL::text AS kotc_judge_module'},
         ${columns.has('kotc_judge_bootstrap_sig') ? 't.kotc_judge_bootstrap_sig' : 'NULL::text AS kotc_judge_bootstrap_sig'},
-        ${columns.has('kotc_raund_count') ? 'COALESCE(t.kotc_raund_count, 2) AS kotc_raund_count' : 'NULL::int AS kotc_raund_count'},
+        ${columns.has('kotc_raund_count') ? 'COALESCE(t.kotc_raund_count, 4) AS kotc_raund_count' : 'NULL::int AS kotc_raund_count'},
         ${columns.has('kotc_raund_timer_minutes') ? 'COALESCE(t.kotc_raund_timer_minutes, 10) AS kotc_raund_timer_minutes' : 'NULL::int AS kotc_raund_timer_minutes'},
         ${columns.has('kotc_ppc') ? 'COALESCE(t.kotc_ppc, 4) AS kotc_ppc' : 'NULL::int AS kotc_ppc'},
         ${columns.has('courts') ? 'COALESCE(t.courts, 1) AS courts' : 'NULL::int AS courts'},
@@ -773,7 +834,7 @@ async function loadCourtByPinTx(
     kotcPpc: asInt(row.kotc_ppc, asInt(rawSettings.kotcPpc ?? rawSettings.ppc, 4)),
     kotcRaundCount: asInt(
       row.kotc_raund_count,
-      asInt(rawSettings.kotcRaundCount ?? rawSettings.raundCount, 2),
+      asInt(rawSettings.kotcRaundCount ?? rawSettings.raundCount, 4),
     ),
     kotcRaundTimerMinutes: asInt(
       row.kotc_raund_timer_minutes,
@@ -873,12 +934,12 @@ function buildInitialState(
   );
 }
 
-function buildPairViews(pairs: PairRow[]): KotcNextPairView[] {
+function buildPairViews(pairs: ResolvedPairRow[]): KotcNextPairView[] {
   return pairs.map((pair) => ({
     pairIdx: pair.pairIdx,
     primaryPlayer: pair.primaryPlayerId ? { id: pair.primaryPlayerId, name: pair.primaryPlayerName } : null,
     secondaryPlayer: pair.secondaryPlayerId ? { id: pair.secondaryPlayerId, name: pair.secondaryPlayerName } : null,
-    label: pairLabel(pair),
+    label: resolvedPairLabel(pair),
   }));
 }
 
@@ -889,19 +950,34 @@ function buildPairLiveStates(pairCount: number, stats: RaundStatRow[]): KotcNext
     return {
       pairIdx,
       kingWins: stat?.kingWins ?? 0,
+      bestKingStreak: 0,
+      firstKingStreakSeq: null,
       takeovers: stat?.takeovers ?? 0,
       gamesPlayed: stat?.gamesPlayed ?? 0,
     };
   });
 }
 
-function buildLiveState(pairs: PairRow[], raund: RaundRow, stats: RaundStatRow[]): KotcNextCourtLiveState {
+function buildPairLiveStatesWithRally(
+  pairCount: number,
+  stats: RaundStatRow[],
+  events: KotcNextGameEvent[],
+): KotcNextPairLiveState[] {
+  return addKotcNextKingRallyTiebreakers(buildPairLiveStates(pairCount, stats), events);
+}
+
+function buildLiveState(
+  pairCount: number,
+  raund: RaundRow,
+  stats: RaundStatRow[],
+  events: KotcNextGameEvent[] = [],
+): KotcNextCourtLiveState {
   return {
     currentRaundNo: raund.raundNo,
     kingPairIdx: raund.kingPairIdx,
     challengerPairIdx: raund.challengerPairIdx,
     queueOrder: [...raund.queueOrder],
-    pairs: buildPairLiveStates(pairs.length, stats),
+    pairs: buildPairLiveStatesWithRally(pairCount, stats, events),
     timerStartedAt: raund.startedAt,
     timerMinutes: raund.timerMinutes,
     status: raund.status,
@@ -1069,108 +1145,309 @@ function zoneFromCourtLabel(label: string): KotcNextZoneKey | null {
   return null;
 }
 
-async function loadAggregatePairRowsTx(client: PoolClient, round: RoundRow): Promise<AggregatePairRow[]> {
+function firstRallySeq(value: number | null | undefined): number {
+  return Number.isFinite(value) && value != null ? value : Number.MAX_SAFE_INTEGER;
+}
+
+function compareAggregatePlayerRows(left: AggregatePlayerRow, right: AggregatePlayerRow): number {
+  return (
+    right.kingWins - left.kingWins ||
+    right.bestKingStreak - left.bestKingStreak ||
+    firstRallySeq(left.firstKingStreakSeq) - firstRallySeq(right.firstKingStreakSeq) ||
+    right.takeovers - left.takeovers ||
+    left.gamesPlayed - right.gamesPlayed ||
+    left.sourcePairIdx - right.sourcePairIdx ||
+    left.playerName.localeCompare(right.playerName, 'ru')
+  );
+}
+
+function buildSeedDraftFromPlayerRows(summaryRows: AggregatePlayerRow[]): KotcNextR2SeedZone[] {
+  type SeedRef = {
+    courtNo: number;
+    pairIdx: number;
+    pairLabel: string;
+    kingWins: number;
+    bestKingStreak?: number;
+    firstKingStreakSeq?: number | null;
+    takeovers: number;
+    gamesPlayed: number;
+    playerId: string | null;
+    playerName: string;
+    playerGender: 'M' | 'W' | null;
+  };
+  type SeedZone = {
+    zone: KotcNextZoneKey;
+    pairRefs: SeedRef[];
+  };
+
+  const buildLineDraft = (line: 'primary' | 'secondary'): SeedZone[] => {
+    const refs: SeedRef[] = summaryRows
+      .filter((row) => row.line === line)
+      .map((row) => ({
+        courtNo: row.courtNo,
+        pairIdx: row.sourcePairIdx,
+        pairLabel: row.playerName,
+        kingWins: row.kingWins,
+        bestKingStreak: row.bestKingStreak,
+        firstKingStreakSeq: row.firstKingStreakSeq,
+        takeovers: row.takeovers,
+        gamesPlayed: row.gamesPlayed,
+        playerId: row.playerId,
+        playerName: row.playerName,
+        playerGender: row.playerGender,
+      }));
+    const seeded = seedKotcNextR2Courts(refs);
+    return seeded.map((zone) => ({
+      zone: zone.zone,
+      pairRefs: zone.pairRefs.map((ref) => {
+        const matched = refs.find((row) => row.courtNo === ref.courtNo && row.pairIdx === ref.pairIdx);
+        return {
+          courtNo: ref.courtNo,
+          pairIdx: ref.pairIdx,
+          pairLabel: ref.pairLabel,
+          kingWins: ref.kingWins,
+          bestKingStreak: ref.bestKingStreak ?? 0,
+          firstKingStreakSeq: ref.firstKingStreakSeq ?? null,
+          takeovers: ref.takeovers,
+          gamesPlayed: ref.gamesPlayed ?? 0,
+          playerId: matched?.playerId ?? null,
+          playerName: matched?.playerName ?? ref.pairLabel,
+          playerGender: matched?.playerGender ?? null,
+        };
+      }),
+    }));
+  };
+
+  const primaryDraft = buildLineDraft('primary');
+  const secondaryDraft = buildLineDraft('secondary');
+  const secondaryByZone = new Map(secondaryDraft.map((zone) => [zone.zone, zone.pairRefs]));
+
+  return primaryDraft.map((zone) => {
+    const secondaryRefs = secondaryByZone.get(zone.zone) ?? [];
+    const pairRefs = zone.pairRefs
+      .map((primaryRef, index): KotcNextR2SeedZone['pairRefs'][number] | null => {
+        const secondaryRef = secondaryRefs[index];
+        if (!secondaryRef) return null;
+        const bestKingStreak = Math.max(primaryRef.bestKingStreak ?? 0, secondaryRef.bestKingStreak ?? 0);
+        const firstKingStreakSeq = [primaryRef.firstKingStreakSeq, secondaryRef.firstKingStreakSeq]
+          .filter((value): value is number => Number.isFinite(value))
+          .sort((left, right) => left - right)[0] ?? null;
+        return {
+          courtNo: primaryRef.courtNo,
+          pairIdx: primaryRef.pairIdx,
+          pairLabel: `${primaryRef.playerName ?? primaryRef.pairLabel} / ${secondaryRef.playerName ?? secondaryRef.pairLabel}`,
+          kingWins: Math.round(((primaryRef.kingWins ?? 0) + (secondaryRef.kingWins ?? 0)) / 2),
+          bestKingStreak,
+          firstKingStreakSeq,
+          takeovers: Math.round(((primaryRef.takeovers ?? 0) + (secondaryRef.takeovers ?? 0)) / 2),
+          gamesPlayed: Math.round(((primaryRef.gamesPlayed ?? 0) + (secondaryRef.gamesPlayed ?? 0)) / 2),
+          primaryPlayerId: primaryRef.playerId ?? null,
+          primaryPlayerName: primaryRef.playerName ?? primaryRef.pairLabel,
+          primaryGender: primaryRef.playerGender ?? null,
+          secondaryPlayerId: secondaryRef.playerId ?? null,
+          secondaryPlayerName: secondaryRef.playerName ?? secondaryRef.pairLabel,
+          secondaryGender: secondaryRef.playerGender ?? null,
+        };
+      })
+      .filter((ref): ref is KotcNextR2SeedZone['pairRefs'][number] => Boolean(ref));
+
+    return {
+      zone: zone.zone,
+      pairRefs,
+    };
+  });
+}
+
+function buildR2ZoneMap(summaryRows: AggregatePlayerRow[]): Map<string, KotcNextZoneKey> {
+  const draft = buildSeedDraftFromPlayerRows(summaryRows);
+  const zoneMap = new Map<string, KotcNextZoneKey>();
+  for (const zone of draft) {
+    for (const ref of zone.pairRefs) {
+      if (ref.primaryPlayerId) zoneMap.set(ref.primaryPlayerId, zone.zone);
+      if (ref.secondaryPlayerId) zoneMap.set(ref.secondaryPlayerId, zone.zone);
+    }
+  }
+  return zoneMap;
+}
+
+async function loadAggregatePlayerRowsTx(client: PoolClient, round: RoundRow): Promise<AggregatePlayerRow[]> {
   const courts = await listCourtsByRoundTx(client, round.roundId);
-  const result: AggregatePairRow[] = [];
+  const result: AggregatePlayerRow[] = [];
 
   for (const court of courts) {
     const pairs = await listPairsByCourtTx(client, court.courtId);
+    if (!pairs.length) continue;
+
     const raunds = await listRaundsByCourtTx(client, court.courtId);
-    const totals = new Map<number, KotcNextPairLiveState>();
+    const zone = zoneFromCourtLabel(court.label);
 
-    for (const pair of pairs) {
-      totals.set(pair.pairIdx, {
-        pairIdx: pair.pairIdx,
-        kingWins: 0,
-        takeovers: 0,
-        gamesPlayed: 0,
-      });
-    }
-
-    for (const raund of raunds) {
-      const stats = await listRaundStatsTx(client, raund.raundId);
-      for (const stat of stats) {
-        const target = totals.get(stat.pairIdx);
-        if (!target) continue;
-        target.kingWins += stat.kingWins;
-        target.takeovers += stat.takeovers;
-        target.gamesPlayed += stat.gamesPlayed;
-      }
-    }
-
-    const ranked = calcKotcNextRaundStandings([...totals.values()]).map((entry, index) => ({
-      ...entry,
-      position: index + 1,
-    }));
-    const positionByPair = new Map(ranked.map((entry) => [entry.pairIdx, entry.position]));
-
-    for (const pair of pairs) {
-      const total = totals.get(pair.pairIdx) ?? { pairIdx: pair.pairIdx, kingWins: 0, takeovers: 0, gamesPlayed: 0 };
-      result.push({
+    const totals = new Map<string, AggregatePlayerRow>();
+    pairs.forEach((pair, index) => {
+      totals.set(`primary:${pair.pairIdx}`, {
         courtId: court.courtId,
         courtNo: court.courtNo,
         courtLabel: court.label,
-        pairIdx: pair.pairIdx,
-        pairLabel: pairLabel(pair),
-        primaryPlayerId: pair.primaryPlayerId,
-        primaryPlayerName: pair.primaryPlayerName,
-        primaryGender: pair.primaryGender,
-        secondaryPlayerId: pair.secondaryPlayerId,
-        secondaryPlayerName: pair.secondaryPlayerName,
-        secondaryGender: pair.secondaryGender,
-        kingWins: total.kingWins,
-        takeovers: total.takeovers,
-        gamesPlayed: total.gamesPlayed,
-        position: positionByPair.get(pair.pairIdx) ?? pairs.length,
-        zone: zoneFromCourtLabel(court.label),
+        line: 'primary',
+        sourcePairIdx: pair.pairIdx,
+        playerId: pair.primaryPlayerId,
+        playerName: pair.primaryPlayerName,
+        playerGender: pair.primaryGender,
+        kingWins: 0,
+        bestKingStreak: 0,
+        firstKingStreakSeq: null,
+        takeovers: 0,
+        gamesPlayed: 0,
+        position: index + 1,
+        zone,
       });
+      totals.set(`secondary:${pair.pairIdx}`, {
+        courtId: court.courtId,
+        courtNo: court.courtNo,
+        courtLabel: court.label,
+        line: 'secondary',
+        sourcePairIdx: pair.pairIdx,
+        playerId: pair.secondaryPlayerId,
+        playerName: pair.secondaryPlayerName,
+        playerGender: pair.secondaryGender,
+        kingWins: 0,
+        bestKingStreak: 0,
+        firstKingStreakSeq: null,
+        takeovers: 0,
+        gamesPlayed: 0,
+        position: index + 1,
+        zone,
+      });
+    });
+
+    for (const raund of raunds) {
+      const stats = await listRaundStatsTx(client, raund.raundId);
+      const events = await listGameEventsTx(client, raund.raundId);
+      const liveRows = buildPairLiveStatesWithRally(pairs.length, stats, events);
+      const liveByPair = new Map(liveRows.map((row) => [row.pairIdx, row]));
+      const resolvedPairs = resolvePairsForRaund(pairs, raund.raundNo);
+
+      for (const resolved of resolvedPairs) {
+        const live = liveByPair.get(resolved.pairIdx);
+        if (!live) continue;
+        const updates = [
+          {
+            key: `primary:${resolved.primarySourcePairIdx}`,
+            playerId: resolved.primaryPlayerId,
+            playerName: resolved.primaryPlayerName,
+            playerGender: resolved.primaryGender,
+          },
+          {
+            key: `secondary:${resolved.secondarySourcePairIdx}`,
+            playerId: resolved.secondaryPlayerId,
+            playerName: resolved.secondaryPlayerName,
+            playerGender: resolved.secondaryGender,
+          },
+        ];
+        for (const update of updates) {
+          const target = totals.get(update.key);
+          if (!target) continue;
+          target.playerId = update.playerId;
+          target.playerName = update.playerName;
+          target.playerGender = update.playerGender;
+          target.kingWins += live.kingWins;
+          target.takeovers += live.takeovers;
+          target.gamesPlayed += live.gamesPlayed;
+          target.bestKingStreak = Math.max(target.bestKingStreak, live.bestKingStreak ?? 0);
+          if (Number.isFinite(live.firstKingStreakSeq) && live.firstKingStreakSeq != null) {
+            const globalSeq = raund.raundNo * 1_000_000 + Number(live.firstKingStreakSeq);
+            target.firstKingStreakSeq =
+              target.firstKingStreakSeq == null ? globalSeq : Math.min(target.firstKingStreakSeq, globalSeq);
+          }
+        }
+      }
+    }
+
+    for (const line of ['primary', 'secondary'] as const) {
+      const ranked = [...totals.values()]
+        .filter((row) => row.line === line)
+        .sort(compareAggregatePlayerRows)
+        .map((row, index) => ({
+          ...row,
+          position: index + 1,
+        }));
+      result.push(...ranked);
     }
   }
 
   return result;
 }
 
-function buildR2ZoneMap(summaryRows: AggregatePairRow[]): Map<string, KotcNextZoneKey> {
-  const draft = seedKotcNextR2Courts(
-    summaryRows.map((row) => ({
+function buildAggregatePairRowsFromPlayers(summaryRows: AggregatePlayerRow[]): AggregatePairRow[] {
+  const grouped = new Map<string, { primary: AggregatePlayerRow[]; secondary: AggregatePlayerRow[]; courtId: string; courtNo: number; courtLabel: string; zone: KotcNextZoneKey | null }>();
+
+  for (const row of summaryRows) {
+    const groupKey = `${row.zone ?? 'none'}:${row.courtNo}`;
+    const group = grouped.get(groupKey) ?? {
+      primary: [],
+      secondary: [],
+      courtId: row.courtId,
       courtNo: row.courtNo,
-      pairIdx: row.pairIdx,
-      pairLabel: row.pairLabel,
-      kingWins: row.kingWins,
-      takeovers: row.takeovers,
-      gamesPlayed: row.gamesPlayed,
-    })),
-  );
-  const zoneMap = new Map<string, KotcNextZoneKey>();
-  for (const zone of draft) {
-    for (const ref of zone.pairRefs) {
-      zoneMap.set(`${ref.courtNo}:${ref.pairIdx}`, zone.zone);
+      courtLabel: row.courtLabel,
+      zone: row.zone,
+    };
+    if (row.line === 'primary') group.primary.push(row);
+    else group.secondary.push(row);
+    grouped.set(groupKey, group);
+  }
+
+  const pairs: AggregatePairRow[] = [];
+  for (const group of grouped.values()) {
+    const primary = [...group.primary].sort((left, right) => left.position - right.position);
+    const secondary = [...group.secondary].sort((left, right) => left.position - right.position);
+    const count = Math.min(primary.length, secondary.length);
+    for (let index = 0; index < count; index += 1) {
+      const left = primary[index];
+      const right = secondary[index];
+      const firstSeq = [left.firstKingStreakSeq, right.firstKingStreakSeq]
+        .filter((value): value is number => Number.isFinite(value))
+        .sort((a, b) => a - b)[0] ?? null;
+      pairs.push({
+        courtId: group.courtId,
+        courtNo: group.courtNo,
+        courtLabel: group.courtLabel,
+        pairIdx: index,
+        pairLabel: `${left.playerName} / ${right.playerName}`,
+        primaryPlayerId: left.playerId,
+        primaryPlayerName: left.playerName,
+        primaryGender: left.playerGender,
+        secondaryPlayerId: right.playerId,
+        secondaryPlayerName: right.playerName,
+        secondaryGender: right.playerGender,
+        kingWins: Math.round((left.kingWins + right.kingWins) / 2),
+        bestKingStreak: Math.max(left.bestKingStreak, right.bestKingStreak),
+        firstKingStreakSeq: firstSeq,
+        takeovers: Math.round((left.takeovers + right.takeovers) / 2),
+        gamesPlayed: Math.round((left.gamesPlayed + right.gamesPlayed) / 2),
+        position: index + 1,
+        zone: group.zone,
+      });
     }
   }
-  return zoneMap;
+
+  return pairs;
 }
 
-async function persistPlayerRoundStatsTx(client: PoolClient, round: RoundRow, summaryRows: AggregatePairRow[]): Promise<void> {
+async function persistPlayerRoundStatsTx(client: PoolClient, round: RoundRow, summaryRows: AggregatePlayerRow[]): Promise<void> {
   await client.query(`DELETE FROM kotcn_player_round_stat WHERE round_id = $1`, [round.roundId]);
   const r1ZoneMap = round.roundNo === 1 ? buildR2ZoneMap(summaryRows) : new Map<string, KotcNextZoneKey>();
 
   for (const row of summaryRows) {
-    const zone = round.roundNo === 2 ? row.zone : r1ZoneMap.get(`${row.courtNo}:${row.pairIdx}`) ?? null;
-    for (const player of [
-      { playerId: row.primaryPlayerId, playerName: row.primaryPlayerName },
-      { playerId: row.secondaryPlayerId, playerName: row.secondaryPlayerName },
-    ]) {
-      if (!player.playerId || !player.playerName.trim()) continue;
-      await client.query(
-        `
-          INSERT INTO kotcn_player_round_stat (
-            round_id, player_id, pair_idx, king_wins, takeovers, games_played, position, zone
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        `,
-        [round.roundId, player.playerId, row.pairIdx, row.kingWins, row.takeovers, row.gamesPlayed, row.position, zone],
-      );
-    }
+    if (!row.playerId || !row.playerName.trim()) continue;
+    const zone = round.roundNo === 2 ? row.zone : r1ZoneMap.get(row.playerId) ?? null;
+    await client.query(
+      `
+        INSERT INTO kotcn_player_round_stat (
+          round_id, player_id, pair_idx, king_wins, takeovers, games_played, position, zone
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `,
+      [round.roundId, row.playerId, row.sourcePairIdx, row.kingWins, row.takeovers, row.gamesPlayed, row.position, zone],
+    );
   }
 }
 
@@ -1358,7 +1635,7 @@ async function finalizeRoundIfReadyTx(
   }
 
   await client.query(`UPDATE kotcn_round SET status = 'finished' WHERE id = $1`, [round.roundId]);
-  await persistPlayerRoundStatsTx(client, round, await loadAggregatePairRowsTx(client, round));
+  await persistPlayerRoundStatsTx(client, round, await loadAggregatePlayerRowsTx(client, round));
   return { roundFinished: true, shouldPublishResults: round.roundNo === 2 };
 }
 
@@ -1513,9 +1790,18 @@ function buildR1Pairs(roster: RosterPlayer[], tournament: TournamentRow): R1Pair
 function normalizeSeedDraftInput(input: unknown, draft: KotcNextR2SeedZone[]): KotcNextR2SeedZone[] {
   if (!Array.isArray(input) || !input.length) return draft;
 
+  const refIdentity = (ref: KotcNextR2SeedZone['pairRefs'][number]): string => {
+    const primaryId = String(ref.primaryPlayerId ?? '').trim();
+    const secondaryId = String(ref.secondaryPlayerId ?? '').trim();
+    if (primaryId || secondaryId) {
+      return `${asInt(ref.courtNo, 0)}:${asInt(ref.pairIdx, -1)}:${primaryId}:${secondaryId}`;
+    }
+    return `${asInt(ref.courtNo, 0)}:${asInt(ref.pairIdx, -1)}:${String(ref.pairLabel || '').trim()}`;
+  };
+
   const refByKey = new Map<string, KotcNextR2SeedZone['pairRefs'][number]>(
     draft.flatMap((zone) =>
-      zone.pairRefs.map((ref) => [`${zone.zone}:${ref.courtNo}:${ref.pairIdx}`, ref] as const),
+      zone.pairRefs.map((ref) => [refIdentity(ref), ref] as const),
     ),
   );
 
@@ -1530,7 +1816,7 @@ function normalizeSeedDraftInput(input: unknown, draft: KotcNextR2SeedZone[]): K
     return {
       zone,
       pairRefs: refs.map((ref) => {
-        const key = `${zone}:${asInt(ref.courtNo, 0)}:${asInt(ref.pairIdx, -1)}`;
+        const key = refIdentity(ref as KotcNextR2SeedZone['pairRefs'][number]);
         const draftRef = refByKey.get(key);
         if (!draftRef) {
           throw new KotcNextError(409, 'R2 seed payload no longer matches the draft');
@@ -1540,8 +1826,8 @@ function normalizeSeedDraftInput(input: unknown, draft: KotcNextR2SeedZone[]): K
     };
   });
 
-  const normalizedKeys = normalized.flatMap((zone) => zone.pairRefs.map((ref) => `${zone.zone}:${ref.courtNo}:${ref.pairIdx}`)).sort();
-  const draftKeys = draft.flatMap((zone) => zone.pairRefs.map((ref) => `${zone.zone}:${ref.courtNo}:${ref.pairIdx}`)).sort();
+  const normalizedKeys = normalized.flatMap((zone) => zone.pairRefs.map((ref) => refIdentity(ref))).sort();
+  const draftKeys = draft.flatMap((zone) => zone.pairRefs.map((ref) => refIdentity(ref))).sort();
   if (normalizedKeys.join('|') !== draftKeys.join('|')) {
     throw new KotcNextError(409, 'R2 seed payload no longer matches the draft');
   }
@@ -1573,21 +1859,55 @@ async function setCourtStatusTx(client: PoolClient, courtId: string, status: Kot
 
 async function startRaundTx(client: PoolClient, pin: string, raundNo: number): Promise<JudgeMutationResult> {
   const target = await loadActionTargetTx(client, pin, raundNo);
-  if (target.raund.status === 'finished') {
-    throw new KotcNextError(423, 'Raund already finished');
-  }
-  const previous = await listRaundsByCourtTx(client, target.court.courtId);
-  const blockingRaund = previous.find((row) => row.raundNo < raundNo && row.status !== 'finished');
-  if (blockingRaund) {
-    throw new KotcNextError(409, `Finish raund ${blockingRaund.raundNo} before starting the next one`);
+  const roundCourts = await listCourtsByRoundTx(client, target.round.roundId);
+  const startTargets: Array<{ court: CourtRow; raund: RaundRow }> = [];
+
+  for (const court of roundCourts) {
+    const courtRaund = await loadRaundByCourtAndNoTx(client, court.courtId, raundNo, { forUpdate: true });
+    if (!courtRaund) {
+      throw new KotcNextError(409, `Court ${court.label || `K${court.courtNo}`} has no raund ${raundNo}`);
+    }
+    if (courtRaund.status === 'finished') {
+      throw new KotcNextError(423, `Raund ${raundNo} is already finished on ${court.label || `K${court.courtNo}`}`);
+    }
+    startTargets.push({ court, raund: courtRaund });
   }
 
-  const state = buildInitialState(target.tournament, target.round, target.court, raundNo, new Date().toISOString());
-  await writeRaundStateTx(client, target.raund.raundId, {
-    ...state,
-    status: 'running',
-  });
-  await setCourtStatusTx(client, target.court.courtId, 'live');
+  const runningStartedAt = startTargets
+    .filter((entry) => entry.raund.status === 'running' && entry.raund.startedAt)
+    .map((entry) => entry.raund.startedAt as string);
+  const synchronizedStartedAt =
+    runningStartedAt.sort((left, right) => new Date(left).getTime() - new Date(right).getTime())[0] ??
+    new Date().toISOString();
+
+  for (const entry of startTargets) {
+    if (entry.raund.status === 'running') {
+      await setCourtStatusTx(client, entry.court.courtId, 'live');
+      continue;
+    }
+
+    const previous = await listRaundsByCourtTx(client, entry.court.courtId);
+    const blockingRaund = previous.find((row) => row.raundNo < raundNo && row.status !== 'finished');
+    if (blockingRaund) {
+      throw new KotcNextError(
+        409,
+        `Finish raund ${blockingRaund.raundNo} on ${entry.court.label || `K${entry.court.courtNo}`} before starting the next one`,
+      );
+    }
+
+    const state = buildInitialState(
+      target.tournament,
+      target.round,
+      entry.court,
+      raundNo,
+      synchronizedStartedAt,
+    );
+    await writeRaundStateTx(client, entry.raund.raundId, {
+      ...state,
+      status: 'running',
+    });
+    await setCourtStatusTx(client, entry.court.courtId, 'live');
+  }
 
   return { tournamentId: target.tournament.id, pin, publishResults: false };
 }
@@ -1606,7 +1926,7 @@ async function recordEventTx(
     throw new KotcNextError(409, 'Raund is not running');
   }
 
-  const currentState = buildLiveState(target.pairs, target.raund, target.stats);
+  const currentState = buildLiveState(target.pairs.length, target.raund, target.stats, target.events);
   const nextState = eventType === 'takeover' ? applyTakeover(currentState) : applyKingPoint(currentState);
   const nextSeqNo = (target.events[target.events.length - 1]?.seqNo ?? 0) + 1;
 
@@ -1635,7 +1955,7 @@ async function manualPairSwitchTx(
     throw new KotcNextError(423, 'Raund already finished');
   }
 
-  const currentState = buildLiveState(target.pairs, target.raund, target.stats);
+  const currentState = buildLiveState(target.pairs.length, target.raund, target.stats, target.events);
   const nextState = applyManualPairSwitch(currentState, slot, direction);
   await writeRaundStateTx(client, target.raund.raundId, nextState);
   await setCourtStatusTx(client, target.court.courtId, nextState.status === 'running' ? 'live' : 'pending');
@@ -1741,16 +2061,7 @@ export async function getKotcNextR2SeedDraft(tournamentId: string): Promise<Kotc
     const r1 = await loadRoundByNoTx(client, normalizedId, 1);
     if (!r1) throw new KotcNextError(409, 'KOTC Next R1 is not initialized');
     if (r1.status !== 'finished') throw new KotcNextError(409, 'Finish R1 before seeding R2');
-    return seedKotcNextR2Courts(
-      (await loadAggregatePairRowsTx(client, r1)).map((row) => ({
-        courtNo: row.courtNo,
-        pairIdx: row.pairIdx,
-        pairLabel: row.pairLabel,
-        kingWins: row.kingWins,
-        takeovers: row.takeovers,
-        gamesPlayed: row.gamesPlayed,
-      })),
-    );
+    return buildSeedDraftFromPlayerRows(await loadAggregatePlayerRowsTx(client, r1));
   });
 }
 
@@ -1775,12 +2086,6 @@ export async function bootstrapKotcNextR2(
 
     const draft = await getKotcNextR2SeedDraft(normalizedId);
     const selectedZones = normalizeSeedDraftInput(options?.zones, draft);
-    const pairMap = new Map<string, PairRow>();
-    for (const court of await listCourtsByRoundTx(client, r1.roundId)) {
-      for (const pair of await listPairsByCourtTx(client, court.courtId)) {
-        pairMap.set(`${court.courtNo}:${pair.pairIdx}`, pair);
-      }
-    }
 
     await bootstrapRoundTx(client, tournament, 2, {
       seed: Math.max(1, asInt(options?.seed, r1.seed + 1)),
@@ -1788,15 +2093,16 @@ export async function bootstrapKotcNextR2(
       pairSources: selectedZones.map((zone, index) => ({
         courtNo: index + 1,
         pairs: zone.pairRefs.map((ref) => {
-          const pair = pairMap.get(`${ref.courtNo}:${ref.pairIdx}`);
-          if (!pair) throw new KotcNextError(409, 'R2 draft can no longer be materialized');
+          if (!ref.primaryPlayerName || !ref.secondaryPlayerName) {
+            throw new KotcNextError(409, 'R2 draft can no longer be materialized');
+          }
           return {
-            primaryPlayerId: pair.primaryPlayerId,
-            primaryPlayerName: pair.primaryPlayerName,
-            secondaryPlayerId: pair.secondaryPlayerId,
-            secondaryPlayerName: pair.secondaryPlayerName,
-            primaryGender: pair.primaryGender,
-            secondaryGender: pair.secondaryGender,
+            primaryPlayerId: ref.primaryPlayerId ?? null,
+            primaryPlayerName: ref.primaryPlayerName,
+            secondaryPlayerId: ref.secondaryPlayerId ?? null,
+            secondaryPlayerName: ref.secondaryPlayerName,
+            primaryGender: ref.primaryGender ?? null,
+            secondaryGender: ref.secondaryGender ?? null,
           };
         }),
       })),
@@ -1833,10 +2139,17 @@ export async function getKotcNextJudgeSnapshotByPin(pin: string): Promise<KotcNe
     const raundHistory: KotcNextRaundHistoryEntry[] = [];
 
     for (const raund of raunds) {
+      const raundEvents = await listGameEventsTx(client, raund.raundId);
       raundHistory.push({
         raundNo: raund.raundNo,
         status: raund.status,
-        standings: calcKotcNextRaundStandings(buildPairLiveStates(pairs.length, await listRaundStatsTx(client, raund.raundId))),
+        standings: calcKotcNextRaundStandings(
+          buildPairLiveStatesWithRally(
+            pairs.length,
+            await listRaundStatsTx(client, raund.raundId),
+            raundEvents,
+          ),
+        ),
       });
     }
 
@@ -1854,8 +2167,8 @@ export async function getKotcNextJudgeSnapshotByPin(pin: string): Promise<KotcNe
       courtNo: court.courtNo,
       courtLabel: court.label,
       pinCode: court.pinCode,
-      pairs: buildPairViews(pairs),
-      liveState: buildLiveState(pairs, currentRaund, currentStats),
+      pairs: buildPairViews(resolvePairsForRaund(pairs, currentRaund.raundNo)),
+      liveState: buildLiveState(pairs.length, currentRaund, currentStats, currentEvents),
       roundNav,
       courtNav,
       raundHistory,
@@ -1965,25 +2278,41 @@ async function buildRoundViewTx(client: PoolClient, round: RoundRow): Promise<Ko
     const progress: KotcNextCourtRaundProgress[] = [];
 
     for (const raund of raunds) {
+      const raundEvents = await listGameEventsTx(client, raund.raundId);
       progress.push({
         raundNo: raund.raundNo,
         status: raund.status,
         startedAt: raund.startedAt,
         finishedAt: raund.finishedAt,
         standings: raund.status === 'finished'
-          ? calcKotcNextRaundStandings(buildPairLiveStates(pairs.length, await listRaundStatsTx(client, raund.raundId)))
+          ? calcKotcNextRaundStandings(
+              buildPairLiveStatesWithRally(
+                pairs.length,
+                await listRaundStatsTx(client, raund.raundId),
+                raundEvents,
+              ),
+            )
           : null,
       });
     }
 
     const currentRaund = selectCurrentRaund(raunds);
-    const liveState = currentRaund == null ? null : buildLiveState(pairs, currentRaund, await listRaundStatsTx(client, currentRaund.raundId));
+    const liveState =
+      currentRaund == null
+        ? null
+        : buildLiveState(
+            pairs.length,
+            currentRaund,
+            await listRaundStatsTx(client, currentRaund.raundId),
+            await listGameEventsTx(client, currentRaund.raundId),
+          );
     const status: KotcNextCourtStatus =
       raunds.length && raunds.every((row) => row.status === 'finished')
         ? 'finished'
         : raunds.some((row) => row.status === 'running')
           ? 'live'
           : 'pending';
+    const displayRaundNo = currentRaund?.raundNo ?? 1;
 
     courtViews.push({
       courtId: court.courtId,
@@ -1992,7 +2321,7 @@ async function buildRoundViewTx(client: PoolClient, round: RoundRow): Promise<Ko
       pinCode: court.pinCode,
       judgeUrl: judgeUrlForPin(court.pinCode),
       status,
-      pairs: buildPairViews(pairs),
+      pairs: buildPairViews(resolvePairsForRaund(pairs, displayRaundNo)),
       raunds: progress,
       currentRaundNo: currentRaund?.raundNo ?? null,
       liveState,
@@ -2038,6 +2367,8 @@ function buildFinalResults(summaryRows: AggregatePairRow[]): KotcNextFinalZoneRe
         primaryPlayerId: row.primaryPlayerId,
         secondaryPlayerId: row.secondaryPlayerId,
         kingWins: row.kingWins,
+        bestKingStreak: row.bestKingStreak,
+        firstKingStreakSeq: row.firstKingStreakSeq,
         takeovers: row.takeovers,
       })),
   }));
@@ -2096,7 +2427,9 @@ export async function getKotcNextOperatorStateSummary(tournamentId: string): Pro
       params: tournament.params,
       rounds: roundViews,
       r2SeedDraft: stage === 'r1_finished' && r1 ? await getKotcNextR2SeedDraft(normalizedId) : null,
-      finalResults: r2?.status === 'finished' ? buildFinalResults(await loadAggregatePairRowsTx(client, r2)) : null,
+      finalResults: r2?.status === 'finished'
+        ? buildFinalResults(buildAggregatePairRowsFromPlayers(await loadAggregatePlayerRowsTx(client, r2)))
+        : null,
       canBootstrapR1: !r1,
       canFinishR1: Boolean(r1 && r1.status === 'finished' && !r2),
       canPreviewR2Seed: Boolean(r1 && r1.status === 'finished' && !r2),

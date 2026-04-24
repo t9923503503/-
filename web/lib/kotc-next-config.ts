@@ -18,12 +18,12 @@ export const KOTC_NEXT_MIN_COURTS = 1;
 export const KOTC_NEXT_MAX_COURTS = 4;
 export const KOTC_NEXT_MIN_PPC = 3;       // pairs per court
 export const KOTC_NEXT_MAX_PPC = 5;
-export const KOTC_NEXT_MIN_RAUNDS = 1;
-export const KOTC_NEXT_MAX_RAUNDS = 4;
+export const KOTC_NEXT_MIN_RAUNDS = KOTC_NEXT_MIN_PPC;
+export const KOTC_NEXT_MAX_RAUNDS = KOTC_NEXT_MAX_PPC;
 export const KOTC_NEXT_MIN_TIMER = 9;
 export const KOTC_NEXT_MAX_TIMER = 20;
 export const KOTC_NEXT_DEFAULT_PPC = 4;
-export const KOTC_NEXT_DEFAULT_RAUNDS = 2;
+export const KOTC_NEXT_DEFAULT_RAUNDS = KOTC_NEXT_DEFAULT_PPC;
 export const KOTC_NEXT_DEFAULT_TIMER = 10;
 
 export interface KotcNextStructureInput {
@@ -81,7 +81,7 @@ export function normalizeKotcAdminSettings(settings: Record<string, unknown> | n
   const raw = settings ?? {};
   const courts = clamp(toInt(raw.courts, KOTC_NEXT_MAX_COURTS), KOTC_NEXT_MIN_COURTS, KOTC_NEXT_MAX_COURTS);
   const ppc = clamp(toInt(raw.kotcPpc ?? raw.ppc, KOTC_NEXT_DEFAULT_PPC), KOTC_NEXT_MIN_PPC, KOTC_NEXT_MAX_PPC);
-  const raundCount = clamp(toInt(raw.kotcRaundCount ?? raw.raundCount, KOTC_NEXT_DEFAULT_RAUNDS), KOTC_NEXT_MIN_RAUNDS, KOTC_NEXT_MAX_RAUNDS);
+  const raundCount = ppc;
   const raundTimerMinutes = clamp(toInt(raw.kotcRaundTimerMinutes ?? raw.raundTimerMinutes, KOTC_NEXT_DEFAULT_TIMER), KOTC_NEXT_MIN_TIMER, KOTC_NEXT_MAX_TIMER);
 
   return { courts, ppc, raundCount, raundTimerMinutes };
@@ -106,6 +106,9 @@ export function validateKotcNextSetup(input: {
   }
   if (raundCount < KOTC_NEXT_MIN_RAUNDS || raundCount > KOTC_NEXT_MAX_RAUNDS) {
     return `Раундов: ${raundCount} — допустимо ${KOTC_NEXT_MIN_RAUNDS}–${KOTC_NEXT_MAX_RAUNDS}`;
+  }
+  if (raundCount !== ppc) {
+    return `Раундов: ${raundCount} — в KOTC Next раунды на корт должны совпадать с парами на корт (${ppc})`;
   }
   if (raundTimerMinutes < KOTC_NEXT_MIN_TIMER || raundTimerMinutes > KOTC_NEXT_MAX_TIMER) {
     return `Таймер: ${raundTimerMinutes} мин — допустимо ${KOTC_NEXT_MIN_TIMER}–${KOTC_NEXT_MAX_TIMER}`;

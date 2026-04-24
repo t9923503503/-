@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildKotcNextR1PairSources } from '../../web/lib/kotc-next/service.ts';
+import { buildKotcNextRoundPartnerIndexMap } from '../../web/lib/kotc-next/core.ts';
 
 describe('buildKotcNextR1PairSources', () => {
   it('builds mixed courts from separate male and female pools', () => {
@@ -81,5 +82,68 @@ describe('buildKotcNextR1PairSources', () => {
         variant: 'MF',
       }),
     ).toThrow(/Mixed KOTC requires 4 men and 4 women/);
+  });
+
+  it('keeps partner rotation unique through a full cycle for MF/MM/WW/MN', () => {
+    const buildRoster = (variant, ppc) => {
+      if (variant === 'MF') {
+        return [
+          ...Array.from({ length: ppc }, (_, index) => ({
+            playerId: `m${index + 1}`,
+            playerName: `M${index + 1}`,
+            gender: 'M',
+            position: index + 1,
+          })),
+          ...Array.from({ length: ppc }, (_, index) => ({
+            playerId: `w${index + 1}`,
+            playerName: `W${index + 1}`,
+            gender: 'W',
+            position: ppc + index + 1,
+          })),
+        ];
+      }
+      if (variant === 'WW') {
+        return Array.from({ length: ppc * 2 }, (_, index) => ({
+          playerId: `w${index + 1}`,
+          playerName: `W${index + 1}`,
+          gender: 'W',
+          position: index + 1,
+        }));
+      }
+      return Array.from({ length: ppc * 2 }, (_, index) => ({
+        playerId: `p${index + 1}`,
+        playerName: `P${index + 1}`,
+        gender: index % 2 === 0 ? 'M' : 'W',
+        position: index + 1,
+      }));
+    };
+
+    for (const variant of ['MF', 'MM', 'WW', 'MN']) {
+      for (const ppc of [3, 4, 5]) {
+        const roster = buildRoster(variant, ppc);
+        const pairSources = buildKotcNextR1PairSources(roster, {
+          courts: 1,
+          ppc,
+          variant,
+        });
+        const basePairs = pairSources[0].pairs;
+        const partnersByPrimary = new Map(
+          basePairs.map((pair) => [pair.primaryPlayerName, new Set()]),
+        );
+
+        for (let raundNo = 1; raundNo <= ppc; raundNo += 1) {
+          const mapping = buildKotcNextRoundPartnerIndexMap(ppc, raundNo);
+          for (const { pairIdx, secondaryIdx } of mapping) {
+            const primaryName = basePairs[pairIdx].primaryPlayerName;
+            const secondaryName = basePairs[secondaryIdx].secondaryPlayerName;
+            partnersByPrimary.get(primaryName).add(secondaryName);
+          }
+        }
+
+        for (const partners of partnersByPrimary.values()) {
+          expect(partners.size).toBe(ppc);
+        }
+      }
+    }
   });
 });

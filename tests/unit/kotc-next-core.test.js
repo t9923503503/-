@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addKotcNextKingRallyTiebreakers,
   applyManualPairSwitch,
   applyKingPoint,
   applyTakeover,
   applyUndo,
+  buildKotcNextRoundPartnerIndexMap,
+  calcKotcNextRaundStandings,
   getInitialKotcNextCourtState,
   seedKotcNextR2Courts,
 } from '../../web/lib/kotc-next/core.ts';
@@ -60,6 +63,30 @@ describe('kotc-next core', () => {
     expect(challengerPrev.pairs).toEqual(initial.pairs);
   });
 
+  it('uses king-side rally length and earliest rally as KOTC Next standings tiebreakers', () => {
+    const tiedByScore = [
+      { pairIdx: 0, kingWins: 3, takeovers: 2, gamesPlayed: 5 },
+      { pairIdx: 1, kingWins: 3, takeovers: 0, gamesPlayed: 5 },
+      { pairIdx: 2, kingWins: 3, takeovers: 1, gamesPlayed: 5 },
+    ];
+
+    const withRallies = addKotcNextKingRallyTiebreakers(tiedByScore, [
+      { seqNo: 1, eventType: 'king_point', kingPairIdx: 2 },
+      { seqNo: 2, eventType: 'king_point', kingPairIdx: 2 },
+      { seqNo: 3, eventType: 'takeover', kingPairIdx: 2 },
+      { seqNo: 4, eventType: 'king_point', kingPairIdx: 0 },
+      { seqNo: 5, eventType: 'king_point', kingPairIdx: 0 },
+      { seqNo: 6, eventType: 'takeover', kingPairIdx: 0 },
+      { seqNo: 7, eventType: 'king_point', kingPairIdx: 1 },
+      { seqNo: 8, eventType: 'king_point', kingPairIdx: 1 },
+      { seqNo: 9, eventType: 'king_point', kingPairIdx: 1 },
+    ]);
+
+    expect(calcKotcNextRaundStandings(withRallies).map((pair) => pair.pairIdx)).toEqual([1, 2, 0]);
+    expect(withRallies.find((pair) => pair.pairIdx === 1)?.bestKingStreak).toBe(3);
+    expect(withRallies.find((pair) => pair.pairIdx === 2)?.firstKingStreakSeq).toBe(1);
+  });
+
   it('seeds R2 zones deterministically from ranked court pairs', () => {
     const draft = seedKotcNextR2Courts([
       { courtNo: 1, pairIdx: 0, pairLabel: 'A', kingWins: 10, takeovers: 3, gamesPlayed: 12 },
@@ -71,5 +98,50 @@ describe('kotc-next core', () => {
     expect(draft.map((zone) => zone.zone)).toEqual(['kin', 'lite']);
     expect(draft[0].pairRefs.map((pair) => pair.pairLabel)).toEqual(['A', 'B']);
     expect(draft[1].pairRefs.map((pair) => pair.pairLabel)).toEqual(['C', 'D']);
+  });
+
+  it('rotates king-side starters through a full ppc cycle without repeated opening duos', () => {
+    for (const ppc of [3, 4, 5]) {
+      const kingStarts = new Array(ppc).fill(0);
+      const openingDuos = new Set();
+      let prevOpening = null;
+      let prevQueue = null;
+
+      for (let raundNo = 1; raundNo <= ppc; raundNo += 1) {
+        const state = getInitialKotcNextCourtState(ppc, raundNo, 12345, 10, null);
+        kingStarts[state.kingPairIdx] += 1;
+        const opening = `${state.kingPairIdx}:${state.challengerPairIdx}`;
+        expect(openingDuos.has(opening)).toBe(false);
+        openingDuos.add(opening);
+        if (prevOpening != null) {
+          expect(opening).not.toBe(prevOpening);
+        }
+        const queue = state.queueOrder.join(',');
+        if (prevQueue != null) {
+          expect(queue).not.toBe(prevQueue);
+        }
+        prevOpening = opening;
+        prevQueue = queue;
+      }
+
+      expect(kingStarts).toEqual(new Array(ppc).fill(1));
+      expect(openingDuos.size).toBe(ppc);
+    }
+  });
+
+  it('builds round-aware partner index rotation for every slot in the cycle', () => {
+    for (const ppc of [3, 4, 5]) {
+      const secondaryByPrimary = Array.from({ length: ppc }, () => new Set());
+      for (let raundNo = 1; raundNo <= ppc; raundNo += 1) {
+        const map = buildKotcNextRoundPartnerIndexMap(ppc, raundNo);
+        expect(map).toHaveLength(ppc);
+        map.forEach(({ pairIdx, secondaryIdx }) => {
+          secondaryByPrimary[pairIdx].add(secondaryIdx);
+        });
+      }
+      secondaryByPrimary.forEach((seen) => {
+        expect(seen.size).toBe(ppc);
+      });
+    }
   });
 });

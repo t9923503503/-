@@ -11,6 +11,8 @@ export interface KotcNextSeedablePairRef {
   pairIdx: number;
   pairLabel: string;
   kingWins: number;
+  bestKingStreak?: number;
+  firstKingStreakSeq?: number | null;
   takeovers: number;
   gamesPlayed: number;
 }
@@ -27,8 +29,25 @@ export interface KotcNextUndoInput {
 export type KotcNextManualPairSlot = 'king' | 'challenger';
 export type KotcNextManualPairDirection = 'prev' | 'next';
 
+export interface KotcNextKingRallyEvent {
+  seqNo?: number;
+  eventOrder?: number;
+  eventType: 'king_point' | 'takeover';
+  kingPairIdx: number;
+}
+
+function firstRallySeq(value: number | null | undefined): number {
+  return Number.isFinite(value) && value != null ? value : Number.MAX_SAFE_INTEGER;
+}
+
 function compareStandings(a: KotcNextPairLiveState, b: KotcNextPairLiveState): number {
   if (b.kingWins !== a.kingWins) return b.kingWins - a.kingWins;
+  const bestStreakA = a.bestKingStreak ?? 0;
+  const bestStreakB = b.bestKingStreak ?? 0;
+  if (bestStreakB !== bestStreakA) return bestStreakB - bestStreakA;
+  const firstRallyA = firstRallySeq(a.firstKingStreakSeq);
+  const firstRallyB = firstRallySeq(b.firstKingStreakSeq);
+  if (firstRallyA !== firstRallyB) return firstRallyA - firstRallyB;
   if (b.takeovers !== a.takeovers) return b.takeovers - a.takeovers;
   if (a.gamesPlayed !== b.gamesPlayed) return a.gamesPlayed - b.gamesPlayed;
   return a.pairIdx - b.pairIdx;
@@ -89,6 +108,32 @@ function rotateQueue<T>(items: T[], steps: number): T[] {
   return [...items.slice(normalized), ...items.slice(0, normalized)];
 }
 
+export function getKotcNextRoundOffset(pairCount: number, raundNo: number): number {
+  if (pairCount <= 0) return 0;
+  const normalizedNo = Math.max(1, Math.trunc(Number(raundNo) || 1));
+  return (normalizedNo - 1) % pairCount;
+}
+
+export function getKotcNextSecondarySlotIndex(
+  pairCount: number,
+  pairIdx: number,
+  raundNo: number,
+): number {
+  if (pairCount <= 0) return 0;
+  const offset = getKotcNextRoundOffset(pairCount, raundNo);
+  return (pairIdx + offset) % pairCount;
+}
+
+export function buildKotcNextRoundPartnerIndexMap(
+  pairCount: number,
+  raundNo: number,
+): Array<{ pairIdx: number; secondaryIdx: number }> {
+  return Array.from({ length: Math.max(0, pairCount) }, (_, pairIdx) => ({
+    pairIdx,
+    secondaryIdx: getKotcNextSecondarySlotIndex(pairCount, pairIdx, raundNo),
+  }));
+}
+
 function assertPlayableState(state: KotcNextCourtLiveState): void {
   if (state.pairs.length < 2) {
     throw new Error('KOTC Next requires at least two pairs on court');
@@ -100,6 +145,57 @@ function assertPlayableState(state: KotcNextCourtLiveState): void {
 
 export function calcKotcNextRaundStandings<T extends KotcNextPairLiveState>(pairs: T[]): T[] {
   return [...pairs].sort(compareStandings);
+}
+
+export function addKotcNextKingRallyTiebreakers<T extends KotcNextPairLiveState>(
+  pairs: T[],
+  events: KotcNextKingRallyEvent[],
+): T[] {
+  const metrics = new Map<number, { bestKingStreak: number; firstKingStreakSeq: number | null }>();
+  for (const pair of pairs) {
+    metrics.set(pair.pairIdx, {
+      bestKingStreak: pair.bestKingStreak ?? 0,
+      firstKingStreakSeq: pair.firstKingStreakSeq ?? null,
+    });
+  }
+
+  let currentKingPairIdx: number | null = null;
+  let currentStreak = 0;
+  for (const [index, event] of [...events].entries()) {
+    const eventOrder = Number.isFinite(event.eventOrder)
+      ? Number(event.eventOrder)
+      : Number.isFinite(event.seqNo)
+        ? Number(event.seqNo)
+        : index + 1;
+
+    if (event.eventType !== 'king_point') {
+      currentKingPairIdx = null;
+      currentStreak = 0;
+      continue;
+    }
+
+    if (currentKingPairIdx === event.kingPairIdx) {
+      currentStreak += 1;
+    } else {
+      currentKingPairIdx = event.kingPairIdx;
+      currentStreak = 1;
+    }
+
+    const metric = metrics.get(event.kingPairIdx);
+    if (!metric) continue;
+    metric.firstKingStreakSeq =
+      metric.firstKingStreakSeq == null ? eventOrder : Math.min(metric.firstKingStreakSeq, eventOrder);
+    metric.bestKingStreak = Math.max(metric.bestKingStreak, currentStreak);
+  }
+
+  return pairs.map((pair) => {
+    const metric = metrics.get(pair.pairIdx);
+    return {
+      ...pair,
+      bestKingStreak: metric?.bestKingStreak ?? pair.bestKingStreak ?? 0,
+      firstKingStreakSeq: metric?.firstKingStreakSeq ?? pair.firstKingStreakSeq ?? null,
+    };
+  });
 }
 
 export function getInitialKotcNextCourtState(
@@ -114,7 +210,9 @@ export function getInitialKotcNextCourtState(
   }
 
   const base = Array.from({ length: pairCount }, (_, index) => index);
-  const shuffled = shuffleDeterministic(base, seed + raundNo * 9973);
+  // Court стартовая очередь должна быть детерминированной и единой для всех раундов.
+  // Для каждого следующего раунда берём циклический сдвиг этой же очереди.
+  const shuffled = shuffleDeterministic(base, seed);
   const rotated = rotateQueue(shuffled, Math.max(0, raundNo - 1));
   const [kingPairIdx, challengerPairIdx, ...queueOrder] = rotated;
 

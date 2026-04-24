@@ -17,6 +17,7 @@ describe('admin login source contract', () => {
     expect(source).toContain('method="post"');
     expect(source).toContain('name="pin"');
     expect(source).toContain("redirect('/admin');");
+    expect(source).toContain('Legacy PIN mode is active. Configure actor credentials or explicit env PINs.');
     expect(source).toContain("invalid: 'Неверный PIN или ID'");
   });
 

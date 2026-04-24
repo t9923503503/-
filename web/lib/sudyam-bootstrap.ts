@@ -264,7 +264,7 @@ export async function resolveSudyamBootstrap(
     );
     const normalizedRaundCount = Math.max(
       1,
-      Math.trunc(Number(settings.kotcRaundCount ?? tournament.kotcRaundCount ?? 2) || 2),
+      normalizedPpc,
     );
     const normalizedTimer = Math.max(
       1,

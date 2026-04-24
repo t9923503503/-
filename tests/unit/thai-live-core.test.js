@@ -91,6 +91,42 @@ describe('thai-live bootstrap schedule', () => {
     }
   });
 
+  test('buildThaiCourtBootstrapTours avoids three-match opponent repeats on a 4-tour MN court', () => {
+    const players = [
+      ...Array.from({ length: 4 }, (_, index) => ({
+        playerId: `pro-${index + 1}`,
+        playerName: `Pro ${index + 1}`,
+        gender: 'M',
+      })),
+      ...Array.from({ length: 4 }, (_, index) => ({
+        playerId: `nov-${index + 1}`,
+        playerName: `Nov ${index + 1}`,
+        gender: 'W',
+      })),
+    ];
+
+    const tours = buildThaiCourtBootstrapTours({
+      players,
+      variant: 'MN',
+      tourCount: 4,
+      seed: 2026,
+    });
+    const opponentCounts = new Map();
+
+    for (const tour of tours) {
+      for (const match of tour.matches) {
+        for (const left of match.team1.players) {
+          for (const right of match.team2.players) {
+            const key = [left.playerId, right.playerId].sort().join('|');
+            opponentCounts.set(key, (opponentCounts.get(key) ?? 0) + 1);
+          }
+        }
+      }
+    }
+
+    expect(Math.max(...opponentCounts.values())).toBeLessThanOrEqual(2);
+  });
+
   test('splitThaiRosterIntoCourts keeps M/N pools by roster order', () => {
     const roster = [
       ...Array.from({ length: 8 }, (_, index) => ({

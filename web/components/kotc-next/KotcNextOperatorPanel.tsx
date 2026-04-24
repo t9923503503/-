@@ -1,30 +1,16 @@
 'use client';
 
-import { memo, useMemo } from 'react';
 import { makeQrDataUrl } from '@/public/shared/qr-gen.js';
 import { resolveAbsoluteJudgeUrl } from '@/lib/thai-ui-helpers';
 import type { SudyamBootstrapPayload } from '@/lib/sudyam-bootstrap';
-import type { KotcNextCourtOperatorView, KotcNextOperatorState, KotcNextR2SeedZone } from '@/lib/kotc-next';
+import type {
+  KotcNextCourtOperatorView,
+  KotcNextOperatorState,
+  KotcNextPairLiveState,
+  KotcNextR2SeedZone,
+} from '@/lib/kotc-next';
 import { zoneLabel } from '@/lib/kotc-next-config';
 import { KotcNextR2SeedEditor } from './KotcNextR2SeedEditor';
-
-const QrCodeImage = memo(function QrCodeImage({ judgeUrl, label }: { judgeUrl: string; label: string }) {
-  const dataUrl = useMemo(
-    () =>
-      makeQrDataUrl(
-        typeof window === 'undefined' ? judgeUrl : resolveAbsoluteJudgeUrl(judgeUrl, window.location.origin),
-        { scale: 4, margin: 1, dark: '#17130b', light: '#ffffff' },
-      ),
-    [judgeUrl],
-  );
-  return (
-    <img
-      src={dataUrl}
-      alt={`QR для корта ${label}`}
-      className="h-20 w-20 rounded-2xl border border-[#2e2a1d] bg-white p-2"
-    />
-  );
-});
 
 export type KotcNextOperatorBootstrapPhase = 'idle' | 'bootstrapping' | 'blocked' | 'error';
 
@@ -71,14 +57,24 @@ function formatCourtStatus(status: string | undefined): string {
   return 'PENDING';
 }
 
+function firstRallySeq(value: number | null | undefined): number {
+  return Number.isFinite(value) && value != null ? value : Number.MAX_SAFE_INTEGER;
+}
+
+function compareLiveStandings(left: KotcNextPairLiveState, right: KotcNextPairLiveState): number {
+  return (
+    right.kingWins - left.kingWins ||
+    (right.bestKingStreak ?? 0) - (left.bestKingStreak ?? 0) ||
+    firstRallySeq(left.firstKingStreakSeq) - firstRallySeq(right.firstKingStreakSeq) ||
+    right.takeovers - left.takeovers ||
+    left.gamesPlayed - right.gamesPlayed ||
+    left.pairIdx - right.pairIdx
+  );
+}
+
 function pickStandings(court: KotcNextCourtOperatorView) {
   if (court.liveState?.pairs?.length) {
-    return [...court.liveState.pairs].sort(
-      (left, right) =>
-        right.kingWins - left.kingWins ||
-        right.takeovers - left.takeovers ||
-        left.pairIdx - right.pairIdx,
-    );
+    return [...court.liveState.pairs].sort(compareLiveStandings);
   }
   const latestFinished = [...court.raunds].reverse().find((raund) => Array.isArray(raund.standings));
   return latestFinished?.standings ?? [];
@@ -86,6 +82,26 @@ function pickStandings(court: KotcNextCourtOperatorView) {
 
 function labelForPair(court: KotcNextCourtOperatorView, pairIdx: number): string {
   return court.pairs.find((pair) => pair.pairIdx === pairIdx)?.label ?? `Pair ${pairIdx + 1}`;
+}
+
+function pickKingSideStreak(state: KotcNextOperatorState | null | undefined) {
+  let leader: { pairLabel: string; consecutiveWins: number } | null = null;
+  for (const round of state?.rounds ?? []) {
+    for (const court of round.courts) {
+      const sourceRows = court.liveState?.pairs ?? court.raunds.flatMap((raund) => raund.standings ?? []);
+      for (const row of sourceRows) {
+        const consecutiveWins = row.bestKingStreak ?? 0;
+        if (consecutiveWins <= 0) continue;
+        if (!leader || consecutiveWins > leader.consecutiveWins) {
+          leader = {
+            pairLabel: labelForPair(court, row.pairIdx),
+            consecutiveWins,
+          };
+        }
+      }
+    }
+  }
+  return leader;
 }
 
 export function KotcNextOperatorPanel({
@@ -99,7 +115,6 @@ export function KotcNextOperatorPanel({
   bootstrap: {
     phase: KotcNextOperatorBootstrapPhase;
     message: string | null;
-    lastUpdatedAt?: Date | null;
     onBootstrapR1: () => void;
     onRefresh: () => void;
   };
@@ -125,6 +140,7 @@ export function KotcNextOperatorPanel({
     operatorState?.rounds.flatMap((round) => round.courts).find((court) => court.status === 'live') ??
     operatorState?.rounds[0]?.courts[0] ??
     null;
+  const kingSideStreak = pickKingSideStreak(operatorState);
   const bootstrapMessage =
     bootstrap.message ||
     (bootstrap.phase === 'bootstrapping'
@@ -159,7 +175,7 @@ export function KotcNextOperatorPanel({
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-[18px] border border-white/8 bg-[#11111d] px-4 py-3">
             <div className="text-[10px] uppercase tracking-[0.28em] text-[#78809a]">Участники</div>
             <div className="mt-2 text-2xl font-black tracking-[0.06em] text-white">{participants.length}</div>
@@ -182,6 +198,15 @@ export function KotcNextOperatorPanel({
               {operatorState
                 ? `${operatorState.params.raundCount} · ${operatorState.params.raundTimerMinutes}м`
                 : `${data.bootstrapState.settings.kotcRaundCount ?? '-'} · ${data.bootstrapState.settings.kotcRaundTimerMinutes ?? '-'}м`}
+            </div>
+          </div>
+          <div className="rounded-[18px] border border-[#5b4713] bg-[#18140d] px-4 py-3">
+            <div className="text-[10px] uppercase tracking-[0.28em] text-[#ffd24a]">Серия короля</div>
+            <div className="mt-2 text-xl font-black tracking-[0.02em] text-white">
+              {kingSideStreak ? `${kingSideStreak.consecutiveWins} подряд` : '-'}
+            </div>
+            <div className="mt-1 truncate text-xs text-white/56">
+              {kingSideStreak?.pairLabel ?? 'Пока нет очков короля'}
             </div>
           </div>
         </div>
@@ -207,7 +232,7 @@ export function KotcNextOperatorPanel({
           </div>
         ) : null}
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-4 flex flex-wrap gap-3">
           <button
             type="button"
             onClick={bootstrap.onRefresh}
@@ -215,11 +240,6 @@ export function KotcNextOperatorPanel({
           >
             Обновить
           </button>
-          {bootstrap.lastUpdatedAt ? (
-            <span className="text-[11px] text-white/35 tracking-[0.16em]">
-              {new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(bootstrap.lastUpdatedAt)}
-            </span>
-          ) : null}
           {canBootstrapR1 ? (
             <button
               type="button"
@@ -227,7 +247,7 @@ export function KotcNextOperatorPanel({
               disabled={bootstrap.phase === 'bootstrapping'}
               className="inline-flex rounded-full border border-[#5b4713] bg-[#ffd24a] px-4 py-2 text-sm font-semibold text-[#17130b] transition hover:bg-[#ffe07f] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {bootstrap.phase === 'bootstrapping' ? 'Запускаем R1…' : 'Запустить R1'}
+              {bootstrap.phase === 'bootstrapping' ? 'Запускаем R1…' : 'Bootstrap R1'}
             </button>
           ) : null}
           {operatorState?.canPreviewR2Seed ? (
@@ -237,7 +257,7 @@ export function KotcNextOperatorPanel({
               disabled={actions.r2SeedLoading}
               className="inline-flex rounded-full border border-[#5b4713] bg-[#ffd24a] px-4 py-2 text-sm font-semibold text-[#17130b] transition hover:bg-[#ffe07f] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {actions.r2SeedLoading ? 'Собираем зоны…' : 'Предпросмотр зон R2'}
+              {actions.r2SeedLoading ? 'Собираем зоны…' : 'Preview R2 zones'}
             </button>
           ) : null}
           {operatorState?.canFinishR1 ? (
@@ -247,7 +267,7 @@ export function KotcNextOperatorPanel({
               disabled={actions.pendingAction === 'finish_r1'}
               className="inline-flex rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-100 transition hover:border-red-300/50 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {actions.pendingAction === 'finish_r1' ? 'Завершаем R1…' : '■ Завершить R1'}
+              {actions.pendingAction === 'finish_r1' ? 'Finishing R1...' : '■ Finish R1'}
             </button>
           ) : null}
           {operatorState?.canFinishR2 ? (
@@ -257,7 +277,7 @@ export function KotcNextOperatorPanel({
               disabled={actions.pendingAction === 'finish_r2'}
               className="inline-flex rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-100 transition hover:border-red-300/50 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {actions.pendingAction === 'finish_r2' ? 'Завершаем R2…' : '■ Завершить R2'}
+              {actions.pendingAction === 'finish_r2' ? 'Finishing R2...' : '■ Finish R2'}
             </button>
           ) : null}
           {activeCourt ? (
@@ -314,12 +334,23 @@ export function KotcNextOperatorPanel({
 
               <div className="grid gap-4 xl:grid-cols-2">
                 {round.courts.map((court) => {
+                  const qrDataUrl = makeQrDataUrl(
+                    resolveAbsoluteJudgeUrl(
+                      court.judgeUrl,
+                      typeof window === 'undefined' ? '' : window.location.origin,
+                    ),
+                    {
+                      scale: 4,
+                      margin: 1,
+                      dark: '#17130b',
+                      light: '#ffffff',
+                    },
+                  );
                   const standings = pickStandings(court);
-                  const isLive = court.status === 'live';
                   return (
                     <article
                       key={court.courtId}
-                      className={`rounded-[24px] border bg-[linear-gradient(180deg,rgba(20,24,37,0.98),rgba(10,13,24,0.98))] px-4 py-4 transition-shadow ${isLive ? 'border-[#2fd35a] shadow-[0_18px_50px_rgba(47,211,90,0.12)]' : 'border-[#2d3144] shadow-[0_18px_50px_rgba(0,0,0,0.26)]'}`}
+                      className="rounded-[24px] border border-[#2d3144] bg-[linear-gradient(180deg,rgba(20,24,37,0.98),rgba(10,13,24,0.98))] px-4 py-4 shadow-[0_18px_50px_rgba(0,0,0,0.26)]"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
@@ -338,7 +369,11 @@ export function KotcNextOperatorPanel({
                             </span>
                           </div>
                         </div>
-                        <QrCodeImage judgeUrl={court.judgeUrl} label={court.label} />
+                        <img
+                          src={qrDataUrl}
+                          alt={`QR for court ${court.label}`}
+                          className="h-20 w-20 rounded-2xl border border-[#2e2a1d] bg-white p-2"
+                        />
                       </div>
 
                       <div className="mt-4 grid gap-2">
@@ -394,6 +429,7 @@ export function KotcNextOperatorPanel({
                               <tr>
                                 <th className="pb-2 pr-3">Pair</th>
                                 <th className="pb-2 px-2 text-center">KP</th>
+                                <th className="pb-2 px-2 text-center">SER</th>
                                 <th className="pb-2 px-2 text-center">TO</th>
                                 <th className="pb-2 pl-2 text-center">Games</th>
                               </tr>
@@ -403,6 +439,7 @@ export function KotcNextOperatorPanel({
                                 <tr key={`${court.courtId}-standing-${row.pairIdx}`} className="border-t border-white/6">
                                   <td className="py-2 pr-3 font-medium text-white">{labelForPair(court, row.pairIdx)}</td>
                                   <td className="py-2 px-2 text-center text-[#ffd24a]">{row.kingWins}</td>
+                                  <td className="py-2 px-2 text-center">{row.bestKingStreak ?? 0}</td>
                                   <td className="py-2 px-2 text-center">{row.takeovers}</td>
                                   <td className="py-2 pl-2 text-center">{row.gamesPlayed}</td>
                                 </tr>
@@ -443,7 +480,7 @@ export function KotcNextOperatorPanel({
                           key={`${zone.zone}-${pair.position}-${pair.pairLabel}`}
                           className="rounded-2xl border border-[#5b4713] bg-[#18140d] px-3 py-2 text-sm font-semibold text-white"
                         >
-                          #{pair.position} · {pair.pairLabel} · KP {pair.kingWins} · TO {pair.takeovers}
+                          #{pair.position} · {pair.pairLabel} · KP {pair.kingWins} · SER {pair.bestKingStreak ?? 0} · TO {pair.takeovers}
                         </div>
                       ))}
                     </div>

@@ -50,7 +50,7 @@ function sanitizeKotcNextOperatorStateForSpectators(
 }
 
 function pickFunStats(state: KotcNextOperatorState): KotcNextFunStats | null {
-  const pairMap = new Map<string, { pairLabel: string; kingWins: number; takeovers: number }>();
+  const pairMap = new Map<string, { pairLabel: string; kingWins: number; bestKingStreak: number; takeovers: number }>();
 
   for (const round of state.rounds) {
     for (const court of round.courts) {
@@ -65,9 +65,11 @@ function pickFunStats(state: KotcNextOperatorState): KotcNextFunStats | null {
         const current = pairMap.get(key) ?? {
           pairLabel: pair.label,
           kingWins: 0,
+          bestKingStreak: 0,
           takeovers: 0,
         };
         current.kingWins += row.kingWins;
+        current.bestKingStreak = Math.max(current.bestKingStreak, row.bestKingStreak ?? 0);
         current.takeovers += row.takeovers;
         pairMap.set(key, current);
       }
@@ -83,7 +85,7 @@ function pickFunStats(state: KotcNextOperatorState): KotcNextFunStats | null {
     const ratioB = b.kingWins / Math.max(1, b.takeovers);
     return ratioB - ratioA || b.kingWins - a.kingWins;
   })[0] ?? null;
-  const longestReign = [...rows].sort((a, b) => b.kingWins - a.kingWins || b.takeovers - a.takeovers)[0] ?? null;
+  const kingSideStreak = [...rows].sort((a, b) => b.bestKingStreak - a.bestKingStreak || b.kingWins - a.kingWins)[0] ?? null;
 
   return {
     kingslayer: kingslayer ? { pairLabel: kingslayer.pairLabel, takeovers: kingslayer.takeovers } : null,
@@ -93,8 +95,11 @@ function pickFunStats(state: KotcNextOperatorState): KotcNextFunStats | null {
           ratio: Number((stoneWall.kingWins / Math.max(1, stoneWall.takeovers)).toFixed(2)),
         }
       : null,
-    longestReign: longestReign
-      ? { pairLabel: longestReign.pairLabel, consecutiveWins: longestReign.kingWins }
+    kingSideStreak: kingSideStreak
+      ? { pairLabel: kingSideStreak.pairLabel, consecutiveWins: kingSideStreak.bestKingStreak }
+      : null,
+    longestReign: kingSideStreak
+      ? { pairLabel: kingSideStreak.pairLabel, consecutiveWins: kingSideStreak.bestKingStreak }
       : null,
   };
 }

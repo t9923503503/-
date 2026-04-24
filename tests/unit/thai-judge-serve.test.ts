@@ -65,6 +65,7 @@ describe('thai judge serve helpers', () => {
     expect(outcome.nextServeState.servingSide).toBe(1);
     expect(getThaiJudgeCurrentServer(match, outcome.nextServeState)?.playerName).toBe('Иванов');
     expect(outcome.event.isSideOut).toBe(false);
+    expect(typeof outcome.event.recordedAt).toBe('string');
   });
 
   test('side-out switches serving team and advances the old serving team rotation', () => {
@@ -113,6 +114,27 @@ describe('thai judge serve helpers', () => {
     expect(getThaiJudgeTeamServer(match, outcome.nextServeState, 1, 'current')?.playerName).toBe('Сидоров');
   });
 
+  test('caps rally score at the round point limit', () => {
+    const serveState = buildThaiJudgeServeStateFromSetup(match, {
+      servingSide: 1,
+      team1FirstServerId: 'a1',
+      team2FirstServerId: 'b1',
+    })!;
+
+    const outcome = applyThaiJudgeRally({
+      match,
+      currentScore: { team1: 11, team2: 2 },
+      serveState,
+      scoringSide: 1,
+      history: [],
+      pointLimit: 12,
+    });
+
+    expect(outcome.nextScore).toEqual({ team1: 12, team2: 2 });
+    expect(outcome.event.scoreAfter).toEqual({ team1: 12, team2: 2 });
+    expect(typeof outcome.event.recordedAt).toBe('string');
+  });
+
   test('builds correction events without inventing a scoring side', () => {
     const event = buildThaiJudgeCorrectionEvent({
       match,
@@ -131,5 +153,6 @@ describe('thai judge serve helpers', () => {
     expect(event.scoreBefore).toEqual({ team1: 2, team2: 1 });
     expect(event.scoreAfter).toEqual({ team1: 2, team2: 0 });
     expect(event.servingSideAfter).toBeNull();
+    expect(typeof event.recordedAt).toBe('string');
   });
 });

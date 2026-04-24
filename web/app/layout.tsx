@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import './globals.css';
 import { SiteChrome } from '@/components/layout/SiteChrome';
 
@@ -15,11 +16,14 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const requestHeaders = await headers();
+  const initialPathname = requestHeaders.get('x-lpvolley-pathname') || '';
+
   return (
     <html lang="ru" suppressHydrationWarning>
       <head>
@@ -39,7 +43,7 @@ export default function RootLayout({
         suppressHydrationWarning
         className="bg-surface text-text-primary font-body antialiased min-h-screen flex flex-col"
       >
-        <SiteChrome>{children}</SiteChrome>
+        <SiteChrome initialPathname={initialPathname}>{children}</SiteChrome>
       </body>
     </html>
   );

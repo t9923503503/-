@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ADMIN_COOKIE_NAME } from './admin-constants';
 import {
   allowLegacyPins,
+  isLegacyModeActive,
   parseAdminCredentialsFromJson,
   requireActorIdOnLogin,
 } from './admin-auth-policy';
@@ -29,7 +30,7 @@ const ROLE_ORDER: Record<AdminRole, number> = {
   admin: 3,
 };
 
-const FALLBACK_ADMIN_PIN = '7319';
+let legacyModeWarningLogged = false;
 
 function hasRequiredRole(actual: AdminRole, required: AdminRole): boolean {
   return ROLE_ORDER[actual] >= ROLE_ORDER[required];
@@ -63,13 +64,31 @@ function parseCredentialsFromEnv(): AdminCredential[] {
 
 function getLegacyCredentials(): AdminCredential[] {
   const list: AdminCredential[] = [];
-  const adminPin = String(process.env.ADMIN_PIN || FALLBACK_ADMIN_PIN).trim();
+  const adminPin = String(process.env.ADMIN_PIN || '').trim();
   const operatorPin = String(process.env.ADMIN_OPERATOR_PIN || '').trim();
   const viewerPin = String(process.env.ADMIN_VIEWER_PIN || '').trim();
   if (adminPin) list.push({ id: 'legacy-admin', role: 'admin', pin: adminPin });
   if (operatorPin) list.push({ id: 'legacy-operator', role: 'operator', pin: operatorPin });
   if (viewerPin) list.push({ id: 'legacy-viewer', role: 'viewer', pin: viewerPin });
   return list;
+}
+
+function warnLegacyModeIfNeeded(actorCredsCount: number): void {
+  if (legacyModeWarningLogged) return;
+  if (
+    !isLegacyModeActive({
+      nodeEnv: String(process.env.NODE_ENV || ''),
+      overrideFlag: String(process.env.ADMIN_ALLOW_LEGACY_PIN || 'true'),
+      actorCredentialsCount: actorCredsCount,
+      adminPin: String(process.env.ADMIN_PIN || ''),
+      operatorPin: String(process.env.ADMIN_OPERATOR_PIN || ''),
+      viewerPin: String(process.env.ADMIN_VIEWER_PIN || ''),
+    })
+  ) {
+    return;
+  }
+  legacyModeWarningLogged = true;
+  console.warn('[admin-auth] Legacy PIN mode is active. Please switch to ADMIN_CREDENTIALS_JSON or explicit env PINs.');
 }
 
 function getAllCredentials(): AdminCredential[] {
@@ -79,7 +98,9 @@ function getAllCredentials(): AdminCredential[] {
     String(process.env.NODE_ENV || ''),
     String(process.env.ADMIN_ALLOW_LEGACY_PIN || 'true')
   );
-  return allowLegacy ? getLegacyCredentials() : [];
+  if (!allowLegacy) return [];
+  warnLegacyModeIfNeeded(envCreds.length);
+  return getLegacyCredentials();
 }
 
 function verifyLogin(login: { id?: string; pin: string }): AdminActor | null {
@@ -144,11 +165,7 @@ function decodeSession(token: string): AdminActor | null {
 }
 
 export function createAdminSessionResponse(input: { id?: string; pin: string }): NextResponse {
-  const normalizedPin = String(input.pin || '').trim();
-  const actor =
-    normalizedPin === FALLBACK_ADMIN_PIN
-      ? { id: String(input.id || 'legacy-admin').trim() || 'legacy-admin', role: 'admin' as const }
-      : verifyLogin(input);
+  const actor = verifyLogin(input);
   if (!actor) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
   }

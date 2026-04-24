@@ -25,6 +25,8 @@ describe('KOTC Next UI source contract', () => {
     expect(panel).toContain("actions.onAction('finish_r1')");
     expect(panel).toContain("actions.onAction('finish_r2')");
     expect(panel).toContain('/live/kotcn/');
+    expect(panel).toContain('pickKingSideStreak');
+    expect(panel).toContain('Серия короля');
   });
 
   it('exposes Sudyam operator actions and a public spectator page/api', () => {
@@ -42,8 +44,13 @@ describe('KOTC Next UI source contract', () => {
     expect(publicRoute).toContain('getKotcNextSpectatorPayload');
     expect(publicRoute).not.toContain('requireApiRole');
     expect(spectatorPage).toContain('KotcNextSpectatorBoard');
-    expect(spectatorBoard).toContain('router.refresh');
+    expect(spectatorBoard).not.toContain('router.refresh');
+    expect(spectatorBoard).toContain('/api/public/kotcn-board/');
+    expect(spectatorBoard).toContain('setLiveData');
+    expect(spectatorBoard).toContain('kingSideStreak');
+    expect(spectatorBoard).toContain('Серия короля');
     expect(spectatorLib).toContain('sanitizeKotcNextOperatorStateForSpectators');
+    expect(spectatorLib).toContain('kingSideStreak');
   });
 
   it('maps bootstrap refresh errors to their own status instead of generic 500s', () => {

@@ -21,7 +21,10 @@ import type {
 import {
   effectiveRatingPtsFromStored,
   type RatingPool,
+  type TournamentRatingLevel,
+  normalizeTournamentRatingLevel,
 } from './rating-points';
+import { enrichAdminTournamentRuntimeState } from './admin-tournament-status';
 import { sanitizeServerImageUrl } from './server-image-url';
 import { augmentArchiveTournamentWithThaiBoard } from './thai-archive-meta';
 
@@ -281,7 +284,7 @@ function mapTournament(row: JsonObject | null, participantCount = 0): AdminTourn
           kotcPpc: source.kotc_ppc ?? baseSettings.kotcPpc,
         })
       : null;
-  return {
+  return enrichAdminTournamentRuntimeState({
     id: String(source.id ?? ''),
     name: String(source.name ?? ''),
     date: toIsoDate(source.date),
@@ -300,7 +303,7 @@ function mapTournament(row: JsonObject | null, participantCount = 0): AdminTourn
     kotcRaundCount: kotc?.raundCount ?? null,
     kotcRaundTimerMinutes: kotc?.raundTimerMinutes ?? null,
     kotcPpc: kotc?.ppc ?? null,
-  };
+  });
 }
 
 function mapPlayer(row: JsonObject | null): AdminPlayer {
@@ -1365,7 +1368,7 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
   if (ids.length === 0) return [];
 
   const results = await requestJson<JsonObject[]>(
-    `/tournament_results?select=tournament_id,place,game_pts,rating_pts,rating_pool,players!inner(name,gender)&tournament_id=in.${encodeInFilter(
+    `/tournament_results?select=tournament_id,place,game_pts,rating_pts,rating_pool,rating_level,players!inner(name,gender)&tournament_id=in.${encodeInFilter(
       ids
     )}&order=place.asc&limit=5000`
   );
@@ -1379,6 +1382,7 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
       points: number;
       ratingPts: number;
       ratingPool: 'pro' | 'novice';
+      ratingLevel: TournamentRatingLevel;
     }>
   >();
   for (const row of results ?? []) {
@@ -1387,6 +1391,7 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
     const current = byTournament.get(tournamentId) ?? [];
     const place = Number(row.place ?? 0);
     const poolKind = row.rating_pool === 'novice' ? 'novice' : 'pro';
+    const ratingLevel = normalizeTournamentRatingLevel(String(row.rating_level ?? ''));
     current.push({
       playerName: String(player.name ?? ''),
       gender: String(player.gender ?? 'M') === 'W' ? 'W' : 'M',
@@ -1396,8 +1401,10 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
         place,
         poolKind,
         row.rating_pts != null ? Number(row.rating_pts) : undefined,
+        ratingLevel,
       ),
       ratingPool: poolKind,
+      ratingLevel,
     });
     byTournament.set(tournamentId, current);
   }
@@ -1438,6 +1445,7 @@ export async function upsertTournamentResults(
     points: number;
     ratingPts?: number;
     ratingPool?: RatingPool;
+    ratingLevel?: TournamentRatingLevel;
   }>,
 ): Promise<number> {
   const tournament = await getTournamentById(tournamentId);
@@ -1449,6 +1457,7 @@ export async function upsertTournamentResults(
     const parsedPlace = Number(item.placement || 0);
     const place = Number.isFinite(parsedPlace) ? Math.max(0, Math.trunc(parsedPlace)) : 0;
     const pool: RatingPool = item.ratingPool === 'novice' ? 'novice' : 'pro';
+    const ratingLevel = normalizeTournamentRatingLevel(item.ratingLevel);
     return {
       name: String(item.playerName || '').trim(),
       gender: item.gender === 'W' ? 'W' : 'M',
@@ -1458,9 +1467,11 @@ export async function upsertTournamentResults(
         place,
         pool,
         item.ratingPts != null ? Number(item.ratingPts) : undefined,
+        ratingLevel,
       ),
       rating_type: tournament.division === 'Микст' ? 'Mix' : item.gender === 'W' ? 'W' : 'M',
       rating_pool: pool === 'novice' ? 'novice' : null,
+      rating_level: ratingLevel,
     };
   });
 

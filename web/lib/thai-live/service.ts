@@ -31,6 +31,7 @@ import {
   placeholderR2CourtPlayers,
   r2FormationLegend,
 } from './print-schedule';
+import { buildThaiJudgeCorrectionEvent } from './serve';
 import type { ThaiSchedulePrintPayload } from './print-schedule';
 import type {
   ThaiBootstrapCourtPlayer,
@@ -275,9 +276,12 @@ function normalizeThaiJudgePointHistoryEvent(value: unknown): ThaiJudgePointHist
   const scoringSideRaw = (value as ThaiJudgePointHistoryEvent).scoringSide;
   const servingSideBeforeRaw = (value as ThaiJudgePointHistoryEvent).servingSideBefore;
   const servingSideAfterRaw = (value as ThaiJudgePointHistoryEvent).servingSideAfter;
+  const recordedAtRaw = (value as ThaiJudgePointHistoryEvent).recordedAt;
   return {
     seqNo,
     kind,
+    recordedAt:
+      typeof recordedAtRaw === 'string' && Number.isFinite(Date.parse(recordedAtRaw)) ? recordedAtRaw : null,
     scoringSide: scoringSideRaw === 1 || scoringSideRaw === 2 ? scoringSideRaw : null,
     scoreBefore,
     scoreAfter,
@@ -1892,6 +1896,9 @@ function validatePointHistoryForMatch(input: {
     if (event.seqNo !== index + 1) {
       throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: нарушена последовательность истории очков`);
     }
+    if (event.recordedAt != null && !Number.isFinite(Date.parse(event.recordedAt))) {
+      throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: история очков содержит невалидное время`);
+    }
     if (!scoreLinesEqual(event.scoreBefore, runningScore)) {
       throw new ThaiJudgeError(422, `Матч ${input.match.matchNo}: история очков не совпадает с текущим счётом`);
     }
@@ -2856,17 +2863,34 @@ export async function adminCorrectThaiTourScores(
 
     for (const match of loaded) {
       const scores = payloadById.get(match.matchId)!;
+      const nextScore = { team1: scores.team1Score, team2: scores.team2Score };
+      const currentScore = {
+        team1: Number(match.team1Score ?? 0),
+        team2: Number(match.team2Score ?? 0),
+      };
+      const nextPointHistory = scoreLinesEqual(currentScore, nextScore)
+        ? match.pointHistory
+        : [
+            ...match.pointHistory,
+            buildThaiJudgeCorrectionEvent({
+              match: buildMatchViews([match])[0]!,
+              currentScore,
+              nextScore,
+              serveState: null,
+              history: match.pointHistory,
+            }),
+          ];
       await client.query(
         `
           UPDATE thai_match
           SET team1_score = $2,
               team2_score = $3,
-              point_history = '[]'::jsonb,
+              point_history = $4::jsonb,
               status = 'confirmed',
               updated_at = now()
           WHERE id = $1
         `,
-        [match.matchId, scores.team1Score, scores.team2Score],
+        [match.matchId, scores.team1Score, scores.team2Score, JSON.stringify(nextPointHistory)],
       );
     }
 

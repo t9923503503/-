@@ -7,6 +7,12 @@ import type {
   ThaiJudgeTeamView,
 } from './types';
 
+function judgeEventTimestamp(input?: string | null): string {
+  const normalized = String(input || '').trim();
+  if (normalized) return normalized;
+  return new Date().toISOString();
+}
+
 function cloneScore(score: ThaiJudgeScoreLine): ThaiJudgeScoreLine {
   return {
     team1: Math.max(0, Math.trunc(Number(score.team1) || 0)),
@@ -142,6 +148,8 @@ export function applyThaiJudgeRally(input: {
   serveState: ThaiJudgeServeState;
   scoringSide: 1 | 2;
   history: ThaiJudgePointHistoryEvent[];
+  pointLimit?: number | null;
+  recordedAt?: string | null;
 }): {
   nextScore: ThaiJudgeScoreLine;
   nextServeState: ThaiJudgeServeState;
@@ -153,10 +161,18 @@ export function applyThaiJudgeRally(input: {
   }
 
   const scoreBefore = cloneScore(input.currentScore);
-  const scoreAfter = cloneScore({
+  const rawScoreAfter = cloneScore({
     team1: scoreBefore.team1 + (input.scoringSide === 1 ? 1 : 0),
     team2: scoreBefore.team2 + (input.scoringSide === 2 ? 1 : 0),
   });
+  const normalizedPointLimit = Math.max(0, Math.trunc(Number(input.pointLimit) || 0));
+  const scoreAfter =
+    normalizedPointLimit > 0
+      ? {
+          team1: Math.min(rawScoreAfter.team1, normalizedPointLimit),
+          team2: Math.min(rawScoreAfter.team2, normalizedPointLimit),
+        }
+      : rawScoreAfter;
   const serverPlayerBefore = getThaiJudgeCurrentServer(input.match, normalizedServe);
   const isSideOut = normalizedServe.servingSide !== input.scoringSide;
 
@@ -188,6 +204,7 @@ export function applyThaiJudgeRally(input: {
     event: {
       seqNo: input.history.length + 1,
       kind: 'rally',
+      recordedAt: judgeEventTimestamp(input.recordedAt),
       scoringSide: input.scoringSide,
       scoreBefore,
       scoreAfter,
@@ -207,6 +224,7 @@ export function buildThaiJudgeCorrectionEvent(input: {
   serveState: ThaiJudgeServeState | null;
   history: ThaiJudgePointHistoryEvent[];
   preserveServeState?: boolean;
+  recordedAt?: string | null;
 }): ThaiJudgePointHistoryEvent {
   const normalizedServe = normalizeThaiJudgeServeState(input.match, input.serveState);
   const scoreBefore = cloneScore(input.currentScore);
@@ -215,6 +233,7 @@ export function buildThaiJudgeCorrectionEvent(input: {
   return {
     seqNo: input.history.length + 1,
     kind: 'correction',
+    recordedAt: judgeEventTimestamp(input.recordedAt),
     scoringSide: null,
     scoreBefore,
     scoreAfter,

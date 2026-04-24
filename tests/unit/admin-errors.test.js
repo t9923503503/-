@@ -32,4 +32,16 @@ describe('adminErrorResponse', () => {
       error: 'Level must be hard, medium, or easy',
     });
   });
+
+  it('passes through explicit service error statuses instead of masking them as 500', async () => {
+    const controlled = new Error('Thai judge launch is blocked for finished tournaments');
+    controlled.status = 409;
+
+    const response = adminErrorResponse(controlled, 'tournaments.thaiLive');
+
+    expect(response.status).toBe(409);
+    await expect(readJson(response)).resolves.toEqual({
+      error: 'Thai judge launch is blocked for finished tournaments',
+    });
+  });
 });

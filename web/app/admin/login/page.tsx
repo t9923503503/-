@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getAdminSessionFromCookies } from '@/lib/admin-auth';
+import { isLegacyModeActive, parseAdminCredentialsFromJson } from '@/lib/admin-auth-policy';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,15 @@ export default async function AdminLoginPage({
   const resolvedSearchParams = await searchParams;
   const errorCode = String(resolvedSearchParams?.error || '').trim();
   const error = errorCode ? ERROR_MESSAGES[errorCode] || ERROR_MESSAGES.server : '';
+  const actorCredentials = parseAdminCredentialsFromJson(String(process.env.ADMIN_CREDENTIALS_JSON || ''));
+  const legacyModeWarning = isLegacyModeActive({
+    nodeEnv: String(process.env.NODE_ENV || ''),
+    overrideFlag: String(process.env.ADMIN_ALLOW_LEGACY_PIN || 'true'),
+    actorCredentialsCount: actorCredentials.length,
+    adminPin: String(process.env.ADMIN_PIN || ''),
+    operatorPin: String(process.env.ADMIN_OPERATOR_PIN || ''),
+    viewerPin: String(process.env.ADMIN_VIEWER_PIN || ''),
+  });
 
   return (
     <main className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
@@ -50,6 +60,11 @@ export default async function AdminLoginPage({
           className="px-4 py-3 rounded-lg bg-surface border border-white/20 focus:outline-none focus:border-brand text-center text-xl"
         />
         {error ? <p className="text-sm text-red-400 text-center">{error}</p> : null}
+        {legacyModeWarning ? (
+          <p className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100 text-center">
+            Legacy PIN mode is active. Configure actor credentials or explicit env PINs.
+          </p>
+        ) : null}
         <button
           type="submit"
           className="px-4 py-3 rounded-lg bg-brand text-surface font-semibold"

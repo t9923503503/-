@@ -37,6 +37,18 @@ function formatPointHistoryScore(score: { team1: number; team2: number }): strin
   return `${score.team1}:${score.team2}`;
 }
 
+function formatPointHistoryEventTime(recordedAt?: string | null): string | null {
+  const normalized = String(recordedAt || '').trim();
+  if (!normalized) return null;
+  const parsed = Date.parse(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return new Intl.DateTimeFormat('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(parsed));
+}
+
 function getSpectatorHistoryStreak(
   history: Array<{ kind: 'rally' | 'correction'; scoringSide: 1 | 2 | null }>,
   index: number,
@@ -264,6 +276,7 @@ export function ThaiSpectatorBoard({ data }: { data: ThaiSpectatorBoardPayload }
                                           : event.scoringSide === 2
                                             ? match.team2Label
                                             : 'Коррекция';
+                                      const eventTime = formatPointHistoryEventTime(event.recordedAt);
                                       return (
                                         <div
                                           key={`${match.matchId}-history-${event.seqNo}`}
@@ -289,6 +302,7 @@ export function ThaiSpectatorBoard({ data }: { data: ThaiSpectatorBoardPayload }
                                             </span>
                                           </div>
                                           <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-white/55">
+                                            {eventTime ? <span className="rounded-full border border-white/10 px-2 py-0.5">{eventTime}</span> : null}
                                             {event.isSideOut ? <span className="rounded-full border border-white/10 px-2 py-0.5">side-out</span> : null}
                                             {streak >= 2 ? (
                                               <span className="rounded-full border border-white/10 px-2 py-0.5">{streak} подряд</span>

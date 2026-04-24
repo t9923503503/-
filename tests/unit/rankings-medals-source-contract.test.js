@@ -62,12 +62,21 @@ describe('rankings medals source contract', () => {
     const adminResultsRoute = read('web/app/api/admin/tournaments/[id]/results/route.ts');
     const adminPg = read('web/lib/admin-queries-pg.ts');
     const adminPostgrest = read('web/lib/admin-postgrest.ts');
+    const archivePage = read('web/app/admin/archive/page.tsx');
 
     expect(ratingPoints).toContain('COALESCE(${trAlias}.rating_pts, 0) > 0');
-    expect(adminResultsRoute).toContain('normalizeRatingPts');
-    expect(adminResultsRoute).toContain('ratingPts: normalizeRatingPts');
     expect(adminPg).toContain('r.ratingPts != null ? Number(r.ratingPts) : undefined');
+    expect(adminPg).toContain('rating_level');
     expect(adminPostgrest).toContain('item.ratingPts != null ? Number(item.ratingPts) : undefined');
+    expect(adminPostgrest).toContain('rating_level');
+    expect(archivePage).toContain('updateManualRating');
+    expect(archivePage).toContain('clearManualRating');
+    expect(archivePage).toContain('clearAllManualRatings');
+    expect(archivePage).toContain('parseArchiveResultsTsv');
+    expect(archivePage).toContain('value={r.ratingLevel}');
+    expect(adminResultsRoute).toContain('sanitizeArchiveRows');
+    expect(adminResultsRoute).toContain('validateArchiveRows');
+    expect(adminResultsRoute).toContain("return NextResponse.json({ ok: true, inserted, validation });");
   });
 
   it('renders a medals tab with lazy loading and profile links', () => {

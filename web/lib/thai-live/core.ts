@@ -2,6 +2,7 @@ import type { ThaiRulesPreset } from '@/lib/admin-legacy-sync';
 import { thaiGenerateSchedule } from '../../../formats/thai/thai-format.js';
 import type {
   ThaiBootstrapCourtPlayer,
+  ThaiBootstrapTeam,
   ThaiBootstrapTour,
   ThaiPlayerRole,
   ThaiStandingsGroup,
@@ -14,6 +15,16 @@ import type {
 interface ThaiScheduleRound {
   pairs: Array<[number, number]>;
 }
+
+type ThaiTeamMatchPairing = ReadonlyArray<readonly [number, number]>;
+
+const THAI_TEAM_MATCH_PAIRING_OPTIONS: readonly ThaiTeamMatchPairing[] = [
+  [[0, 1], [2, 3]],
+  [[0, 2], [1, 3]],
+  [[0, 3], [1, 2]],
+];
+
+const THAI_PAIRING_EXHAUSTIVE_TOUR_LIMIT = 8;
 
 interface ThaiStatDeltaInput<TPlayer = string> {
   team1: {
@@ -179,6 +190,117 @@ export function validateThaiMatchScore(team1Score: unknown, team2Score: unknown,
   return null;
 }
 
+function thaiOpponentPairKey(left: ThaiBootstrapTeam['players'][number], right: ThaiBootstrapTeam['players'][number]): string {
+  return left.playerId < right.playerId ? `${left.playerId}|${right.playerId}` : `${right.playerId}|${left.playerId}`;
+}
+
+function applyThaiOpponentCounts(
+  counts: Map<string, number>,
+  teams: ThaiBootstrapTeam[],
+  pairing: ThaiTeamMatchPairing,
+  delta: 1 | -1,
+): void {
+  for (const [leftTeamIndex, rightTeamIndex] of pairing) {
+    const leftTeam = teams[leftTeamIndex];
+    const rightTeam = teams[rightTeamIndex];
+    if (!leftTeam || !rightTeam) continue;
+
+    for (const leftPlayer of leftTeam.players) {
+      for (const rightPlayer of rightTeam.players) {
+        const key = thaiOpponentPairKey(leftPlayer, rightPlayer);
+        const next = (counts.get(key) ?? 0) + delta;
+        if (next <= 0) counts.delete(key);
+        else counts.set(key, next);
+      }
+    }
+  }
+}
+
+function scoreThaiOpponentCounts(counts: Map<string, number>): [number, number, number] {
+  let maxRepeat = 0;
+  let repeatSlots = 0;
+  let squareLoad = 0;
+
+  for (const count of counts.values()) {
+    maxRepeat = Math.max(maxRepeat, count);
+    if (count > 1) repeatSlots += count - 1;
+    squareLoad += count * count;
+  }
+
+  return [maxRepeat, repeatSlots, squareLoad];
+}
+
+function compareThaiPairingScores(left: readonly number[], right: readonly number[]): number {
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const diff = (left[index] ?? 0) - (right[index] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function chooseGreedyThaiMatchPairings(teamRounds: ThaiBootstrapTeam[][]): ThaiTeamMatchPairing[] {
+  const counts = new Map<string, number>();
+  const result: ThaiTeamMatchPairing[] = [];
+
+  for (const teams of teamRounds) {
+    let bestPairing = THAI_TEAM_MATCH_PAIRING_OPTIONS[0];
+    let bestScore: [number, number, number] | null = null;
+
+    for (const pairing of THAI_TEAM_MATCH_PAIRING_OPTIONS) {
+      const projected = new Map(counts);
+      applyThaiOpponentCounts(projected, teams, pairing, 1);
+      const score = scoreThaiOpponentCounts(projected);
+      if (!bestScore || compareThaiPairingScores(score, bestScore) < 0) {
+        bestPairing = pairing;
+        bestScore = score;
+      }
+    }
+
+    applyThaiOpponentCounts(counts, teams, bestPairing, 1);
+    result.push(bestPairing);
+  }
+
+  return result;
+}
+
+function chooseBalancedThaiMatchPairings(teamRounds: ThaiBootstrapTeam[][]): ThaiTeamMatchPairing[] {
+  if (!teamRounds.length) return [];
+  if (teamRounds.some((teams) => teams.length !== 4)) {
+    return teamRounds.map((_, index) => THAI_TEAM_MATCH_PAIRING_OPTIONS[index % THAI_TEAM_MATCH_PAIRING_OPTIONS.length]);
+  }
+  if (teamRounds.length > THAI_PAIRING_EXHAUSTIVE_TOUR_LIMIT) {
+    return chooseGreedyThaiMatchPairings(teamRounds);
+  }
+
+  const counts = new Map<string, number>();
+  const current: ThaiTeamMatchPairing[] = [];
+  let bestPairings: ThaiTeamMatchPairing[] | null = null;
+  let bestScore: [number, number, number] | null = null;
+
+  const visit = (roundIndex: number) => {
+    if (roundIndex >= teamRounds.length) {
+      const score = scoreThaiOpponentCounts(counts);
+      if (!bestScore || compareThaiPairingScores(score, bestScore) < 0) {
+        bestScore = score;
+        bestPairings = current.slice();
+      }
+      return;
+    }
+
+    const teams = teamRounds[roundIndex];
+    for (const pairing of THAI_TEAM_MATCH_PAIRING_OPTIONS) {
+      applyThaiOpponentCounts(counts, teams, pairing, 1);
+      current.push(pairing);
+      visit(roundIndex + 1);
+      current.pop();
+      applyThaiOpponentCounts(counts, teams, pairing, -1);
+    }
+  };
+
+  visit(0);
+  return bestPairings ?? chooseGreedyThaiMatchPairings(teamRounds);
+}
+
 function buildSinglePoolTours(
   players: ThaiBootstrapCourtPlayer[],
   variant: string,
@@ -194,8 +316,8 @@ function buildSinglePoolTours(
     seed,
   }) as unknown as ThaiScheduleRound[];
 
-  return schedule.map((round, index) => {
-    const teams = round.pairs.map(([firstIdx, secondIdx]) => ({
+  const teamRounds = schedule.map((round) =>
+    round.pairs.map(([firstIdx, secondIdx]) => ({
       players: [
         {
           playerId: players[firstIdx].playerId,
@@ -208,16 +330,12 @@ function buildSinglePoolTours(
           role: 'secondary' as ThaiPlayerRole,
         },
       ],
-    }));
-    const rotations = [
-      [[0, 1], [2, 3]],
-      [[0, 2], [1, 3]],
-      [[0, 3], [1, 2]],
-      [[0, 1], [2, 3]],
-      [[0, 2], [1, 3]],
-    ];
-    const matchPairings = rotations[index % 5];
+    })),
+  );
+  const matchPairingsByTour = chooseBalancedThaiMatchPairings(teamRounds);
 
+  return teamRounds.map((teams, index) => {
+    const matchPairings = matchPairingsByTour[index];
     return {
       tourNo: index + 1,
       matches: [
@@ -263,8 +381,8 @@ function buildDualPoolTours(
     seed,
   }) as unknown as ThaiScheduleRound[];
 
-  return schedule.map((round, index) => {
-    const teams = round.pairs.map(([primaryIdx, secondaryIdx]) => ({
+  const teamRounds = schedule.map((round) =>
+    round.pairs.map(([primaryIdx, secondaryIdx]) => ({
       players: [
         {
           playerId: pools.primary[primaryIdx].playerId,
@@ -277,16 +395,12 @@ function buildDualPoolTours(
           role: 'secondary' as ThaiPlayerRole,
         },
       ],
-    }));
-    const rotations = [
-      [[0, 1], [2, 3]],
-      [[0, 2], [1, 3]],
-      [[0, 3], [1, 2]],
-      [[0, 1], [2, 3]],
-      [[0, 2], [1, 3]],
-    ];
-    const matchPairings = rotations[index % 5];
+    })),
+  );
+  const matchPairingsByTour = chooseBalancedThaiMatchPairings(teamRounds);
 
+  return teamRounds.map((teams, index) => {
+    const matchPairings = matchPairingsByTour[index];
     return {
       tourNo: index + 1,
       matches: [

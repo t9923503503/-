@@ -28,7 +28,7 @@ export interface KotcNextJudgeParams {
   variant: KotcNextVariant;
   courts: number;      // 1–4
   ppc: number;         // pairs per court (3–5)
-  raundCount: number;  // rounds per tour (1–4)
+  raundCount: number;  // rounds per court (equals ppc: 3–5)
   raundTimerMinutes: number; // 9–20
 }
 
@@ -46,6 +46,8 @@ export interface KotcNextPairView {
 export interface KotcNextPairLiveState {
   pairIdx: number;
   kingWins: number;    // points scored while on throne
+  bestKingStreak?: number; // longest consecutive king-side rally
+  firstKingStreakSeq?: number | null; // earliest king-side rally event in the ranking scope
   takeovers: number;   // times this pair captured the throne (tiebreak)
   gamesPlayed: number;
 }
@@ -167,7 +169,22 @@ export interface KotcNextSpectatorRoundView {
 
 export interface KotcNextR2SeedZone {
   zone: KotcNextZoneKey;
-  pairRefs: Array<{ courtNo: number; pairIdx: number; pairLabel: string; kingWins: number; takeovers: number }>;
+  pairRefs: Array<{
+    courtNo: number;
+    pairIdx: number;
+    pairLabel: string;
+    kingWins: number;
+    bestKingStreak?: number;
+    firstKingStreakSeq?: number | null;
+    takeovers: number;
+    gamesPlayed?: number;
+    primaryPlayerId?: string | null;
+    primaryPlayerName?: string;
+    primaryGender?: 'M' | 'W' | null;
+    secondaryPlayerId?: string | null;
+    secondaryPlayerName?: string;
+    secondaryGender?: 'M' | 'W' | null;
+  }>;
 }
 
 export interface KotcNextOperatorState {
@@ -202,6 +219,8 @@ export interface KotcNextFinalZoneResult {
     primaryPlayerId: string | null;
     secondaryPlayerId: string | null;
     kingWins: number;
+    bestKingStreak?: number;
+    firstKingStreakSeq?: number | null;
     takeovers: number;
   }>;
 }
@@ -211,6 +230,7 @@ export interface KotcNextFinalZoneResult {
 export interface KotcNextFunStats {
   kingslayer: { pairLabel: string; takeovers: number } | null;      // max takeovers
   stoneWall: { pairLabel: string; ratio: number } | null;           // best kingWins/takeovers
+  kingSideStreak: { pairLabel: string; consecutiveWins: number } | null; // longest king-side point streak
   longestReign: { pairLabel: string; consecutiveWins: number } | null;
 }
 

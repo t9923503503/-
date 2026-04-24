@@ -2,7 +2,8 @@ import { randomUUID } from 'crypto';
 import { PoolClient } from 'pg';
 import { getPool } from './db';
 import { getTournamentFormatCode, normalizeTournamentDbTime } from './admin-tournament-db';
-import { enrichTournamentRuntimeState, resolveTournamentStatus } from './tournament-status';
+import { resolveTournamentStatus } from './tournament-status';
+import { enrichAdminTournamentRuntimeState } from './admin-tournament-status';
 import {
   buildLegacyIptTournamentState,
   buildLegacyPlayerDbState,
@@ -14,6 +15,8 @@ import {
 import {
   effectiveRatingPtsFromStored,
   type RatingPool,
+  type TournamentRatingLevel,
+  normalizeTournamentRatingLevel,
 } from './rating-points';
 import { sanitizeServerImageUrl } from './server-image-url';
 import { augmentArchiveTournamentWithThaiBoard } from './thai-archive-meta';
@@ -54,6 +57,7 @@ export interface ArchiveResult {
   ratingPts: number;
   /** pro — полные очки за место; novice — половина (округление). */
   ratingPool?: RatingPool;
+  ratingLevel?: TournamentRatingLevel;
 }
 
 export interface ArchiveTournament extends AdminTournament {
@@ -212,7 +216,7 @@ function mapTournament(row: Record<string, unknown>): AdminTournament {
   const baseSettings =
     typeof row.settings === 'object' && row.settings !== null ? (row.settings as Record<string, unknown>) : {};
   const kotc = mergeKotcSettings(String(row.format ?? ''), baseSettings, row);
-  return enrichTournamentRuntimeState({
+  return enrichAdminTournamentRuntimeState({
     id: String(row.id ?? ''),
     name: String(row.name ?? ''),
     date: toIsoDate(row.date),
@@ -1496,7 +1500,8 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
                  'placement', tr.place,
                  'points', tr.game_pts,
                  'ratingPts', COALESCE(tr.rating_pts, 0),
-                 'ratingPool', CASE WHEN tr.rating_pool = 'novice' THEN 'novice' ELSE 'pro' END
+                 'ratingPool', CASE WHEN tr.rating_pool = 'novice' THEN 'novice' ELSE 'pro' END,
+                 'ratingLevel', COALESCE(tr.rating_level, LOWER(COALESCE(t.level, 'hard')))
                ) ORDER BY tr.place ASC
              ) FILTER (WHERE tr.id IS NOT NULL),
              '[]'
@@ -1514,8 +1519,9 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
     const results = raw.map((r) => {
       const pool: RatingPool = r.ratingPool === 'novice' ? 'novice' : 'pro';
       const placement = Number(r.placement) || 0;
-      const ratingPts = effectiveRatingPtsFromStored(placement, pool, r.ratingPts);
-      return { ...r, ratingPts, ratingPool: pool };
+      const ratingLevel = normalizeTournamentRatingLevel(r.ratingLevel);
+      const ratingPts = effectiveRatingPtsFromStored(placement, pool, r.ratingPts, ratingLevel);
+      return { ...r, ratingPts, ratingPool: pool, ratingLevel };
     });
     const base = { ...mapTournament(row), results };
     return augmentArchiveTournamentWithThaiBoard(base);
@@ -1563,6 +1569,7 @@ export async function upsertTournamentResults(
     points: number;
     ratingPts?: number;
     ratingPool?: RatingPool;
+    ratingLevel?: TournamentRatingLevel;
   }>,
 ): Promise<number> {
   const pool = getPool();
@@ -1588,18 +1595,20 @@ export async function upsertTournamentResults(
       const place = normalizeTournamentResultPlace(r.placement);
       if (place <= 0) continue;
       const poolKind: RatingPool = r.ratingPool === 'novice' ? 'novice' : 'pro';
+      const ratingLevel = normalizeTournamentRatingLevel(r.ratingLevel);
       const ratingPts = effectiveRatingPtsFromStored(
         place,
         poolKind,
         r.ratingPts != null ? Number(r.ratingPts) : undefined,
+        ratingLevel,
       );
       const ratingPoolDb = poolKind === 'novice' ? 'novice' : null;
       const ratingType = ratingTypeFromDivision(division, gender);
       await client.query(
         `INSERT INTO tournament_results (
-           tournament_id, player_id, place, game_pts, rating_pts, gender, rating_type, rating_pool
+           tournament_id, player_id, place, game_pts, rating_pts, gender, rating_type, rating_pool, rating_level
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           tournamentId,
           playerId,
@@ -1609,6 +1618,7 @@ export async function upsertTournamentResults(
           gender,
           ratingType,
           ratingPoolDb,
+          ratingLevel,
         ],
       );
       inserted++;

@@ -4,11 +4,19 @@ import { usePathname } from 'next/navigation';
 import Footer from '@/components/layout/Footer';
 import Header from '@/components/layout/Header';
 
-export function SiteChrome({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname() || '';
+export function SiteChrome({
+  children,
+  initialPathname = '',
+}: {
+  children: React.ReactNode;
+  initialPathname?: string;
+}) {
+  const pathname = usePathname() || initialPathname || '';
   const hideSiteChrome =
     pathname === '/live/thai' ||
     pathname.startsWith('/live/thai/') ||
+    pathname === '/kotc-next/judge' ||
+    pathname.startsWith('/kotc-next/judge/') ||
     pathname === '/judge-scoreboard' ||
     pathname.startsWith('/judge-scoreboard/');
 

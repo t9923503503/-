@@ -11,7 +11,15 @@ interface DraftEntry {
   pairIdx: number;
   pairLabel: string;
   kingWins: number;
+  bestKingStreak: number;
+  firstKingStreakSeq: number | null;
   takeovers: number;
+  primaryPlayerId: string | null;
+  primaryPlayerName: string;
+  primaryGender: 'M' | 'W' | null;
+  secondaryPlayerId: string | null;
+  secondaryPlayerName: string;
+  secondaryGender: 'M' | 'W' | null;
 }
 
 function flattenDraft(draft: KotcNextR2SeedZone[]): DraftEntry[] {
@@ -23,7 +31,15 @@ function flattenDraft(draft: KotcNextR2SeedZone[]): DraftEntry[] {
       pairIdx: pair.pairIdx,
       pairLabel: pair.pairLabel,
       kingWins: pair.kingWins,
+      bestKingStreak: pair.bestKingStreak ?? 0,
+      firstKingStreakSeq: pair.firstKingStreakSeq ?? null,
       takeovers: pair.takeovers,
+      primaryPlayerId: pair.primaryPlayerId ?? null,
+      primaryPlayerName: pair.primaryPlayerName ?? pair.pairLabel,
+      primaryGender: pair.primaryGender ?? null,
+      secondaryPlayerId: pair.secondaryPlayerId ?? null,
+      secondaryPlayerName: pair.secondaryPlayerName ?? pair.pairLabel,
+      secondaryGender: pair.secondaryGender ?? null,
     })),
   );
 }
@@ -90,7 +106,15 @@ export function KotcNextR2SeedEditor({
                     pairIdx: pair.pairIdx,
                     pairLabel: pair.pairLabel,
                     kingWins: pair.kingWins,
+                    bestKingStreak: pair.bestKingStreak,
+                    firstKingStreakSeq: pair.firstKingStreakSeq,
                     takeovers: pair.takeovers,
+                    primaryPlayerId: pair.primaryPlayerId,
+                    primaryPlayerName: pair.primaryPlayerName,
+                    primaryGender: pair.primaryGender,
+                    secondaryPlayerId: pair.secondaryPlayerId,
+                    secondaryPlayerName: pair.secondaryPlayerName,
+                    secondaryGender: pair.secondaryGender,
                   })),
                 })),
               )
@@ -123,7 +147,7 @@ export function KotcNextR2SeedEditor({
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-white">{pair.pairLabel}</div>
                       <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-[#9aa1b3]">
-                        R1 court {pair.courtNo} · pair {pair.pairIdx + 1} · KP {pair.kingWins} · TO {pair.takeovers}
+                        R1 court {pair.courtNo} · pair {pair.pairIdx + 1} · KP {pair.kingWins} · SER {pair.bestKingStreak} · TO {pair.takeovers}
                       </div>
                     </div>
                     <select

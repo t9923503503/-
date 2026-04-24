@@ -57,6 +57,18 @@ interface ServeSetupState {
   servingSide: 1 | 2;
 }
 
+function buildServeSetupDraft(
+  match: ThaiJudgeMatchView,
+  serveState?: ThaiJudgeServeState | null,
+): ServeSetupState {
+  return {
+    matchId: match.matchId,
+    team1FirstServerId: serveState?.team1Order[0] ?? match.team1.players[0]?.id ?? '',
+    team2FirstServerId: serveState?.team2Order[0] ?? match.team2.players[0]?.id ?? '',
+    servingSide: serveState?.servingSide ?? 1,
+  };
+}
+
 function toneClasses(tone: ToastTone): string {
   if (tone === 'success') return 'border-emerald-400/30 bg-emerald-500/15 text-emerald-100';
   if (tone === 'error') return 'border-red-400/30 bg-red-500/15 text-red-100';
@@ -163,6 +175,18 @@ function formatHistoryScore(score: ThaiJudgeScoreLine): string {
   return `${score.team1}:${score.team2}`;
 }
 
+function formatHistoryEventTime(recordedAt?: string | null): string | null {
+  const normalized = String(recordedAt || '').trim();
+  if (!normalized) return null;
+  const parsed = Date.parse(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return new Intl.DateTimeFormat('ru-RU', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(parsed));
+}
+
 function getVisiblePointHistory(
   history: ThaiJudgePointHistoryEvent[],
   filter: HistoryFilter,
@@ -249,7 +273,9 @@ export function ThaiJudgeWorkspace({
   const [pointHistoryByMatch, setPointHistoryByMatch] = useState<Record<string, ThaiJudgePointHistoryEvent[]>>({});
   const [serveStateByMatch, setServeStateByMatch] = useState<Record<string, ThaiJudgeServeState>>({});
   const [historyFilterByMatch, setHistoryFilterByMatch] = useState<Record<string, HistoryFilter>>({});
+  const [collapsedPointHistoryByMatch, setCollapsedPointHistoryByMatch] = useState<Record<string, true>>({});
   const [swappedMatchSides, setSwappedMatchSides] = useState<Record<string, true>>({});
+  const [serveSetupDraftByMatch, setServeSetupDraftByMatch] = useState<Record<string, ServeSetupState>>({});
   const [serveSetupState, setServeSetupState] = useState<ServeSetupState | null>(null);
   const [lastEdit, setLastEdit] = useState<LastEditState | null>(null);
   const [confirmCooldownUntil, setConfirmCooldownUntil] = useState(0);
@@ -284,6 +310,7 @@ export function ThaiJudgeWorkspace({
     setSelectedTourNo(initialSnapshot.currentTourNo);
     setLastEdit(null);
     setSwappedMatchSides({});
+    setServeSetupDraftByMatch({});
     setServeSetupState(null);
     setConfirmCooldownUntil(0);
   }, [initialSnapshot]);
@@ -309,10 +336,13 @@ export function ThaiJudgeWorkspace({
   }, []);
 
   useEffect(() => {
+    if (navigationMode !== 'standalone') return;
     let cancelled = false;
     (async () => {
       if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+      const reloadGuardKey = 'thai-judge-sw-cleanup-reloaded-v1';
       try {
+        if (window.sessionStorage.getItem(reloadGuardKey) === '1') return;
         const regs = await navigator.serviceWorker.getRegistrations();
         const courtRegs = regs.filter((r) => {
           try {
@@ -323,7 +353,10 @@ export function ThaiJudgeWorkspace({
         });
         if (!courtRegs.length) return;
         await Promise.all(courtRegs.map((r) => r.unregister()));
-        if (!cancelled) window.location.reload();
+        if (!cancelled) {
+          window.sessionStorage.setItem(reloadGuardKey, '1');
+          window.location.reload();
+        }
       } catch {
         /* ignore */
       }
@@ -340,6 +373,7 @@ export function ThaiJudgeWorkspace({
       setTouchedMatches({});
       setPointHistoryByMatch({});
       setServeStateByMatch({});
+      setServeSetupDraftByMatch({});
       return;
     }
 
@@ -350,6 +384,14 @@ export function ThaiJudgeWorkspace({
     }
     setScores(resolved.initialScores);
     setServeStateByMatch(resolved.initialServeStateByMatch);
+    setServeSetupDraftByMatch(
+      Object.fromEntries(
+        snapshot.matches.map((match) => [
+          match.matchId,
+          buildServeSetupDraft(match, resolved.initialServeStateByMatch[match.matchId] ?? null),
+        ]),
+      ) as Record<string, ServeSetupState>,
+    );
     setPointHistoryByMatch(resolved.initialPointHistoryByMatch);
     setTouchedMatches(
       Object.fromEntries(Object.keys(resolved.initialScores).map((matchId) => [matchId, true])) as Record<string, true>,
@@ -379,10 +421,11 @@ export function ThaiJudgeWorkspace({
   useEffect(() => {
     if (!isViewingEditableTour) return;
     for (const match of selectedMatches) {
+      if (collapsedPointHistoryByMatch[match.matchId]) continue;
       const node = pointHistoryFeedRefs.current[match.matchId];
       if (node) node.scrollTop = node.scrollHeight;
     }
-  }, [isViewingEditableTour, pointHistoryByMatch, selectedMatches]);
+  }, [collapsedPointHistoryByMatch, isViewingEditableTour, pointHistoryByMatch, selectedMatches]);
 
   const scoreErrorsByMatch = useMemo(() => {
     if (!isViewingEditableTour) return new Map<string, string>();
@@ -500,13 +543,31 @@ export function ThaiJudgeWorkspace({
   }
 
   function openServeSetup(match: ThaiJudgeMatchView) {
-    const currentServeState = serveStateByMatch[match.matchId];
-    setServeSetupState({
-      matchId: match.matchId,
-      team1FirstServerId: currentServeState?.team1Order[0] ?? match.team1.players[0]?.id ?? '',
-      team2FirstServerId: currentServeState?.team2Order[0] ?? match.team2.players[0]?.id ?? '',
-      servingSide: currentServeState?.servingSide ?? 1,
+    setServeSetupState(serveSetupDraftByMatch[match.matchId] ?? buildServeSetupDraft(match, serveStateByMatch[match.matchId]));
+  }
+
+  function persistServeSetup(match: ThaiJudgeMatchView, draft: ServeSetupState, options?: { closeModal?: boolean }) {
+    const nextServeState = buildThaiJudgeServeStateFromSetup(match, {
+      servingSide: draft.servingSide,
+      team1FirstServerId: draft.team1FirstServerId,
+      team2FirstServerId: draft.team2FirstServerId,
     });
+    if (!nextServeState) {
+      setToast({ tone: 'error', message: 'Выберите подающего для обеих команд.' });
+      return false;
+    }
+    const nextServeStates = { ...serveStateByMatch, [match.matchId]: nextServeState };
+    setServeStateByMatch(nextServeStates);
+    setServeSetupDraftByMatch((current) => ({
+      ...current,
+      [match.matchId]: draft,
+    }));
+    writeDraft(scores, nextServeStates, pointHistoryByMatch);
+    if (options?.closeModal) {
+      setServeSetupState(null);
+    }
+    setToast({ tone: 'info', message: `Подача для матча ${match.matchNo} настроена.` });
+    return true;
   }
 
   function saveServeSetup() {
@@ -516,26 +577,31 @@ export function ThaiJudgeWorkspace({
       setServeSetupState(null);
       return;
     }
-    const nextServeState = buildThaiJudgeServeStateFromSetup(match, {
-      servingSide: serveSetupState.servingSide,
-      team1FirstServerId: serveSetupState.team1FirstServerId,
-      team2FirstServerId: serveSetupState.team2FirstServerId,
+    void persistServeSetup(match, serveSetupState, { closeModal: true });
+  }
+
+  function updateServeSetupDraft(
+    match: ThaiJudgeMatchView,
+    recipe: (draft: ServeSetupState) => ServeSetupState,
+  ) {
+    setServeSetupDraftByMatch((current) => {
+      const baseDraft = current[match.matchId] ?? buildServeSetupDraft(match, serveStateByMatch[match.matchId]);
+      return {
+        ...current,
+        [match.matchId]: recipe(baseDraft),
+      };
     });
-    if (!nextServeState) {
-      setToast({ tone: 'error', message: 'Выберите подающего для обеих команд.' });
-      return;
-    }
-    const nextServeStates = { ...serveStateByMatch, [match.matchId]: nextServeState };
-    setServeStateByMatch(nextServeStates);
-    writeDraft(scores, nextServeStates, pointHistoryByMatch);
-    setServeSetupState(null);
-    setToast({ tone: 'info', message: `Подача для матча ${match.matchNo} настроена.` });
+    setServeSetupState((current) =>
+      current && current.matchId === match.matchId
+        ? recipe(current)
+        : current,
+    );
   }
 
   function ensureServeSetup(match: ThaiJudgeMatchView): ThaiJudgeServeState | null {
     const serveState = serveStateByMatch[match.matchId] ?? null;
     if (serveState) return serveState;
-    openServeSetup(match);
+    setToast({ tone: 'info', message: `Сначала настройте подачу для матча ${match.matchNo}.` });
     return null;
   }
 
@@ -547,6 +613,7 @@ export function ThaiJudgeWorkspace({
     const currentServeState = serveStateByMatch[match.matchId] ?? null;
 
     if (delta > 0) {
+      if (Math.max(currentScore.team1, currentScore.team2) >= snapshot.pointLimit) return;
       const liveServeState = ensureServeSetup(match);
       if (!liveServeState) return;
       playBeep();
@@ -558,6 +625,7 @@ export function ThaiJudgeWorkspace({
         serveState: liveServeState,
         scoringSide,
         history: currentHistory,
+        pointLimit: snapshot.pointLimit,
       });
       commitMatchState(match.matchId, nextScore, [...currentHistory, event], nextServeState);
       return;
@@ -587,7 +655,6 @@ export function ThaiJudgeWorkspace({
 
   function openScoreEditor(match: ThaiJudgeMatchView, side: 'team1' | 'team2', value: number) {
     if (!isViewingEditableTour) return;
-    if (!ensureServeSetup(match)) return;
     cancelScoreEditorRef.current = false;
     setScoreEditor({ matchId: match.matchId, side, value: String(value) });
   }
@@ -946,6 +1013,9 @@ export function ThaiJudgeWorkspace({
             const leftServingSide = isSwapped ? 2 : 1;
             const rightServingSide = isSwapped ? 1 : 2;
             const historyFilter = historyFilterByMatch[match.matchId] ?? 'all';
+            const isPointHistoryCollapsed = Boolean(collapsedPointHistoryByMatch[match.matchId]);
+            const serveDraft =
+              serveSetupDraftByMatch[match.matchId] ?? buildServeSetupDraft(match, serveState);
             const visiblePointHistory = pointHistory.reduce<Array<{ event: ThaiJudgePointHistoryEvent; index: number }>>(
               (acc, event, index) => {
                 if (historyFilter === 'all' || event.kind === 'correction') {
@@ -961,8 +1031,21 @@ export function ThaiJudgeWorkspace({
             );
             const matchError = scoreErrorsByMatch.get(match.matchId) ?? null;
             const isMissing = !touchedMatches[match.matchId];
-            const needsAttention = Boolean(matchError || isMissing);
-            const attentionText = matchError ?? (isMissing ? `Введите счёт для матча ${match.matchNo}.` : null);
+            const attentionText = !serveState && isViewingEditableTour
+              ? `Сначала настройте подачу для матча ${match.matchNo}.`
+              : matchError ?? (isMissing ? `Введите счёт для матча ${match.matchNo}.` : null);
+            const needsAttention = Boolean(attentionText);
+            const inlineServeReady = Boolean(serveDraft.team1FirstServerId && serveDraft.team2FirstServerId);
+            const matchScenarioLabel = !serveState
+              ? 'Шаг 1: настройте подачу'
+              : canConfirm
+                ? 'Готово к подтверждению'
+                : 'Шаг 2: ведите счёт';
+            const matchScenarioText = !serveState
+              ? 'Выберите стартового подающего в обеих командах и сразу укажите, кто подаёт первым.'
+              : canConfirm
+                ? 'Подача настроена, счёт заполнен. Проверьте тур и подтверждайте.'
+                : 'Подача уже задана. Судья может сразу вести счёт через крупные кнопки.'
             const accent =
               matchIndex === 0
                 ? {
@@ -1023,7 +1106,7 @@ export function ThaiJudgeWorkspace({
                     type="button"
                     disabled={!isViewingEditableTour}
                     onClick={() => handleScoreTap(match, sideKey, liveScore[sideKey])}
-                    className={`${isCompactMode ? 'h-12 w-12 text-4xl' : 'h-16 w-16 text-6xl'} text-center font-heading leading-none text-[#ffd400] disabled:cursor-default`}
+                    className={`${isCompactMode ? 'h-16 w-16 text-5xl' : 'h-24 w-24 text-8xl'} text-center font-heading leading-none text-[#ffd400] transition-transform duration-75 active:scale-[0.96] disabled:cursor-default`}
                     title="Двойной тап или кнопка ниже для ручного ввода"
                   >
                     {liveScore[sideKey]}
@@ -1070,6 +1153,95 @@ export function ThaiJudgeWorkspace({
                     needsAttention ? 'ring-1 ring-amber-300/35' : ''
                   }`}
                 >
+                  {isViewingEditableTour ? (
+                    <div className={`mb-4 rounded-[20px] border px-3 py-3 ${
+                      serveState
+                        ? 'border-emerald-400/25 bg-emerald-500/10'
+                        : 'border-[#ffd24a]/35 bg-[#ffd24a]/10'
+                    }`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className={`text-[10px] font-black uppercase tracking-[0.22em] ${
+                            serveState ? 'text-emerald-200' : 'text-[#ffd24a]'
+                          }`}>
+                            {matchScenarioLabel}
+                          </div>
+                          <div className="mt-1 text-[12px] leading-relaxed text-white/82">
+                            {matchScenarioText}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openServeSetup(match)}
+                          className="rounded-full border border-white/12 bg-white/6 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/85 transition hover:border-white/22 hover:bg-white/10"
+                        >
+                          Расширенная настройка
+                        </button>
+                      </div>
+
+                      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                        {([
+                          [1, match.team1, serveDraft.team1FirstServerId],
+                          [2, match.team2, serveDraft.team2FirstServerId],
+                        ] as const).map(([teamSide, team, selectedPlayerId]) => (
+                          <div key={`${match.matchId}-inline-team-${teamSide}`} className="rounded-[18px] border border-white/10 bg-black/20 p-3">
+                            <div className="text-[10px] uppercase tracking-[0.22em] text-[#8f7c4a]">Подача · команда {teamSide}</div>
+                            <div className="mt-2 text-sm font-semibold text-white">{team.label}</div>
+                            <div className="mt-3 grid gap-2">
+                              {team.players.map((player) => (
+                                <label
+                                  key={player.id}
+                                  className={`flex cursor-pointer items-center justify-between rounded-[14px] border px-3 py-2 text-sm transition ${
+                                    selectedPlayerId === player.id
+                                      ? 'border-[#ffd24a]/45 bg-[#ffd24a]/12 text-[#ffd24a]'
+                                      : 'border-white/10 bg-white/5 text-white/82'
+                                  }`}
+                                >
+                                  <span>{player.name}</span>
+                                  <input
+                                    type="radio"
+                                    name={`inline-serve-${match.matchId}-${teamSide}`}
+                                    checked={selectedPlayerId === player.id}
+                                    onChange={() =>
+                                      updateServeSetupDraft(match, (current) =>
+                                        teamSide === 1
+                                          ? { ...current, team1FirstServerId: player.id }
+                                          : { ...current, team2FirstServerId: player.id },
+                                      )
+                                    }
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {[1, 2].map((servingSide) => (
+                          <button
+                            key={`${match.matchId}-serving-${servingSide}`}
+                            type="button"
+                            onClick={() =>
+                              persistServeSetup(match, {
+                                ...serveDraft,
+                                servingSide: servingSide as 1 | 2,
+                              })
+                            }
+                            disabled={!inlineServeReady}
+                            className={`rounded-[14px] border px-4 py-3 text-sm font-black uppercase tracking-[0.08em] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${
+                              serveState?.servingSide === servingSide
+                                ? 'border-[#ffd24a]/55 bg-[#ffd24a] text-[#17130b]'
+                                : 'border-white/12 bg-white/6 text-white hover:border-white/24 hover:bg-white/10'
+                            }`}
+                          >
+                            {servingSide === 1 ? 'Подаёт команда 1' : 'Подаёт команда 2'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className={`grid items-center ${isCompactMode ? 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2' : 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-3'}`}>
                     <div className="min-w-0">
                       <div className={`${isCompactMode ? 'text-[clamp(15px,4.4vw,19px)]' : 'text-[clamp(16px,2.8vw,22px)]'} font-black leading-[1.02] text-white`}>
@@ -1080,10 +1252,20 @@ export function ThaiJudgeWorkspace({
                           {formatTeamRoles(leftTeam)}
                         </div>
                       ) : null}
-                      <div className="mt-3 rounded-[16px] border border-white/10 bg-black/20 px-3 py-2 text-left">
-                        <div className={`flex items-center gap-2 text-sm font-semibold ${serveState?.servingSide === leftServingSide ? 'text-[#ffd24a]' : 'text-white/88'}`}>
-                          <span className={`h-2.5 w-2.5 rounded-full ${serveState?.servingSide === leftServingSide ? 'bg-[#ffd24a]' : 'bg-white/20'}`} />
-                          <span>Подача: {leftCurrentServer?.playerName ?? 'не настроена'}</span>
+                      <div className={`mt-3 rounded-[18px] border px-3 py-3 text-left ${
+                        serveState?.servingSide === leftServingSide
+                          ? 'border-[#ffd24a]/45 bg-[#ffd24a]/12'
+                          : 'border-white/10 bg-black/20'
+                      }`}>
+                        <div className={`text-[10px] font-black uppercase tracking-[0.22em] ${
+                          serveState?.servingSide === leftServingSide ? 'text-[#ffd24a]' : 'text-white/52'
+                        }`}>
+                          {serveState?.servingSide === leftServingSide ? '→ ПОДАЁТ' : 'ОЖИДАЕТ'}
+                        </div>
+                        <div className={`mt-1 text-base font-black ${
+                          serveState?.servingSide === leftServingSide ? 'text-[#fff3bf]' : 'text-white/88'
+                        }`}>
+                          {leftCurrentServer?.playerName ?? 'ПОДАЧА НЕ ЗАДАНА'}
                         </div>
                         <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-[#9aa1b3]">
                           след: {leftNextServer?.playerName ?? '—'}
@@ -1091,9 +1273,9 @@ export function ThaiJudgeWorkspace({
                       </div>
                     </div>
 
-                    <div className={`flex items-start justify-center ${isCompactMode ? 'min-w-[108px] gap-2' : 'min-w-[150px] gap-3'}`}>
+                    <div className={`flex items-start justify-center ${isCompactMode ? 'min-w-[148px] gap-3' : 'min-w-[240px] gap-4'}`}>
                       {renderScore(leftSideKey)}
-                      <div className={`${isCompactMode ? 'pt-1 text-3xl' : 'text-5xl'} font-black text-white/35`}>-</div>
+                      <div className={`${isCompactMode ? 'pt-3 text-4xl' : 'pt-4 text-6xl'} font-black text-white/35`}>-</div>
                       {renderScore(rightSideKey)}
                     </div>
 
@@ -1106,10 +1288,20 @@ export function ThaiJudgeWorkspace({
                           {formatTeamRoles(rightTeam)}
                         </div>
                       ) : null}
-                      <div className="mt-3 rounded-[16px] border border-white/10 bg-black/20 px-3 py-2 text-right">
-                        <div className={`flex items-center justify-end gap-2 text-sm font-semibold ${serveState?.servingSide === rightServingSide ? 'text-[#ffd24a]' : 'text-white/88'}`}>
-                          <span>Подача: {rightCurrentServer?.playerName ?? 'не настроена'}</span>
-                          <span className={`h-2.5 w-2.5 rounded-full ${serveState?.servingSide === rightServingSide ? 'bg-[#ffd24a]' : 'bg-white/20'}`} />
+                      <div className={`mt-3 rounded-[18px] border px-3 py-3 text-right ${
+                        serveState?.servingSide === rightServingSide
+                          ? 'border-[#ffd24a]/45 bg-[#ffd24a]/12'
+                          : 'border-white/10 bg-black/20'
+                      }`}>
+                        <div className={`text-[10px] font-black uppercase tracking-[0.22em] ${
+                          serveState?.servingSide === rightServingSide ? 'text-[#ffd24a]' : 'text-white/52'
+                        }`}>
+                          {serveState?.servingSide === rightServingSide ? 'ПОДАЁТ ←' : 'ОЖИДАЕТ'}
+                        </div>
+                        <div className={`mt-1 text-base font-black ${
+                          serveState?.servingSide === rightServingSide ? 'text-[#fff3bf]' : 'text-white/88'
+                        }`}>
+                          {rightCurrentServer?.playerName ?? 'ПОДАЧА НЕ ЗАДАНА'}
                         </div>
                         <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-[#9aa1b3]">
                           след: {rightNextServer?.playerName ?? '—'}
@@ -1123,7 +1315,7 @@ export function ThaiJudgeWorkspace({
                       type="button"
                       disabled={!isViewingEditableTour}
                       onClick={() => bumpScore(match, leftSideKey, -1)}
-                      className={`${isCompactMode ? 'h-14 text-3xl' : 'h-20 text-4xl'} rounded-[18px] border font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.minus}`}
+                      className={`${isCompactMode ? 'h-16 text-4xl' : 'h-24 text-5xl'} rounded-[18px] border font-black transition active:scale-[0.97] active:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 ${accent.minus}`}
                     >
                       −
                     </button>
@@ -1131,7 +1323,7 @@ export function ThaiJudgeWorkspace({
                       type="button"
                       disabled={!isViewingEditableTour}
                       onClick={() => bumpScore(match, leftSideKey, 1)}
-                      className={`${isCompactMode ? 'h-14 text-4xl' : 'h-20 text-5xl'} rounded-[18px] border-2 font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.plus}`}
+                      className={`${isCompactMode ? 'h-16 text-5xl' : 'h-24 text-7xl'} rounded-[18px] border-2 font-black transition active:scale-[0.97] active:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 ${accent.plus}`}
                     >
                       +
                     </button>
@@ -1139,7 +1331,7 @@ export function ThaiJudgeWorkspace({
                       type="button"
                       disabled={!isViewingEditableTour}
                       onClick={() => bumpScore(match, rightSideKey, -1)}
-                      className={`${isCompactMode ? 'h-14 text-3xl' : 'h-20 text-4xl'} rounded-[18px] border font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.minus}`}
+                      className={`${isCompactMode ? 'h-16 text-4xl' : 'h-24 text-5xl'} rounded-[18px] border font-black transition active:scale-[0.97] active:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 ${accent.minus}`}
                     >
                       −
                     </button>
@@ -1147,7 +1339,7 @@ export function ThaiJudgeWorkspace({
                       type="button"
                       disabled={!isViewingEditableTour}
                       onClick={() => bumpScore(match, rightSideKey, 1)}
-                      className={`${isCompactMode ? 'h-14 text-4xl' : 'h-20 text-5xl'} rounded-[18px] border-2 font-black transition disabled:cursor-not-allowed disabled:opacity-40 ${accent.plus}`}
+                      className={`${isCompactMode ? 'h-16 text-5xl' : 'h-24 text-7xl'} rounded-[18px] border-2 font-black transition active:scale-[0.97] active:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 ${accent.plus}`}
                     >
                       +
                     </button>
@@ -1155,108 +1347,141 @@ export function ThaiJudgeWorkspace({
 
                   <div className="mt-4 rounded-[20px] border border-white/10 bg-black/20 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
+                      <div className="min-w-0 flex-1">
                         <div className="text-[10px] uppercase tracking-[0.24em] text-[#8f7c4a]">История очков</div>
                         <div className="mt-1 text-xs text-white/72">
                           {pointHistory.length ? `${pointHistory.length} событий` : 'История появится после первого розыгрыша.'}
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <div className="flex rounded-full border border-white/10 bg-white/5 p-1">
-                          {([
-                            ['all', 'Все'],
-                            [leftSideKey, 'Лево'],
-                            [rightSideKey, 'Право'],
-                          ] as const).map(([value, label]) => (
-                            <button
-                              key={value}
-                              type="button"
-                              onClick={() =>
-                                setHistoryFilterByMatch((current) => ({
-                                  ...current,
-                                  [match.matchId]: value,
-                                }))
+                        <button
+                          type="button"
+                          aria-expanded={!isPointHistoryCollapsed}
+                          onClick={() =>
+                            setCollapsedPointHistoryByMatch((current) => {
+                              if (current[match.matchId]) {
+                                const next = { ...current };
+                                delete next[match.matchId];
+                                return next;
                               }
-                              className={`rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] transition ${
-                                historyFilter === value ? 'bg-[#ffd24a] text-[#17130b]' : 'text-white/70'
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                        {isViewingEditableTour ? (
-                          <button
-                            type="button"
-                            onClick={() => openServeSetup(match)}
-                            className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/20 hover:bg-white/10"
-                          >
-                            Настроить подачу
-                          </button>
-                        ) : null}
+                              return {
+                                ...current,
+                                [match.matchId]: true,
+                              };
+                            })
+                          }
+                          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/20 hover:bg-white/10"
+                        >
+                          {isPointHistoryCollapsed ? 'Развернуть' : 'Свернуть'}
+                        </button>
                       </div>
                     </div>
 
-                    {!serveState && isViewingEditableTour ? (
-                      <div className="mt-3 rounded-[14px] border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
-                        Перед первым розыгрышем задайте очередь подачи для матча.
-                      </div>
-                    ) : null}
-
-                    {visiblePointHistory.length ? (
-                      <div
-                        ref={(node) => {
-                          pointHistoryFeedRefs.current[match.matchId] = node;
-                        }}
-                        className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1"
-                      >
-                        {visiblePointHistory.map(({ event, index }) => {
-                          const streak = getHistoryStreak(pointHistory, index);
-                          const teamLabel =
-                            event.scoringSide === 1
-                              ? match.team1.label
-                              : event.scoringSide === 2
-                                ? match.team2.label
-                                : 'Коррекция';
-                          const serverLabel = event.serverPlayerBefore?.playerName ?? 'не задана';
-                          return (
-                            <div
-                              key={`${match.matchId}-history-${event.seqNo}`}
-                              className={`rounded-[16px] border px-3 py-2 text-sm ${
-                                event.kind === 'correction'
-                                  ? 'border-white/10 bg-white/5 text-white/78'
-                                  : event.scoringSide === 1
-                                    ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
-                                    : 'border-orange-400/25 bg-orange-500/10 text-orange-100'
-                              }`}
+                    {!isPointHistoryCollapsed ? (
+                      <>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <div className="flex rounded-full border border-white/10 bg-white/5 p-1">
+                            {([
+                              ['all', 'Все'],
+                              [leftSideKey, 'Лево'],
+                              [rightSideKey, 'Право'],
+                            ] as const).map(([value, label]) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() =>
+                                  setHistoryFilterByMatch((current) => ({
+                                    ...current,
+                                    [match.matchId]: value,
+                                  }))
+                                }
+                                className={`rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] transition ${
+                                  historyFilter === value ? 'bg-[#ffd24a] text-[#17130b]' : 'text-white/70'
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          {isViewingEditableTour ? (
+                            <button
+                              type="button"
+                              onClick={() => openServeSetup(match)}
+                              className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/20 hover:bg-white/10"
                             >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-[11px] text-white/45">{formatHistoryScore(event.scoreBefore)}</span>
-                                <span className="text-base font-black">→</span>
-                                <span className="font-semibold">{teamLabel}</span>
-                                {event.kind === 'rally' ? (
-                                  <span className="text-[12px] italic text-white/70">(подача: {serverLabel})</span>
-                                ) : null}
-                                <span className="ml-auto text-base font-black text-[#ffd24a]">
-                                  {formatHistoryScore(event.scoreAfter)}
-                                </span>
-                              </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-white/55">
-                                {event.kind === 'correction' ? <span>Коррекция счёта</span> : null}
-                                {event.isSideOut ? <span className="rounded-full border border-white/10 px-2 py-0.5">side-out</span> : null}
-                                {streak >= 2 ? (
-                                  <span className="rounded-full border border-white/10 px-2 py-0.5">{streak} подряд</span>
-                                ) : null}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                              Расширенная настройка
+                            </button>
+                          ) : null}
+                        </div>
+
+                        {!serveState && isViewingEditableTour ? (
+                          <div className="mt-3 rounded-[14px] border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                            Inline-настройка подачи выше обязательна перед первым розыгрышем.
+                          </div>
+                        ) : null}
+
+                        {visiblePointHistory.length ? (
+                          <div
+                            ref={(node) => {
+                              pointHistoryFeedRefs.current[match.matchId] = node;
+                            }}
+                            className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1"
+                          >
+                            {visiblePointHistory.map(({ event, index }) => {
+                              const streak = getHistoryStreak(pointHistory, index);
+                              const teamLabel =
+                                event.scoringSide === 1
+                                  ? match.team1.label
+                                  : event.scoringSide === 2
+                                    ? match.team2.label
+                                    : 'Коррекция';
+                              const serverLabel = event.serverPlayerBefore?.playerName ?? 'не задана';
+                              const eventTime = formatHistoryEventTime(event.recordedAt);
+                              return (
+                                <div
+                                  key={`${match.matchId}-history-${event.seqNo}`}
+                                  className={`rounded-[16px] border px-3 py-2 text-sm ${
+                                    event.kind === 'correction'
+                                      ? 'border-white/10 bg-white/5 text-white/78'
+                                      : event.scoringSide === 1
+                                        ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
+                                        : 'border-orange-400/25 bg-orange-500/10 text-orange-100'
+                                  }`}
+                                >
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-[11px] text-white/45">{formatHistoryScore(event.scoreBefore)}</span>
+                                    <span className="text-base font-black">→</span>
+                                    <span className="font-semibold">{teamLabel}</span>
+                                    {event.kind === 'rally' ? (
+                                      <span className="text-[12px] italic text-white/70">(подача: {serverLabel})</span>
+                                    ) : null}
+                                    <span className="ml-auto text-base font-black text-[#ffd24a]">
+                                      {formatHistoryScore(event.scoreAfter)}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-white/55">
+                                    {eventTime ? <span className="rounded-full border border-white/10 px-2 py-0.5">{eventTime}</span> : null}
+                                    {event.kind === 'correction' ? <span>Коррекция счёта</span> : null}
+                                    {event.isSideOut ? <span className="rounded-full border border-white/10 px-2 py-0.5">side-out</span> : null}
+                                    {streak >= 2 ? (
+                                      <span className="rounded-full border border-white/10 px-2 py-0.5">{streak} подряд</span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="mt-3 rounded-[14px] border border-white/8 bg-white/5 px-3 py-3 text-sm text-white/62">
+                            {historyFilter === 'all'
+                              ? 'История очков пока пустая.'
+                              : 'По текущему фильтру событий пока нет.'}
+                          </div>
+                        )}
+                      </>
                     ) : (
-                      <div className="mt-3 rounded-[14px] border border-white/8 bg-white/5 px-3 py-3 text-sm text-white/62">
-                        {historyFilter === 'all'
-                          ? 'История очков пока пустая.'
-                          : 'По текущему фильтру событий пока нет.'}
+                      <div className="mt-3 rounded-[14px] border border-white/8 bg-white/5 px-3 py-2 text-[12px] text-white/62">
+                        История скрыта. Нажмите «Развернуть», чтобы посмотреть розыгрыши.
                       </div>
                     )}
                   </div>

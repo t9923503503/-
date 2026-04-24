@@ -17,4 +17,14 @@ describe('finished tournament page source contract', () => {
     expect(source).toContain('playerId={editorialPlayerIds.get(editorialPlayerNameKey(row.right))}');
     expect(source).toContain('playerId={row.playerId}');
   });
+
+  it('embeds archived Thai spectator board on finished Thai tournaments', () => {
+    const source = read('web/components/calendar/FinishedTournamentPage.tsx');
+
+    expect(source).toContain("import { ThaiSpectatorBoard } from '@/components/thai-live/ThaiSpectatorBoard';");
+    expect(source).toContain('thaiBoard = null');
+    expect(source).toContain('<ThaiSpectatorBoard data={thaiBoard} />');
+    expect(source).toContain('href={`/live/thai/${id}`}');
+    expect(source).toContain('Thai board');
+  });
 });

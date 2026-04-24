@@ -76,6 +76,8 @@ async function isValidAdminSession(token: string): Promise<boolean> {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-lpvolley-pathname', pathname);
 
   // /sudyam and /sudyam/* — but NOT /sudyam2 (separate route)
   const isSudyam = pathname === '/sudyam' || pathname.startsWith('/sudyam/');
@@ -136,7 +138,11 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  const response = NextResponse.next();
+  const response = NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
   if (isAdmin) {
     response.headers.set('Cache-Control', 'private, no-cache, no-store, max-age=0, must-revalidate');
   }
@@ -153,5 +159,11 @@ export const config = {
     '/court/:path*',
     '/admin',
     '/admin/:path*',
+    '/live/thai',
+    '/live/thai/:path*',
+    '/judge-scoreboard',
+    '/judge-scoreboard/:path*',
+    '/kotc-next/judge',
+    '/kotc-next/judge/:path*',
   ],
 };

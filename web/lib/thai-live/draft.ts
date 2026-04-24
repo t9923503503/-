@@ -5,6 +5,7 @@ import type {
   ThaiJudgeServeState,
   ThaiJudgeSnapshot,
 } from './types';
+import { normalizeThaiJudgeServeState } from './serve';
 
 export interface ThaiJudgeDraftPayloadV1 {
   version: 1;
@@ -65,6 +66,13 @@ function scoreLinesEqual(left: ThaiJudgeScoreLine, right: ThaiJudgeScoreLine): b
 
 function isZeroScore(score: ThaiJudgeScoreLine): boolean {
   return score.team1 === 0 && score.team2 === 0;
+}
+
+function canNormalizeServeStateForMatch(match: ThaiJudgeMatchView): boolean {
+  return Boolean(
+    Array.isArray(match.team1?.players) &&
+      Array.isArray(match.team2?.players),
+  );
 }
 
 function buildSynthesizedCorrectionEvent(
@@ -242,19 +250,26 @@ export function resolveThaiJudgeDraftState(input: {
   }
 
   const pointLimit = Math.max(0, Math.trunc(Number(input.snapshot.pointLimit) || 0));
-  const matchIds = new Set(input.snapshot.matches.map((match) => match.matchId));
+  const matchesById = new Map(input.snapshot.matches.map((match) => [match.matchId, match] as const));
+  const matchIds = new Set(matchesById.keys());
   const sanitizedScores: Record<string, ThaiJudgeScoreLine> = {};
   const sanitizedServeStateByMatch: Record<string, ThaiJudgeServeState> = {};
   const sanitizedPointHistoryByMatch: Record<string, ThaiJudgePointHistoryEvent[]> = {};
+  const draftMatchIds = new Set([
+    ...Object.keys(input.draft.scores),
+    ...Object.keys(input.draft.serveStateByMatch),
+    ...Object.keys(input.draft.pointHistoryByMatch),
+  ]);
 
-  for (const matchId of Object.keys(input.draft.scores)) {
+  for (const matchId of draftMatchIds) {
     if (!matchIds.has(matchId)) continue;
+    const match = matchesById.get(matchId);
+    if (!match) continue;
     const rawScore = input.draft.scores[matchId];
-    if (!rawScore) continue;
 
     const sanitizedScore: ThaiJudgeScoreLine = {
-      team1: clampDraftScore(rawScore.team1, pointLimit),
-      team2: clampDraftScore(rawScore.team2, pointLimit),
+      team1: clampDraftScore(rawScore?.team1, pointLimit),
+      team2: clampDraftScore(rawScore?.team2, pointLimit),
     };
 
     if (sanitizedScore.team1 === sanitizedScore.team2 && !isZeroScore(sanitizedScore)) {
@@ -262,9 +277,13 @@ export function resolveThaiJudgeDraftState(input: {
     }
 
     const draftHistory = input.draft.pointHistoryByMatch[matchId] ?? [];
-    const sanitizedHistory = isUsableDraftHistory(draftHistory, sanitizedScore, pointLimit)
+    const hasUsableHistory = isUsableDraftHistory(draftHistory, sanitizedScore, pointLimit);
+    const sanitizedHistory = hasUsableHistory
       ? draftHistory
       : buildSynthesizedCorrectionEvent(sanitizedScore, null);
+    const sanitizedServeState = canNormalizeServeStateForMatch(match)
+      ? normalizeThaiJudgeServeState(match, input.draft.serveStateByMatch[matchId])
+      : null;
 
     if (!isZeroScore(sanitizedScore)) {
       sanitizedScores[matchId] = sanitizedScore;
@@ -272,8 +291,8 @@ export function resolveThaiJudgeDraftState(input: {
     if (sanitizedHistory.length) {
       sanitizedPointHistoryByMatch[matchId] = sanitizedHistory;
     }
-    if (input.draft.serveStateByMatch[matchId] && isUsableDraftHistory(draftHistory, sanitizedScore, pointLimit)) {
-      sanitizedServeStateByMatch[matchId] = input.draft.serveStateByMatch[matchId]!;
+    if (sanitizedServeState && hasUsableHistory) {
+      sanitizedServeStateByMatch[matchId] = sanitizedServeState;
     }
   }
 

@@ -201,4 +201,71 @@ describe('thai judge draft helpers', () => {
       shouldClearDraft: false,
     });
   });
+
+  test('resolveThaiJudgeDraftState restores inline serve setup even before the first point', () => {
+    const activeSnapshot = {
+      kind: 'active',
+      tourStatus: 'pending',
+      pointLimit: 12,
+      matches: [
+        {
+          matchId: 'm1',
+          team1Score: null,
+          team2Score: null,
+          pointHistory: [],
+          team1: {
+            side: 1,
+            label: 'A1 / A2',
+            players: [
+              { id: 'a1', name: 'A1', role: 'primary' },
+              { id: 'a2', name: 'A2', role: 'secondary' },
+            ],
+          },
+          team2: {
+            side: 2,
+            label: 'B1 / B2',
+            players: [
+              { id: 'b1', name: 'B1', role: 'primary' },
+              { id: 'b2', name: 'B2', role: 'secondary' },
+            ],
+          },
+        },
+      ],
+    };
+
+    expect(
+      resolveThaiJudgeDraftState({
+        snapshot: activeSnapshot,
+        draft: {
+          version: 2,
+          savedAt: '2026-04-22T06:20:00.000Z',
+          scores: {},
+          serveStateByMatch: {
+            m1: {
+              servingSide: 2,
+              team1Order: ['a2', 'a1'],
+              team2Order: ['b1', 'b2'],
+              team1CurrentIndex: 0,
+              team2CurrentIndex: 0,
+            },
+          },
+          pointHistoryByMatch: {},
+        },
+      }),
+    ).toEqual({
+      initialScores: {},
+      initialServeStateByMatch: {
+        m1: {
+          servingSide: 2,
+          team1Order: ['a2', 'a1'],
+          team2Order: ['b1', 'b2'],
+          team1CurrentIndex: 0,
+          team2CurrentIndex: 0,
+        },
+      },
+      initialPointHistoryByMatch: {},
+      restoredFromDraft: true,
+      shouldClearDraft: false,
+    });
+  });
 });

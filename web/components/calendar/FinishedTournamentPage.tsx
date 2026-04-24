@@ -4,6 +4,7 @@ import type { TournamentResultRow } from '@/lib/queries';
 import { isThaiAdminFormat } from '@/lib/admin-legacy-sync';
 import type { ThaiSpectatorBoardPayload } from '@/lib/thai-spectator';
 import FinishedTournamentGallery from '@/components/calendar/FinishedTournamentGallery';
+import { ThaiSpectatorBoard } from '@/components/thai-live/ThaiSpectatorBoard';
 
 interface Props {
   tournament: Tournament;
@@ -278,6 +279,7 @@ export default function FinishedTournamentPage({
   tournament,
   results,
   related,
+  thaiBoard = null,
   heroPhotoUrl = null,
 }: Props) {
   const { id, name, date, time, location, format, division, level, participantCount, photoUrl } =
@@ -613,6 +615,40 @@ export default function FinishedTournamentPage({
               />
             </div>
           ) : null}
+        </section>
+      ) : null}
+
+      {isThai ? (
+        <section aria-label="Thai board" className="mt-8 anim-fade-up anim-delay-3">
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-[11px] font-body uppercase tracking-[0.24em] text-teal-300">
+                Thai board
+              </div>
+              <h2 className="mt-1 font-heading text-3xl uppercase tracking-wide text-text-primary">
+                Архивное табло турнира
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm font-body text-text-primary/80">
+                Страница завершённого Thai-турнира теперь показывает то же публичное табло, что и
+                `/live/thai/[tournamentId]`, включая историю очков, подающего, side-out и серии.
+              </p>
+            </div>
+            <Link
+              href={`/live/thai/${id}`}
+              className="btn-action-outline inline-flex items-center justify-center gap-2 whitespace-nowrap border-teal-400/45 bg-teal-400/10 text-teal-200 hover:bg-teal-400/20"
+            >
+              Открыть отдельную страницу табло
+            </Link>
+          </div>
+
+          {thaiBoard ? (
+            <ThaiSpectatorBoard data={thaiBoard} />
+          ) : (
+            <div className="rounded-2xl border border-teal-400/20 bg-teal-400/10 px-4 py-4 text-sm font-body text-text-primary/85">
+              Архивный снимок Thai-табло пока недоступен. Публичная страница турнира остаётся
+              доступной по ссылке выше.
+            </div>
+          )}
         </section>
       ) : null}
 

@@ -30,6 +30,21 @@ interface JudgeUiPrefs {
 
 type JudgeSound = 'score' | 'error';
 
+function firstRallySeq(value: number | null | undefined): number {
+  return Number.isFinite(value) && value != null ? value : Number.MAX_SAFE_INTEGER;
+}
+
+function compareLiveStandings(left: KotcNextPairLiveState, right: KotcNextPairLiveState): number {
+  return (
+    right.kingWins - left.kingWins ||
+    (right.bestKingStreak ?? 0) - (left.bestKingStreak ?? 0) ||
+    firstRallySeq(left.firstKingStreakSeq) - firstRallySeq(right.firstKingStreakSeq) ||
+    right.takeovers - left.takeovers ||
+    left.gamesPlayed - right.gamesPlayed ||
+    left.pairIdx - right.pairIdx
+  );
+}
+
 function scheduleTone(
   context: AudioContext,
   {
@@ -219,6 +234,20 @@ function readUiPrefs(pin: string): JudgeUiPrefs | null {
   }
 }
 
+function isCompactJudgeViewport(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(max-width: 639px)').matches;
+}
+
+function defaultJudgeUiPrefs(): JudgeUiPrefs {
+  const compactViewport = isCompactJudgeViewport();
+  return {
+    showStandings: true,
+    showArrowHelp: !compactViewport,
+    showScoreHistory: !compactViewport,
+  };
+}
+
 function formatEventClock(playedAt: string): string {
   const parsed = new Date(playedAt);
   if (!Number.isFinite(parsed.getTime())) return '--:--:--';
@@ -347,7 +376,7 @@ function ManualArrowButton({
       title={label}
       onClick={onClick}
       disabled={disabled}
-      className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/20 text-xl font-black text-white transition hover:border-white/30 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35 sm:h-12 sm:w-12 sm:text-2xl"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/20 text-lg font-black text-white transition hover:border-white/30 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35 sm:h-12 sm:w-12 sm:text-2xl"
     >
       {label.includes('влево') ? '←' : '→'}
     </button>
@@ -369,9 +398,8 @@ export function KotcNextJudgeScreen({
   const [nowTs, setNowTs] = useState(() => Date.now());
   const [restoredDraft, setRestoredDraft] = useState(false);
   const [showStandings, setShowStandings] = useState(true);
-  const [showArrowHelp, setShowArrowHelp] = useState(true);
-  const [showScoreHistory, setShowScoreHistory] = useState(true);
-  const [pendingConfirm, setPendingConfirm] = useState<'finish' | 'reset' | 'undo' | null>(null);
+  const [showArrowHelp, setShowArrowHelp] = useState(false);
+  const [showScoreHistory, setShowScoreHistory] = useState(false);
 
   useScreenWakeLock(true);
 
@@ -382,10 +410,10 @@ export function KotcNextJudgeScreen({
 
   useEffect(() => {
     const prefs = readUiPrefs(initialSnapshot.pinCode);
-    if (!prefs) return;
-    setShowStandings(prefs.showStandings);
-    setShowArrowHelp(prefs.showArrowHelp);
-    setShowScoreHistory(prefs.showScoreHistory);
+    const nextPrefs = prefs ?? defaultJudgeUiPrefs();
+    setShowStandings(nextPrefs.showStandings);
+    setShowArrowHelp(nextPrefs.showArrowHelp);
+    setShowScoreHistory(nextPrefs.showScoreHistory);
   }, [initialSnapshot.pinCode]);
 
   useEffect(() => {
@@ -461,12 +489,6 @@ export function KotcNextJudgeScreen({
   }, [toast]);
 
   useEffect(() => {
-    if (!pendingConfirm || typeof window === 'undefined') return;
-    const timeoutId = window.setTimeout(() => setPendingConfirm(null), 5000);
-    return () => window.clearTimeout(timeoutId);
-  }, [pendingConfirm]);
-
-  useEffect(() => {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(
       uiPrefsKey(snapshot.pinCode),
@@ -487,12 +509,7 @@ export function KotcNextJudgeScreen({
 
   const standings = useMemo(
     () =>
-      [...snapshot.liveState.pairs].sort(
-        (left, right) =>
-          right.kingWins - left.kingWins ||
-          right.takeovers - left.takeovers ||
-          left.pairIdx - right.pairIdx,
-      ),
+      [...snapshot.liveState.pairs].sort(compareLiveStandings),
     [snapshot.liveState.pairs],
   );
 
@@ -604,11 +621,10 @@ export function KotcNextJudgeScreen({
 
   async function runUndoAction() {
     if (submitting || !snapshot.canUndo || !canPlay) return;
-    if (pendingConfirm !== 'undo') {
-      setPendingConfirm('undo');
-      return;
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Отменить последнее начисление очка или смену трона?');
+      if (!confirmed) return;
     }
-    setPendingConfirm(null);
     await runAction('undo');
   }
 
@@ -651,11 +667,10 @@ export function KotcNextJudgeScreen({
       setToast({ tone: 'error', message: 'Нет сети. Сброс раунда недоступен офлайн.' });
       return;
     }
-    if (pendingConfirm !== 'reset') {
-      setPendingConfirm('reset');
-      return;
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Сбросить текущий раунд? Очередь и игровые события будут очищены.');
+      if (!confirmed) return;
     }
-    setPendingConfirm(null);
 
     setSubmitting('reset');
     try {
@@ -675,72 +690,64 @@ export function KotcNextJudgeScreen({
 
   async function runFinishAction() {
     if (submitting || !canPlay) return;
-    if (pendingConfirm !== 'finish') {
-      setPendingConfirm('finish');
-      return;
+    if (typeof window !== 'undefined') {
+      const confirmations = [
+        'Завершить текущий раунд? После финиша результат будет зафиксирован.',
+        `Подтвердите финиш для ${snapshot.courtLabel} (${formatRoundType(snapshot.roundType)}).`,
+        'Последнее подтверждение: точно нажать «Финиш» сейчас?',
+      ];
+      for (const confirmationMessage of confirmations) {
+        if (!window.confirm(confirmationMessage)) return;
+      }
     }
-    setPendingConfirm(null);
     await runAction('finish');
   }
 
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-[radial-gradient(circle_at_top,rgba(255,214,10,0.12),transparent_18%),linear-gradient(180deg,#050507,#080913_28%,#040405)] px-2.5 pb-6 pt-3 text-white sm:px-3 sm:pb-10 sm:pt-4">
-      <div className="mx-auto flex w-full max-w-[430px] flex-col gap-3 sm:max-w-[780px] sm:gap-4">
-        <header className="rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(14,14,18,0.98),rgba(8,8,12,0.98))] px-3 py-4 shadow-[0_28px_80px_rgba(0,0,0,0.4)] sm:rounded-[28px] sm:px-4 sm:py-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-white/72 sm:px-3 sm:text-[11px] sm:tracking-[0.24em]">
-              PIN {snapshot.pinCode}
+    <div className="min-h-screen min-h-[100dvh] bg-[radial-gradient(circle_at_top,rgba(255,214,10,0.12),transparent_18%),linear-gradient(180deg,#050507,#080913_28%,#040405)] px-1.5 pb-4 pt-2 text-white sm:px-3 sm:pb-10 sm:pt-4">
+      <div className="mx-auto flex w-full max-w-[430px] flex-col gap-2 sm:max-w-[780px] sm:gap-4">
+        <header className="rounded-[18px] border border-white/8 bg-[linear-gradient(180deg,rgba(14,14,18,0.98),rgba(8,8,12,0.98))] px-2.5 py-2.5 shadow-[0_20px_60px_rgba(0,0,0,0.34)] sm:rounded-[28px] sm:px-4 sm:py-5">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.16em] text-white/72 sm:px-3 sm:py-1 sm:text-[11px] sm:tracking-[0.24em]">
+                  PIN {snapshot.pinCode}
+                </span>
+                <span className="rounded-full border border-[#5b4713] bg-[#ffd400] px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-black sm:px-3 sm:py-1 sm:text-xs">
+                  {formatRoundType(snapshot.roundType)}
+                </span>
+                <span className="rounded-full border border-[#f6d40f]/50 bg-[#16140a] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[#ffd400] sm:px-3 sm:py-1 sm:text-xs">
+                  {snapshot.courtLabel}
+                </span>
+                <span className="rounded-full border border-white/10 bg-[#171724] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-white/55 sm:px-3 sm:py-1 sm:text-xs">
+                  {formatVariant(snapshot.variant)}
+                </span>
+              </div>
+              <div className="mt-1 flex min-w-0 items-baseline gap-2">
+                <div className="shrink-0 text-[9px] uppercase tracking-[0.18em] text-white/35 sm:text-[11px] sm:tracking-[0.34em]">Судья</div>
+                <h1 className="truncate text-xl font-heading uppercase tracking-[0.05em] text-white sm:text-4xl sm:tracking-[0.08em]">
+                  Король корта
+                </h1>
+              </div>
+              <p className="mt-0.5 max-w-[300px] truncate text-[10px] text-white/45 sm:max-w-none sm:text-xs">
+                {formatTournamentMeta(snapshot)}
+              </p>
             </div>
-            <div className="min-w-0 text-center">
-              <div className="text-[10px] uppercase tracking-[0.28em] text-white/35 sm:text-[11px] sm:tracking-[0.34em]">Панель судьи</div>
-              <h1 className="mt-1 text-[28px] font-heading uppercase tracking-[0.06em] text-white sm:text-4xl sm:tracking-[0.08em]">
-                Король корта
-              </h1>
-              <p className="mt-1 text-[11px] text-white/45 sm:text-xs">{formatTournamentMeta(snapshot)}</p>
-            </div>
-            <div className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] sm:px-3 sm:text-[11px] sm:tracking-[0.24em] ${connectionClasses(online)}`}>
+            <div className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.16em] sm:px-3 sm:py-1 sm:text-[11px] sm:tracking-[0.24em] ${connectionClasses(online)}`}>
               {online ? 'ONLINE' : 'OFFLINE'}
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-1.5 sm:mt-5 sm:gap-2">
-            <div className="rounded-[14px] border border-[#5b4713] bg-[#ffd400] px-3.5 py-2 text-sm font-black uppercase tracking-[0.04em] text-black sm:rounded-[18px] sm:px-5 sm:py-3 sm:text-lg sm:tracking-[0.05em]">
-              {formatRoundType(snapshot.roundType)}
-            </div>
-            {snapshot.raundHistory.map((entry) => {
-              const active = entry.raundNo === snapshot.liveState.currentRaundNo;
-              return (
-                <div
-                  key={`raund-pill-${entry.raundNo}`}
-                  className={`rounded-[14px] border px-3 py-2 text-sm font-bold uppercase tracking-[0.04em] sm:rounded-[18px] sm:px-4 sm:py-3 sm:text-base sm:tracking-[0.05em] ${
-                    active
-                      ? 'border-[#f6d40f] bg-[#16140a] text-[#ffd400]'
-                      : 'border-white/10 bg-[#171724] text-white/45'
-                  }`}
-                >
-                  РАУНД {entry.raundNo}
-                </div>
-              );
-            })}
-            <div className="mx-1 hidden h-8 w-px bg-white/10 sm:block" />
-            <div className="rounded-[14px] border border-[#f6d40f] bg-[#16140a] px-3 py-2 text-sm font-bold uppercase tracking-[0.04em] text-[#ffd400] sm:rounded-[18px] sm:px-4 sm:py-3 sm:text-base sm:tracking-[0.05em]">
-              {snapshot.courtLabel}
-            </div>
-            <div className="rounded-[14px] border border-white/10 bg-[#171724] px-3 py-2 text-sm font-bold uppercase tracking-[0.04em] text-white/45 sm:rounded-[18px] sm:px-4 sm:py-3 sm:text-base sm:tracking-[0.05em]">
-              {formatVariant(snapshot.variant)}
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-start justify-between gap-3 sm:mt-5">
-            <div className="flex min-w-0 flex-wrap gap-2">
-              <div className="w-full text-[10px] font-semibold uppercase tracking-[0.22em] text-white/38">Туры</div>
+          <div className="mt-2 grid gap-1.5 sm:mt-5 sm:grid-cols-[1fr_auto] sm:gap-3">
+            <div className="flex min-w-0 items-center gap-1 overflow-x-auto pb-0.5">
+              <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.16em] text-white/38 sm:text-[10px] sm:tracking-[0.22em]">Туры</span>
               {snapshot.roundNav.map((round) => {
                 const preferredCourt =
                   round.courts.find((court) => court.courtNo === snapshot.courtNo && court.isAvailable) ??
                   round.courts.find((court) => court.isAvailable) ??
                   null;
                 const href = preferredCourt?.judgeUrl ?? null;
-                const className = `rounded-full border px-4 py-2 text-[13px] font-bold uppercase tracking-[0.08em] transition sm:px-5 sm:py-3 sm:text-[14px] ${roundTabClasses(round.isSelected, round.isAvailable)} ${!round.isAvailable || !href ? 'cursor-not-allowed opacity-55' : ''}`;
+                const className = `shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.06em] transition sm:px-5 sm:py-3 sm:text-[14px] ${roundTabClasses(round.isSelected, round.isAvailable)} ${!round.isAvailable || !href ? 'cursor-not-allowed opacity-55' : ''}`;
                 if (!href || !round.isAvailable) {
                   return (
                     <span key={`round-nav-${round.roundNo}`} aria-disabled="true" className={className}>
@@ -763,10 +770,10 @@ export function KotcNextJudgeScreen({
             </div>
 
             {selectedRoundNav ? (
-              <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                <div className="w-full text-right text-[10px] font-semibold uppercase tracking-[0.22em] text-white/38">Корты</div>
+              <div className="flex min-w-0 items-center gap-1 overflow-x-auto pb-0.5 sm:justify-end">
+                <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.16em] text-white/38 sm:text-[10px] sm:tracking-[0.22em]">Корты</span>
                 {selectedRoundNav.courts.map((court) => {
-                  const className = `rounded-full border px-4 py-2 text-[13px] font-bold uppercase tracking-[0.08em] transition sm:px-5 sm:py-3 sm:text-[14px] ${courtTabClasses(court.isSelected, court.isAvailable)} ${!court.isAvailable || !court.judgeUrl ? 'cursor-not-allowed opacity-55' : ''}`;
+                  const className = `shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.06em] transition sm:px-5 sm:py-3 sm:text-[14px] ${courtTabClasses(court.isSelected, court.isAvailable)} ${!court.isAvailable || !court.judgeUrl ? 'cursor-not-allowed opacity-55' : ''}`;
                   if (!court.isAvailable || !court.judgeUrl) {
                     return (
                       <span key={`court-nav-${selectedRoundNav.roundNo}-${court.courtNo}`} aria-disabled="true" className={className}>
@@ -790,13 +797,13 @@ export function KotcNextJudgeScreen({
             ) : null}
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2 sm:mt-5 sm:gap-3">
+          <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5 sm:mt-5 sm:gap-3">
             {queueCards.map((pairIdx, index) => {
               const active = index === 0 || index === 1;
               return (
                 <div
                   key={`queue-${pairIdx}-${index}`}
-                  className={`min-w-[92px] rounded-[18px] border px-3 py-2 text-left sm:min-w-[132px] sm:px-4 sm:py-3 ${
+                  className={`min-w-[76px] rounded-[13px] border px-2 py-1.5 text-left sm:min-w-[132px] sm:rounded-[18px] sm:px-4 sm:py-3 ${
                     active
                       ? index === 0
                         ? 'border-[#f6d40f] bg-[#16140a] text-[#ffd400]'
@@ -805,10 +812,10 @@ export function KotcNextJudgeScreen({
                   }`}
                   title={pairLabel(snapshot, pairIdx)}
                 >
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/42">
+                  <div className="text-[8px] font-semibold uppercase tracking-[0.14em] text-white/42 sm:text-[10px] sm:tracking-[0.18em]">
                     {index === 0 ? 'KING' : index === 1 ? 'NEXT' : `Q${index - 1}`}
                   </div>
-                  <div className="mt-1 text-sm font-black leading-tight sm:text-base">
+                  <div className="mt-0.5 truncate text-[11px] font-black leading-tight sm:mt-1 sm:text-base">
                     {getPairShortLabel(snapshot, pairIdx)}
                   </div>
                 </div>
@@ -816,36 +823,33 @@ export function KotcNextJudgeScreen({
             })}
           </div>
 
-          <div className="mt-4 grid gap-3 lg:mt-5 lg:grid-cols-[1fr_auto] lg:items-end lg:gap-4">
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.2em] text-white/42 sm:text-[12px] sm:tracking-[0.26em]">Осталось</div>
-              <div className={`mt-1 text-5xl font-black leading-none tracking-[0.01em] sm:text-6xl sm:tracking-[0.02em] ${timerDanger ? 'text-red-400' : timerWarning ? 'text-orange-300' : 'text-[#ffd400]'}`}>
+          <div className="mt-2 grid grid-cols-[1fr_132px] items-end gap-2 sm:mt-5 sm:grid-cols-[1fr_auto] sm:gap-4">
+            <div className="min-w-0">
+              <div className="text-[9px] uppercase tracking-[0.16em] text-white/42 sm:text-[12px] sm:tracking-[0.26em]">Осталось</div>
+              <div className={`mt-0.5 text-[40px] font-black leading-none tracking-[0.01em] sm:text-6xl sm:tracking-[0.02em] ${timerDanger ? 'text-red-400' : timerWarning ? 'text-orange-300' : 'text-[#ffd400]'}`}>
                 {formatRemaining(remainingMs)}
               </div>
-              <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.15em] sm:text-xs sm:tracking-[0.2em]">
-                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-white/72">
+              <div className="mt-1 flex flex-wrap gap-1 text-[9px] uppercase tracking-[0.1em] sm:mt-2 sm:gap-2 sm:text-xs sm:tracking-[0.2em]">
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white/72 sm:px-2.5 sm:py-1">
                   {formatRoundStatus(snapshot.liveState.status)}
                 </span>
-                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-white/72">
-                  {snapshot.courtLabel}
-                </span>
-                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-white/72">
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-white/72 sm:px-2.5 sm:py-1">
                   {snapshot.params.ppc} пар
                 </span>
                 {restoredDraft ? (
-                  <span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-amber-100">
+                  <span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-amber-100 sm:px-2.5 sm:py-1">
                     LOCAL DRAFT
                   </span>
                 ) : null}
               </div>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-1.5 sm:grid-cols-2 sm:gap-2">
               <button
                 type="button"
                 disabled={!canStart || submitting !== null}
                 onClick={() => void runAction('start')}
-                className="min-h-[62px] rounded-[20px] border border-[#3ee04d]/30 bg-[#31d848] px-4 py-3 text-base font-black uppercase tracking-[0.05em] text-white shadow-[0_18px_50px_rgba(49,216,72,0.24)] transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 disabled:shadow-none sm:min-h-[72px] sm:rounded-[22px] sm:px-6 sm:py-4 sm:text-lg sm:tracking-[0.06em]"
+                className="min-h-[40px] rounded-[14px] border border-[#3ee04d]/30 bg-[#31d848] px-3 py-2 text-sm font-black uppercase tracking-[0.05em] text-white shadow-[0_14px_36px_rgba(49,216,72,0.2)] transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 disabled:shadow-none sm:min-h-[72px] sm:rounded-[22px] sm:px-6 sm:py-4 sm:text-lg sm:tracking-[0.06em]"
               >
                 {submitting === 'start' ? 'Старт…' : 'Старт'}
               </button>
@@ -853,7 +857,7 @@ export function KotcNextJudgeScreen({
                 type="button"
                 disabled={!canPlay || submitting !== null}
                 onClick={() => void runFinishAction()}
-                className="min-h-[62px] rounded-[20px] border border-red-400/30 bg-red-500/10 px-4 py-3 text-base font-black uppercase tracking-[0.05em] text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 sm:min-h-[72px] sm:rounded-[22px] sm:px-6 sm:py-4 sm:text-lg sm:tracking-[0.06em]"
+                className="min-h-[40px] rounded-[14px] border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm font-black uppercase tracking-[0.05em] text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 sm:min-h-[72px] sm:rounded-[22px] sm:px-6 sm:py-4 sm:text-lg sm:tracking-[0.06em]"
               >
                 {submitting === 'finish' ? 'Финиш…' : 'Финиш'}
               </button>
@@ -867,49 +871,15 @@ export function KotcNextJudgeScreen({
           </div>
         ) : null}
 
-        {pendingConfirm ? (
-          <div className="rounded-[18px] border border-orange-400/40 bg-orange-500/12 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.22)]">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className="text-sm font-semibold text-orange-100">
-                {pendingConfirm === 'finish'
-                  ? `Завершить раунд на ${snapshot.courtLabel}? Результат будет зафиксирован.`
-                  : pendingConfirm === 'reset'
-                    ? 'Сбросить раунд? Игровые события будут очищены.'
-                    : 'Отменить последнее действие?'}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (pendingConfirm === 'finish') void runFinishAction();
-                    else if (pendingConfirm === 'reset') void runResetRaundAction();
-                    else void runUndoAction();
-                  }}
-                  className="rounded-full border border-orange-300/40 bg-orange-500/20 px-4 py-1.5 text-sm font-bold text-orange-100 transition hover:bg-orange-500/35"
-                >
-                  Да, подтвердить
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPendingConfirm(null)}
-                  className="rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-bold text-white/70 transition hover:bg-white/10"
-                >
-                  Отмена
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        <section className="grid grid-cols-2 gap-2.5 sm:gap-4">
-          <article className="rounded-[22px] border-[3px] border-[#f2d100] bg-[linear-gradient(180deg,rgba(34,26,4,0.96),rgba(18,14,3,0.98))] px-3 py-3 shadow-[0_24px_80px_rgba(242,209,0,0.12)] sm:rounded-[30px] sm:border-4 sm:px-5 sm:py-5">
-            <div className="flex items-center justify-between gap-3">
+        <section className="grid grid-cols-2 gap-1.5 sm:gap-4">
+          <article className="rounded-[16px] border-2 border-[#f2d100] bg-[linear-gradient(180deg,rgba(34,26,4,0.96),rgba(18,14,3,0.98))] px-2 py-2 shadow-[0_18px_54px_rgba(242,209,0,0.1)] sm:rounded-[30px] sm:border-4 sm:px-5 sm:py-5">
+            <div className="flex items-center justify-between gap-1">
               <ManualArrowButton
                 label="Король влево"
                 onClick={() => void runManualPairAction('king', 'prev')}
                 disabled={!canManualAdjust || submitting !== null}
               />
-              <div className="rounded-full border border-[#f2d100]/30 bg-[#161105] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#f2d100] sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.22em]">
+              <div className="rounded-full border border-[#f2d100]/30 bg-[#161105] px-1.5 py-1 text-[8px] font-bold uppercase tracking-[0.08em] text-[#f2d100] sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.22em]">
                 Пара короля
               </div>
               <ManualArrowButton
@@ -919,47 +889,47 @@ export function KotcNextJudgeScreen({
               />
             </div>
 
-            <div className="mt-3 sm:mt-4">
-              <h2 className="text-xl font-black leading-tight text-white sm:text-3xl">{currentKing}</h2>
+            <div className="mt-2 sm:mt-4">
+              <h2 className="text-base font-black leading-tight text-white sm:text-3xl">{currentKing}</h2>
               {showArrowHelp ? (
-                <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-white/48 sm:text-xs sm:tracking-[0.18em]">
-                  Ручная перестановка пары короля без начисления очка
+                <p className="mt-1 text-[9px] uppercase tracking-[0.08em] text-white/48 sm:mt-2 sm:text-xs sm:tracking-[0.18em]">
+                  Стрелки меняют короля без очка
                 </p>
               ) : null}
             </div>
 
-            <div className="mt-4 grid grid-cols-[1fr_124px] gap-3 sm:mt-6 sm:grid-cols-[1fr_168px] sm:gap-4">
+            <div className="mt-2 grid grid-cols-[1fr_84px] gap-1.5 sm:mt-6 sm:grid-cols-[1fr_168px] sm:gap-4">
               <div>
-                <div className="text-[72px] font-black leading-none text-[#ffd400] sm:text-[96px]">
+                <div className="text-[50px] font-black leading-none text-[#ffd400] sm:text-[96px]">
                   {kingStat?.kingWins ?? 0}
                 </div>
-                <div className="mt-2 space-y-1 text-[11px] text-white/62 sm:mt-3 sm:text-sm">
-                  <div>Смен трона: {kingStat?.takeovers ?? 0}</div>
-                  <div>Сыграно игр: {kingStat?.gamesPlayed ?? 0}</div>
+                <div className="mt-1 space-y-0.5 text-[9px] leading-tight text-white/62 sm:mt-3 sm:space-y-1 sm:text-sm">
+                  <div>Трон: {kingStat?.takeovers ?? 0}</div>
+                  <div>Игры: {kingStat?.gamesPlayed ?? 0}</div>
                 </div>
               </div>
-              <div className="grid gap-3">
+              <div className="grid gap-1.5 sm:gap-3">
                 <button
                   type="button"
                   disabled={!canPlay || submitting !== null}
                   onClick={() => void runAction('king-point')}
-                  className="min-h-[132px] rounded-[22px] border border-[#2fd35a] bg-[#35d64c] px-3 py-5 text-center text-5xl font-black text-white transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/30 sm:min-h-[168px] sm:rounded-[26px] sm:px-4 sm:py-6 sm:text-6xl"
+                  className="min-h-[92px] rounded-[16px] border border-[#2fd35a] bg-[#35d64c] px-2 py-3 text-center text-4xl font-black text-white transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/30 sm:min-h-[168px] sm:rounded-[26px] sm:px-4 sm:py-6 sm:text-6xl"
                 >
                   +1
-                  <div className="mt-2 text-[11px] uppercase tracking-[0.12em] sm:mt-3 sm:text-sm sm:tracking-[0.16em]">Очко короля</div>
+                  <div className="mt-1 text-[9px] uppercase tracking-[0.08em] sm:mt-3 sm:text-sm sm:tracking-[0.16em]">Очко</div>
                 </button>
               </div>
             </div>
           </article>
 
-          <article className="rounded-[22px] border-[3px] border-[#2370ff] bg-[linear-gradient(180deg,rgba(7,17,42,0.96),rgba(4,11,29,0.98))] px-3 py-3 shadow-[0_24px_80px_rgba(35,112,255,0.14)] sm:rounded-[30px] sm:border-4 sm:px-5 sm:py-5">
-            <div className="flex items-center justify-between gap-3">
+          <article className="rounded-[16px] border-2 border-[#2370ff] bg-[linear-gradient(180deg,rgba(7,17,42,0.96),rgba(4,11,29,0.98))] px-2 py-2 shadow-[0_18px_54px_rgba(35,112,255,0.12)] sm:rounded-[30px] sm:border-4 sm:px-5 sm:py-5">
+            <div className="flex items-center justify-between gap-1">
               <ManualArrowButton
                 label="Претендент влево"
                 onClick={() => void runManualPairAction('challenger', 'prev')}
                 disabled={!canManualAdjust || submitting !== null}
               />
-              <div className="rounded-full border border-[#2370ff]/30 bg-[#091730] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#50bbff] sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.22em]">
+              <div className="rounded-full border border-[#2370ff]/30 bg-[#091730] px-1.5 py-1 text-[8px] font-bold uppercase tracking-[0.08em] text-[#50bbff] sm:px-4 sm:py-2 sm:text-[11px] sm:tracking-[0.22em]">
                 Пара претендент
               </div>
               <ManualArrowButton
@@ -969,65 +939,64 @@ export function KotcNextJudgeScreen({
               />
             </div>
 
-            <div className="mt-3 sm:mt-4">
-              <h2 className="text-xl font-black leading-tight text-white sm:text-3xl">{currentChallenger}</h2>
+            <div className="mt-2 sm:mt-4">
+              <h2 className="text-base font-black leading-tight text-white sm:text-3xl">{currentChallenger}</h2>
               {showArrowHelp ? (
-                <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-white/48 sm:text-xs sm:tracking-[0.18em]">
-                  Ручная перестановка претендента и очереди за ним
+                <p className="mt-1 text-[9px] uppercase tracking-[0.08em] text-white/48 sm:mt-2 sm:text-xs sm:tracking-[0.18em]">
+                  Стрелки меняют претендента
                 </p>
               ) : null}
             </div>
 
-            <div className="mt-4 grid grid-cols-[1fr_124px] gap-3 sm:mt-6 sm:grid-cols-[1fr_168px] sm:gap-4">
+            <div className="mt-2 grid grid-cols-[1fr_84px] gap-1.5 sm:mt-6 sm:grid-cols-[1fr_168px] sm:gap-4">
               <div>
-                <div className="text-[72px] font-black leading-none text-white sm:text-[96px]">
+                <div className="text-[50px] font-black leading-none text-white sm:text-[96px]">
                   {challengerStat?.kingWins ?? 0}
                 </div>
-                <div className="mt-2 space-y-1 text-[11px] text-white/62 sm:mt-3 sm:text-sm">
-                  <div>Захватов трона: {challengerStat?.takeovers ?? 0}</div>
-                  <div>Сыграно игр: {challengerStat?.gamesPlayed ?? 0}</div>
+                <div className="mt-1 space-y-0.5 text-[9px] leading-tight text-white/62 sm:mt-3 sm:space-y-1 sm:text-sm">
+                  <div>Трон: {challengerStat?.takeovers ?? 0}</div>
+                  <div>Игры: {challengerStat?.gamesPlayed ?? 0}</div>
                 </div>
               </div>
-              <div className="grid gap-3">
+              <div className="grid gap-1.5 sm:gap-3">
                 <button
                   type="button"
                   disabled={!canPlay || submitting !== null}
                   onClick={() => void runAction('takeover')}
-                  className="min-h-[132px] rounded-[22px] border border-[#2fd35a] bg-[#35d64c] px-3 py-5 text-center text-5xl font-black text-white transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/30 sm:min-h-[168px] sm:rounded-[26px] sm:px-4 sm:py-6 sm:text-6xl"
+                  className="min-h-[92px] rounded-[16px] border border-[#2fd35a] bg-[#35d64c] px-2 py-3 text-center text-4xl font-black text-white transition hover:bg-[#47e05b] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/30 sm:min-h-[168px] sm:rounded-[26px] sm:px-4 sm:py-6 sm:text-6xl"
                 >
                   +1
-                  <div className="mt-2 text-[11px] uppercase tracking-[0.12em] sm:mt-3 sm:text-sm sm:tracking-[0.16em]">Смена трона</div>
+                  <div className="mt-1 text-[9px] uppercase tracking-[0.08em] sm:mt-3 sm:text-sm sm:tracking-[0.16em]">Трон</div>
                 </button>
               </div>
             </div>
           </article>
         </section>
 
-        <section className="rounded-[22px] border border-white/8 bg-[#171717] px-3 py-3 shadow-[0_20px_60px_rgba(0,0,0,0.32)] sm:rounded-[28px] sm:px-4 sm:py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <section className="rounded-[16px] border border-white/8 bg-[#171717] px-2.5 py-2.5 shadow-[0_16px_48px_rgba(0,0,0,0.28)] sm:rounded-[28px] sm:px-4 sm:py-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="text-[11px] uppercase tracking-[0.18em] text-white/44 sm:text-[12px] sm:tracking-[0.26em]">Турнирная таблица</div>
-              <div className="mt-1 text-[11px] text-white/55 sm:text-sm">Очки короля, захваты трона и сыгранные игры по текущему корту.</div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/44 sm:text-[12px] sm:tracking-[0.26em]">Турнирная таблица</div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => setShowStandings((value) => !value)}
-                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:text-sm"
+                className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:py-2 sm:text-sm"
               >
                 {showStandings ? 'Свернуть таблицу' : 'Развернуть таблицу'}
               </button>
               <button
                 type="button"
                 onClick={() => setShowArrowHelp((value) => !value)}
-                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:text-sm"
+                className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:py-2 sm:text-sm"
               >
                 {showArrowHelp ? 'Скрыть подсказки стрелок' : 'Показать подсказки стрелок'}
               </button>
               <button
                 type="button"
                 onClick={() => startTransition(() => router.refresh())}
-                className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:text-sm"
+                className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:py-2 sm:text-sm"
               >
                 Обновить
               </button>
@@ -1035,14 +1004,15 @@ export function KotcNextJudgeScreen({
           </div>
 
           {showStandings ? (
-            <div className="mt-3 overflow-hidden rounded-[18px] border border-white/8 sm:mt-4 sm:rounded-[24px]">
+            <div className="mt-2 overflow-hidden rounded-[14px] border border-white/8 sm:mt-4 sm:rounded-[24px]">
             <table className="min-w-full text-left">
-              <thead className="bg-[#1f1f1f] text-[10px] uppercase tracking-[0.14em] text-white/38 sm:text-[12px] sm:tracking-[0.2em]">
+              <thead className="bg-[#1f1f1f] text-[9px] uppercase tracking-[0.1em] text-white/38 sm:text-[12px] sm:tracking-[0.2em]">
                 <tr>
-                  <th className="px-3 py-3 sm:px-5 sm:py-4">Пара</th>
-                  <th className="px-2 py-3 text-center sm:px-4 sm:py-4">КО</th>
-                  <th className="px-2 py-3 text-center sm:px-4 sm:py-4">ТБ</th>
-                  <th className="px-2 py-3 text-center sm:px-4 sm:py-4">ИГР</th>
+                  <th className="px-2 py-2 sm:px-5 sm:py-4">Пара</th>
+                  <th className="px-1.5 py-2 text-center sm:px-4 sm:py-4">КО</th>
+                  <th className="px-1.5 py-2 text-center sm:px-4 sm:py-4">SER</th>
+                  <th className="px-1.5 py-2 text-center sm:px-4 sm:py-4">ТБ</th>
+                  <th className="px-1.5 py-2 text-center sm:px-4 sm:py-4">ИГР</th>
                 </tr>
               </thead>
               <tbody>
@@ -1060,20 +1030,21 @@ export function KotcNextJudgeScreen({
                             : 'bg-[#141414] text-white/84'
                       }`}
                     >
-                      <td className="px-3 py-3 sm:px-5 sm:py-4">
-                        <div className="flex items-center gap-3">
-                          <span className="w-4 text-xs font-black text-white/55 sm:w-5 sm:text-sm">{index + 1}</span>
+                      <td className="px-2 py-2 sm:px-5 sm:py-4">
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <span className="w-3 text-[10px] font-black text-white/55 sm:w-5 sm:text-sm">{index + 1}</span>
                           <div>
-                            <div className="text-sm font-bold leading-tight sm:text-lg">{pairLabel(snapshot, row.pairIdx)}</div>
-                            <div className="mt-1 text-[10px] uppercase tracking-[0.1em] text-white/42 sm:text-xs sm:tracking-[0.16em]">
+                            <div className="text-xs font-bold leading-tight sm:text-lg">{pairLabel(snapshot, row.pairIdx)}</div>
+                            <div className="mt-0.5 text-[8px] uppercase tracking-[0.08em] text-white/42 sm:mt-1 sm:text-xs sm:tracking-[0.16em]">
                               {isKing ? 'King' : isChallenger ? 'Challenger' : 'Queue'}
                             </div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-2 py-3 text-center text-xl font-black sm:px-4 sm:py-4 sm:text-3xl">{row.kingWins}</td>
-                      <td className="px-2 py-3 text-center text-xl font-black sm:px-4 sm:py-4 sm:text-3xl">{row.takeovers}</td>
-                      <td className="px-2 py-3 text-center text-xl font-black sm:px-4 sm:py-4 sm:text-3xl">{row.gamesPlayed}</td>
+                      <td className="px-1.5 py-2 text-center text-base font-black sm:px-4 sm:py-4 sm:text-3xl">{row.kingWins}</td>
+                      <td className="px-1.5 py-2 text-center text-base font-black sm:px-4 sm:py-4 sm:text-3xl">{row.bestKingStreak ?? 0}</td>
+                      <td className="px-1.5 py-2 text-center text-base font-black sm:px-4 sm:py-4 sm:text-3xl">{row.takeovers}</td>
+                      <td className="px-1.5 py-2 text-center text-base font-black sm:px-4 sm:py-4 sm:text-3xl">{row.gamesPlayed}</td>
                     </tr>
                   );
                 })}
@@ -1082,22 +1053,31 @@ export function KotcNextJudgeScreen({
             </div>
           ) : null}
 
-          <div className="mt-3 grid gap-2.5 sm:mt-4 sm:gap-3 sm:grid-cols-2">
-            <div className="rounded-[18px] border border-white/8 bg-[#101010] px-3 py-3 sm:rounded-[22px] sm:px-4 sm:py-4">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-white/42 sm:text-[12px] sm:tracking-[0.26em]">Очередь на замену</div>
-              <div className="mt-2 text-[11px] text-white/74 sm:text-sm">
-                {snapshot.liveState.queueOrder.length > 0
-                  ? snapshot.liveState.queueOrder.map((pairIdx) => pairLabel(snapshot, pairIdx)).join(' · ')
-                  : 'Очередь пуста'}
+          <div className="mt-2 grid gap-2 sm:mt-4 sm:gap-3 sm:grid-cols-2">
+            <div className="rounded-[14px] border border-white/8 bg-[#101010] px-2.5 py-2 sm:rounded-[22px] sm:px-4 sm:py-4">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/42 sm:text-[12px] sm:tracking-[0.26em]">Очередь</div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
+                {snapshot.liveState.queueOrder.length > 0 ? (
+                  snapshot.liveState.queueOrder.map((pairIdx, index) => (
+                    <span
+                      key={`queue-chip-${pairIdx}-${index}`}
+                      className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold text-white/74 sm:px-2.5 sm:text-sm"
+                    >
+                      {index + 1}. {getPairShortLabel(snapshot, pairIdx)}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[11px] text-white/64 sm:text-sm">Очередь пуста</span>
+                )}
               </div>
             </div>
-            <div className="rounded-[18px] border border-white/8 bg-[#101010] px-3 py-3 sm:rounded-[22px] sm:px-4 sm:py-4">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-white/42 sm:text-[12px] sm:tracking-[0.26em]">История раундов</div>
-              <div className="mt-2 flex flex-wrap gap-2">
+            <div className="rounded-[14px] border border-white/8 bg-[#101010] px-2.5 py-2 sm:rounded-[22px] sm:px-4 sm:py-4">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/42 sm:text-[12px] sm:tracking-[0.26em]">История раундов</div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5 sm:mt-2 sm:gap-2">
                 {snapshot.raundHistory.map((entry) => (
                   <div
                     key={`history-${entry.raundNo}`}
-                    className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] sm:px-3 sm:py-1.5 sm:text-[11px] sm:tracking-[0.16em] ${
+                    className={`rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.08em] sm:px-3 sm:py-1.5 sm:text-[11px] sm:tracking-[0.16em] ${
                       entry.raundNo === snapshot.liveState.currentRaundNo
                         ? 'border-[#f2d100]/40 bg-[#2a2100] text-[#ffd400]'
                         : 'border-white/10 bg-white/5 text-white/60'
@@ -1111,44 +1091,44 @@ export function KotcNextJudgeScreen({
           </div>
         </section>
 
-        <section className="rounded-[22px] border border-white/8 bg-[#171717] px-3 py-3 shadow-[0_20px_60px_rgba(0,0,0,0.32)] sm:rounded-[28px] sm:px-4 sm:py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <section className="rounded-[16px] border border-white/8 bg-[#171717] px-2.5 py-2.5 shadow-[0_16px_48px_rgba(0,0,0,0.28)] sm:rounded-[28px] sm:px-4 sm:py-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="text-[11px] uppercase tracking-[0.18em] text-white/44 sm:text-[12px] sm:tracking-[0.26em]">История начисления очков</div>
-              <div className="mt-1 text-[11px] text-white/55 sm:text-sm">Последние очки и смены трона с точным временем.</div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/44 sm:text-[12px] sm:tracking-[0.26em]">История очков</div>
+              <div className="mt-0.5 text-[10px] text-white/50 sm:mt-1 sm:text-sm">Последние события раунда.</div>
             </div>
             <button
               type="button"
               onClick={() => setShowScoreHistory((value) => !value)}
-              className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:text-sm"
+              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:border-white/20 hover:bg-white/10 sm:px-4 sm:py-2 sm:text-sm"
             >
               {showScoreHistory ? 'Свернуть историю' : 'Развернуть историю'}
             </button>
           </div>
 
           {showScoreHistory ? (
-            <div className="mt-3 space-y-2 sm:mt-4">
+            <div className="mt-2 space-y-1.5 sm:mt-4 sm:space-y-2">
               {scoreHistory.length ? (
                 scoreHistory.map((event) => (
                   <div
                     key={event.id}
-                    className="rounded-[18px] border border-white/8 bg-[#101010] px-3 py-3 sm:px-4"
+                    className="rounded-[14px] border border-white/8 bg-[#101010] px-2.5 py-2 sm:rounded-[18px] sm:px-4 sm:py-3"
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/42">
+                      <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/42 sm:text-[10px] sm:tracking-[0.18em]">
                         #{event.seqNo} · {event.eventType === 'takeover' ? 'Смена трона' : 'Очко'}
                       </div>
-                      <div className="text-[11px] font-semibold text-white/58 sm:text-sm">
+                      <div className="text-[10px] font-semibold text-white/58 sm:text-sm">
                         {formatEventClock(event.playedAt)}
                       </div>
                     </div>
-                    <div className="mt-2 text-sm font-semibold text-white sm:text-base">
+                    <div className="mt-1 text-xs font-semibold text-white sm:mt-2 sm:text-base">
                       {describeEvent(snapshot, event)}
                     </div>
                   </div>
                 ))
               ) : (
-                <div className="rounded-[18px] border border-white/8 bg-[#101010] px-3 py-3 text-sm text-white/62 sm:px-4">
+                <div className="rounded-[14px] border border-white/8 bg-[#101010] px-2.5 py-2 text-xs text-white/62 sm:rounded-[18px] sm:px-4 sm:py-3 sm:text-sm">
                   История пока пустая.
                 </div>
               )}
@@ -1156,27 +1136,41 @@ export function KotcNextJudgeScreen({
           ) : null}
         </section>
 
-        <section className="grid gap-2.5 sm:grid-cols-3 sm:gap-4">
+        <section className="grid grid-cols-3 gap-1.5 sm:gap-4">
           <button
             type="button"
             disabled={!snapshot.canUndo || !canPlay || submitting !== null}
             onClick={() => void runUndoAction()}
-            className="rounded-[18px] border border-amber-300/25 bg-amber-500/10 px-3 py-3 text-sm font-black uppercase tracking-[0.08em] text-amber-100 transition hover:bg-amber-500/18 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 sm:rounded-[22px] sm:px-4 sm:py-4 sm:text-base"
+            className="rounded-[14px] border border-amber-300/25 bg-amber-500/10 px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.04em] text-amber-100 transition hover:bg-amber-500/18 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 sm:rounded-[22px] sm:px-4 sm:py-4 sm:text-base sm:tracking-[0.08em]"
           >
-            {submitting === 'undo' ? 'Отмена…' : 'Отмена последнего'}
+            {submitting === 'undo' ? (
+              'Отмена…'
+            ) : (
+              <>
+                <span className="sm:hidden">Отмена</span>
+                <span className="hidden sm:inline">Отмена последнего</span>
+              </>
+            )}
           </button>
           <button
             type="button"
             disabled={submitting !== null || snapshot.liveState.status === 'finished'}
             onClick={() => void runResetRaundAction()}
-            className="rounded-[18px] border border-red-500/35 bg-red-500/10 px-3 py-3 text-sm font-black uppercase tracking-[0.08em] text-red-200 transition hover:bg-red-500/18 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 sm:rounded-[22px] sm:px-4 sm:py-4 sm:text-base"
+            className="rounded-[14px] border border-red-500/35 bg-red-500/10 px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.04em] text-red-200 transition hover:bg-red-500/18 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/10 disabled:text-white/35 sm:rounded-[22px] sm:px-4 sm:py-4 sm:text-base sm:tracking-[0.08em]"
           >
-            {submitting === 'reset' ? 'Сброс…' : 'Сброс раунда'}
+            {submitting === 'reset' ? (
+              'Сброс…'
+            ) : (
+              <>
+                <span className="sm:hidden">Сброс</span>
+                <span className="hidden sm:inline">Сброс раунда</span>
+              </>
+            )}
           </button>
           <button
             type="button"
             onClick={() => startTransition(() => router.refresh())}
-            className="rounded-[18px] border border-white/10 bg-white/5 px-3 py-3 text-sm font-black uppercase tracking-[0.08em] text-white/80 transition hover:border-white/20 hover:bg-white/10 sm:rounded-[22px] sm:px-4 sm:py-4 sm:text-base"
+            className="rounded-[14px] border border-white/10 bg-white/5 px-2 py-2.5 text-[10px] font-black uppercase tracking-[0.04em] text-white/80 transition hover:border-white/20 hover:bg-white/10 sm:rounded-[22px] sm:px-4 sm:py-4 sm:text-base sm:tracking-[0.08em]"
           >
             Обновить
           </button>

@@ -33,3 +33,32 @@ export function allowLegacyPins(nodeEnv: string, overrideFlag: string): boolean 
 export function requireActorIdOnLogin(actorCredentialsCount: number): boolean {
   return Number(actorCredentialsCount || 0) > 0;
 }
+
+function hasPinValue(raw: string): boolean {
+  return String(raw || '').trim().length > 0;
+}
+
+export function hasLegacyPinCredentials(input: {
+  adminPin?: string;
+  operatorPin?: string;
+  viewerPin?: string;
+}): boolean {
+  return (
+    hasPinValue(String(input.adminPin || '')) ||
+    hasPinValue(String(input.operatorPin || '')) ||
+    hasPinValue(String(input.viewerPin || ''))
+  );
+}
+
+export function isLegacyModeActive(input: {
+  nodeEnv: string;
+  overrideFlag: string;
+  actorCredentialsCount: number;
+  adminPin?: string;
+  operatorPin?: string;
+  viewerPin?: string;
+}): boolean {
+  if (requireActorIdOnLogin(input.actorCredentialsCount)) return false;
+  if (!allowLegacyPins(input.nodeEnv, input.overrideFlag)) return false;
+  return hasLegacyPinCredentials(input);
+}
