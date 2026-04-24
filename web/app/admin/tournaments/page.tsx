@@ -3164,7 +3164,7 @@ export default function AdminTournamentsPage() {
             </div>
 
             <div className="flex items-center justify-between gap-3">
-              <label className="text-xs text-text-secondary">Таймер раунда</label>
+              <label className="text-xs text-text-secondary">Таймер раундов 1–2</label>
               <Stepper
                 value={kotcSettings?.kotcRaundTimerMinutes ?? settings.kotcRaundTimerMinutes}
                 onChange={(value) => updateSettings({ kotcRaundTimerMinutes: value })}
@@ -3624,7 +3624,7 @@ export default function AdminTournamentsPage() {
         </div>
         ) : null}
 
-        {isKotcFormat ? (
+        {isKotcFormat && (kotcSettings?.kotcJudgeModule ?? settings.kotcJudgeModule) !== 'next' ? (
           <div className="rounded-xl border border-white/15 bg-white/5 p-4 flex flex-col gap-3">
             <h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">Таймеры</h3>
 
@@ -4003,4 +4003,3 @@ export default function AdminTournamentsPage() {
     </div>
   );
 }
-

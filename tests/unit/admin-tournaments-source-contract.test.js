@@ -7,14 +7,22 @@ function read(relPath) {
 }
 
 describe('Admin tournaments page source contract', () => {
-  it('shows the creation timer block only for KOTC tournaments', () => {
+  it('shows the legacy creation timer block only for non-Next KOTC tournaments', () => {
     const adminPage = read('web/app/admin/tournaments/page.tsx');
 
     expect(adminPage).toMatch(
       /\{isKotcFormat \? \(\s*<div className="rounded-xl border border-white\/15 bg-white\/5 p-4 flex flex-col gap-3">\s*<h3 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">/,
     );
+    expect(adminPage).toContain("(kotcSettings?.kotcJudgeModule ?? settings.kotcJudgeModule) !== 'next'");
     expect(adminPage).toContain('value={settings.timerCourts}');
     expect(adminPage).toContain('value={settings.timerFinals}');
+  });
+
+  it('keeps a single KOTC Next timer control inside the dedicated Next block', () => {
+    const adminPage = read('web/app/admin/tournaments/page.tsx');
+
+    expect(adminPage).toContain('Таймер раундов 1–2');
+    expect(adminPage).toContain('value={kotcSettings?.kotcRaundTimerMinutes ?? settings.kotcRaundTimerMinutes}');
   });
 
   it('keeps GO layout configurable with explicit groups controls', () => {
