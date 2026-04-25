@@ -400,6 +400,14 @@ async function probeColumn(table: string, column: string): Promise<boolean> {
         if (/column|select|schema cache/i.test(message) && message.includes(column)) {
           return false;
         }
+        // Permission denied or inaccessible column — treat as not available, don't crash
+        if (
+          /permission denied|insufficient privilege/i.test(message) ||
+          (error instanceof Error && 'status' in error && (error as { status?: unknown }).status === 403)
+        ) {
+          return false;
+        }
+        capabilityCache.delete(cacheKey);
         throw error;
       }
     })();
