@@ -277,6 +277,7 @@ function buildStructuralSignature(tournament: TournamentRow, roster: RosterPlaye
     courts: tournament.params.courts,
     ppc: tournament.params.ppc,
     raundCount: tournament.params.raundCount,
+    takeoversMode: tournament.params.takeoversMode,
     playerIds: roster.map((player) => player.playerId),
   });
 }
@@ -423,6 +424,7 @@ async function loadTournamentTx(
       ppc: paramsBase.ppc,
       raundCount: paramsBase.raundCount,
       raundTimerMinutes: paramsBase.raundTimerMinutes,
+      takeoversMode: paramsBase.takeoversMode,
       variant: 'MF',
     },
     variant: 'MF',
@@ -486,6 +488,7 @@ async function hydrateTournamentTx(
         ppc: paramsAligned.ppc,
         raundCount: paramsAligned.raundCount,
         raundTimerMinutes: paramsAligned.raundTimerMinutes,
+        takeoversMode: paramsAligned.takeoversMode,
         variant,
       },
     },
@@ -802,6 +805,7 @@ async function loadCourtByPinTx(
       ppc: paramsBase.ppc,
       raundCount: paramsBase.raundCount,
       raundTimerMinutes: paramsBase.raundTimerMinutes,
+      takeoversMode: paramsBase.takeoversMode,
       variant: 'MF',
     },
     variant: 'MF',
@@ -836,6 +840,7 @@ async function loadCourtByPinTx(
         ppc: paramsAligned.ppc,
         raundCount: paramsAligned.raundCount,
         raundTimerMinutes: paramsAligned.raundTimerMinutes,
+        takeoversMode: paramsAligned.takeoversMode,
         variant,
       },
     },
@@ -1069,7 +1074,11 @@ function zoneFromCourtLabel(label: string): KotcNextZoneKey | null {
   return null;
 }
 
-async function loadAggregatePairRowsTx(client: PoolClient, round: RoundRow): Promise<AggregatePairRow[]> {
+async function loadAggregatePairRowsTx(
+  client: PoolClient,
+  round: RoundRow,
+  takeoversMode: TournamentRow['params']['takeoversMode'],
+): Promise<AggregatePairRow[]> {
   const courts = await listCourtsByRoundTx(client, round.roundId);
   const result: AggregatePairRow[] = [];
 
@@ -1098,7 +1107,7 @@ async function loadAggregatePairRowsTx(client: PoolClient, round: RoundRow): Pro
       }
     }
 
-    const ranked = calcKotcNextRaundStandings([...totals.values()]).map((entry, index) => ({
+    const ranked = calcKotcNextRaundStandings([...totals.values()], takeoversMode).map((entry, index) => ({
       ...entry,
       position: index + 1,
     }));
@@ -1130,7 +1139,10 @@ async function loadAggregatePairRowsTx(client: PoolClient, round: RoundRow): Pro
   return result;
 }
 
-function buildR2ZoneMap(summaryRows: AggregatePairRow[]): Map<string, KotcNextZoneKey> {
+function buildR2ZoneMap(
+  summaryRows: AggregatePairRow[],
+  takeoversMode: TournamentRow['params']['takeoversMode'],
+): Map<string, KotcNextZoneKey> {
   const draft = seedKotcNextR2Courts(
     summaryRows.map((row) => ({
       courtNo: row.courtNo,
@@ -1140,6 +1152,7 @@ function buildR2ZoneMap(summaryRows: AggregatePairRow[]): Map<string, KotcNextZo
       takeovers: row.takeovers,
       gamesPlayed: row.gamesPlayed,
     })),
+    takeoversMode,
   );
   const zoneMap = new Map<string, KotcNextZoneKey>();
   for (const zone of draft) {
@@ -1150,9 +1163,15 @@ function buildR2ZoneMap(summaryRows: AggregatePairRow[]): Map<string, KotcNextZo
   return zoneMap;
 }
 
-async function persistPlayerRoundStatsTx(client: PoolClient, round: RoundRow, summaryRows: AggregatePairRow[]): Promise<void> {
+async function persistPlayerRoundStatsTx(
+  client: PoolClient,
+  round: RoundRow,
+  summaryRows: AggregatePairRow[],
+  takeoversMode: TournamentRow['params']['takeoversMode'],
+): Promise<void> {
   await client.query(`DELETE FROM kotcn_player_round_stat WHERE round_id = $1`, [round.roundId]);
-  const r1ZoneMap = round.roundNo === 1 ? buildR2ZoneMap(summaryRows) : new Map<string, KotcNextZoneKey>();
+  const r1ZoneMap =
+    round.roundNo === 1 ? buildR2ZoneMap(summaryRows, takeoversMode) : new Map<string, KotcNextZoneKey>();
 
   for (const row of summaryRows) {
     const zone = round.roundNo === 2 ? row.zone : r1ZoneMap.get(`${row.courtNo}:${row.pairIdx}`) ?? null;
@@ -1345,6 +1364,7 @@ async function syncKotcNextResultsToTournamentResults(tournamentId: string): Pro
 
 async function finalizeRoundIfReadyTx(
   client: PoolClient,
+  tournament: TournamentRow,
   round: RoundRow,
 ): Promise<{ roundFinished: boolean; shouldPublishResults: boolean }> {
   const courts = await listCourtsByRoundTx(client, round.roundId);
@@ -1358,7 +1378,12 @@ async function finalizeRoundIfReadyTx(
   }
 
   await client.query(`UPDATE kotcn_round SET status = 'finished' WHERE id = $1`, [round.roundId]);
-  await persistPlayerRoundStatsTx(client, round, await loadAggregatePairRowsTx(client, round));
+  await persistPlayerRoundStatsTx(
+    client,
+    round,
+    await loadAggregatePairRowsTx(client, round, tournament.params.takeoversMode),
+    tournament.params.takeoversMode,
+  );
   return { roundFinished: true, shouldPublishResults: round.roundNo === 2 };
 }
 
@@ -1695,7 +1720,7 @@ async function finishRaundTx(client: PoolClient, pin: string, raundNo: number): 
   const remaining = await listRaundsByCourtTx(client, target.court.courtId);
   const hasPending = remaining.some((row) => row.raundNo !== raundNo && row.status !== 'finished');
   await setCourtStatusTx(client, target.court.courtId, hasPending ? 'pending' : 'finished');
-  const finalization = await finalizeRoundIfReadyTx(client, target.round);
+  const finalization = await finalizeRoundIfReadyTx(client, target.tournament, target.round);
 
   return {
     tournamentId: target.tournament.id,
@@ -1741,8 +1766,9 @@ export async function getKotcNextR2SeedDraft(tournamentId: string): Promise<Kotc
     const r1 = await loadRoundByNoTx(client, normalizedId, 1);
     if (!r1) throw new KotcNextError(409, 'KOTC Next R1 is not initialized');
     if (r1.status !== 'finished') throw new KotcNextError(409, 'Finish R1 before seeding R2');
+    const tournament = await loadTournamentTx(client, normalizedId);
     return seedKotcNextR2Courts(
-      (await loadAggregatePairRowsTx(client, r1)).map((row) => ({
+      (await loadAggregatePairRowsTx(client, r1, tournament.params.takeoversMode)).map((row) => ({
         courtNo: row.courtNo,
         pairIdx: row.pairIdx,
         pairLabel: row.pairLabel,
@@ -1750,6 +1776,7 @@ export async function getKotcNextR2SeedDraft(tournamentId: string): Promise<Kotc
         takeovers: row.takeovers,
         gamesPlayed: row.gamesPlayed,
       })),
+      tournament.params.takeoversMode,
     );
   });
 }
@@ -1836,7 +1863,10 @@ export async function getKotcNextJudgeSnapshotByPin(pin: string): Promise<KotcNe
       raundHistory.push({
         raundNo: raund.raundNo,
         status: raund.status,
-        standings: calcKotcNextRaundStandings(buildPairLiveStates(pairs.length, await listRaundStatsTx(client, raund.raundId))),
+        standings: calcKotcNextRaundStandings(
+          buildPairLiveStates(pairs.length, await listRaundStatsTx(client, raund.raundId)),
+          tournament.params.takeoversMode,
+        ),
       });
     }
 
@@ -1955,7 +1985,11 @@ export async function finishKotcNextRaund(pin: string, raundNo: number): Promise
   return getKotcNextJudgeSnapshotByPin(normalizedPin);
 }
 
-async function buildRoundViewTx(client: PoolClient, round: RoundRow): Promise<KotcNextOperatorRoundView> {
+async function buildRoundViewTx(
+  client: PoolClient,
+  round: RoundRow,
+  takeoversMode: TournamentRow['params']['takeoversMode'],
+): Promise<KotcNextOperatorRoundView> {
   const courts = await listCourtsByRoundTx(client, round.roundId);
   const courtViews: KotcNextCourtOperatorView[] = [];
 
@@ -1971,7 +2005,10 @@ async function buildRoundViewTx(client: PoolClient, round: RoundRow): Promise<Ko
         startedAt: raund.startedAt,
         finishedAt: raund.finishedAt,
         standings: raund.status === 'finished'
-          ? calcKotcNextRaundStandings(buildPairLiveStates(pairs.length, await listRaundStatsTx(client, raund.raundId)))
+          ? calcKotcNextRaundStandings(
+              buildPairLiveStates(pairs.length, await listRaundStatsTx(client, raund.raundId)),
+              takeoversMode,
+            )
           : null,
       });
     }
@@ -2078,7 +2115,7 @@ export async function getKotcNextOperatorStateSummary(tournamentId: string): Pro
 
     const roundViews: KotcNextOperatorRoundView[] = [];
     for (const round of rounds) {
-      roundViews.push(await buildRoundViewTx(client, round));
+      roundViews.push(await buildRoundViewTx(client, round, tournament.params.takeoversMode));
     }
 
     const stage = buildStage(rounds);
@@ -2096,7 +2133,10 @@ export async function getKotcNextOperatorStateSummary(tournamentId: string): Pro
       params: tournament.params,
       rounds: roundViews,
       r2SeedDraft: stage === 'r1_finished' && r1 ? await getKotcNextR2SeedDraft(normalizedId) : null,
-      finalResults: r2?.status === 'finished' ? buildFinalResults(await loadAggregatePairRowsTx(client, r2)) : null,
+      finalResults:
+        r2?.status === 'finished'
+          ? buildFinalResults(await loadAggregatePairRowsTx(client, r2, tournament.params.takeoversMode))
+          : null,
       canBootstrapR1: !r1,
       canFinishR1: Boolean(r1 && r1.status === 'finished' && !r2),
       canPreviewR2Seed: Boolean(r1 && r1.status === 'finished' && !r2),

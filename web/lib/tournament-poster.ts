@@ -3,6 +3,10 @@ import type { Tournament } from '@/lib/types';
 const LOCAL_TOURNAMENT_POSTERS: Record<string, string> = {
   'a19522bb-864e-4520-8182-61e035c27894':
     '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/hero.jpg',
+  '4bca6863-beb1-4fc6-ab16-9db4105552f4':
+    '/images/tournaments/4bca6863-beb1-4fc6-ab16-9db4105552f4/hero.jpg',
+  '695d6e20-5d3f-4f51-86d1-f0999e74a090':
+    '/images/tournaments/695d6e20-5d3f-4f51-86d1-f0999e74a090/hero.jpg',
   'eb07361d-8af2-45e4-8ed6-be26a45af14e':
     '/images/tournaments/eb07361d-8af2-45e4-8ed6-be26a45af14e/poster.jpg',
 };

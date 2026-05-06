@@ -30,6 +30,7 @@ describe('Thai admin live source contract', () => {
 
   it('provides an admin write route for Thai live actions', () => {
     const route = read('web/app/api/admin/tournaments/[id]/thai-action/route.ts');
+    const replaceRoute = read('web/app/api/admin/tournaments/[id]/thai-replace-player/route.ts');
 
     expect(route).toContain('bootstrap_r1');
     expect(route).toContain('preview_draw');
@@ -39,6 +40,9 @@ describe('Thai admin live source contract', () => {
     expect(route).toContain('finish_r2');
     expect(route).toContain('runThaiOperatorAction');
     expect(route).toContain('confirmThaiR2Seed');
+    expect(replaceRoute).toContain("requireApiRole(req, 'operator')");
+    expect(replaceRoute).toContain('replaceThaiTournamentPlayer');
+    expect(replaceRoute).toContain('tournament.thaiReplacePlayer');
   });
 
   it('auto-syncs Thai Next results into tournament_results when the tournament is finished', () => {
@@ -71,6 +75,20 @@ describe('Thai admin live source contract', () => {
     expect(workspace).toContain('ThaiOperatorPanel');
     expect(workspace).toContain('return (');
     expect(workspace).toContain('<ThaiOperatorPanel data={data} bootstrap={bootstrap} actions={actions} />');
+  });
+
+  it('renders a dedicated Thai live player replacement panel on the control page', () => {
+    const control = read('web/components/thai-live/ThaiTournamentControlClient.tsx');
+    const panel = read('web/components/thai-live/ThaiPlayerReplacementPanel.tsx');
+    const service = read('web/lib/thai-live/service.ts');
+
+    expect(control).toContain('ThaiPlayerReplacementPanel');
+    expect(control).toContain('onChanged={loadThaiLive}');
+    expect(panel).toContain('/thai-replace-player');
+    expect(panel).toContain('/api/admin/players?q=');
+    expect(service).toContain('replaceThaiTournamentPlayer');
+    expect(service).toContain('UPDATE thai_match_player mp');
+    expect(service).toContain('UPDATE tournament_results');
   });
 
   it('exposes a public spectator board route and API without admin auth', () => {

@@ -3,6 +3,7 @@ import type {
   KotcNextCourtLiveState,
   KotcNextPairLiveState,
   KotcNextR2SeedZone,
+  KotcNextTakeoversMode,
   KotcNextZoneKey,
 } from './types';
 
@@ -27,15 +28,23 @@ export interface KotcNextUndoInput {
 export type KotcNextManualPairSlot = 'king' | 'challenger';
 export type KotcNextManualPairDirection = 'prev' | 'next';
 
-function compareStandings(a: KotcNextPairLiveState, b: KotcNextPairLiveState): number {
+export function compareKotcNextStandings(
+  a: KotcNextPairLiveState,
+  b: KotcNextPairLiveState,
+  takeoversMode: KotcNextTakeoversMode = 'standard',
+): number {
   if (b.kingWins !== a.kingWins) return b.kingWins - a.kingWins;
-  if (b.takeovers !== a.takeovers) return b.takeovers - a.takeovers;
+  if (takeoversMode !== 'no_takeovers' && b.takeovers !== a.takeovers) return b.takeovers - a.takeovers;
   if (a.gamesPlayed !== b.gamesPlayed) return a.gamesPlayed - b.gamesPlayed;
   return a.pairIdx - b.pairIdx;
 }
 
-function compareSeedRefs(a: KotcNextSeedablePairRef, b: KotcNextSeedablePairRef): number {
-  return compareStandings(a, b);
+function compareSeedRefs(
+  a: KotcNextSeedablePairRef,
+  b: KotcNextSeedablePairRef,
+  takeoversMode: KotcNextTakeoversMode,
+): number {
+  return compareKotcNextStandings(a, b, takeoversMode);
 }
 
 function clampSeed(seed: number): number {
@@ -98,8 +107,11 @@ function assertPlayableState(state: KotcNextCourtLiveState): void {
   }
 }
 
-export function calcKotcNextRaundStandings<T extends KotcNextPairLiveState>(pairs: T[]): T[] {
-  return [...pairs].sort(compareStandings);
+export function calcKotcNextRaundStandings<T extends KotcNextPairLiveState>(
+  pairs: T[],
+  takeoversMode: KotcNextTakeoversMode = 'standard',
+): T[] {
+  return [...pairs].sort((left, right) => compareKotcNextStandings(left, right, takeoversMode));
 }
 
 export function getInitialKotcNextCourtState(
@@ -258,7 +270,10 @@ function zoneSkeleton(zone: KotcNextZoneKey): KotcNextR2SeedZone {
   return { zone, pairRefs: [] };
 }
 
-export function seedKotcNextR2Courts(allStats: KotcNextSeedablePairRef[]): KotcNextR2SeedZone[] {
+export function seedKotcNextR2Courts(
+  allStats: KotcNextSeedablePairRef[],
+  takeoversMode: KotcNextTakeoversMode = 'standard',
+): KotcNextR2SeedZone[] {
   const grouped = new Map<number, KotcNextSeedablePairRef[]>();
   for (const row of allStats) {
     const current = grouped.get(row.courtNo) ?? [];
@@ -276,7 +291,7 @@ export function seedKotcNextR2Courts(allStats: KotcNextSeedablePairRef[]): KotcN
   }
 
   const rankedByCourt = orderedCourts.map((courtNo) =>
-    [...(grouped.get(courtNo) ?? [])].sort(compareSeedRefs),
+    [...(grouped.get(courtNo) ?? [])].sort((left, right) => compareSeedRefs(left, right, takeoversMode)),
   );
 
   if (courtCount === 4 && ppc === 4) {
@@ -286,11 +301,11 @@ export function seedKotcNextR2Courts(allStats: KotcNextSeedablePairRef[]): KotcN
     const thirdCandidates = firstThree.map((rows) => rows[2]).filter(Boolean);
     const fourthCandidates = firstThree.map((rows) => rows[3]).filter(Boolean);
 
-    const bestSecond = [...secondCandidates].sort(compareSeedRefs)[0];
+    const bestSecond = [...secondCandidates].sort((left, right) => compareSeedRefs(left, right, takeoversMode))[0];
     const remainingSeconds = secondCandidates
       .filter((row) => row.pairLabel !== bestSecond?.pairLabel || row.courtNo !== bestSecond?.courtNo)
       .sort((a, b) => a.courtNo - b.courtNo || a.pairIdx - b.pairIdx);
-    const sortedThird = [...thirdCandidates].sort(compareSeedRefs);
+    const sortedThird = [...thirdCandidates].sort((left, right) => compareSeedRefs(left, right, takeoversMode));
     const bestTwoThird = sortedThird.slice(0, 2);
     const remainingThird = sortedThird[2] ? [sortedThird[2]] : [];
 

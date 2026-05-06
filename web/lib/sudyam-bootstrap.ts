@@ -44,6 +44,7 @@ import {
   normalizeGoAdminSettings,
   normalizeKotcJudgeBootstrapSignature,
   normalizeKotcJudgeModule,
+  normalizeKotcTakeoversMode,
   type KotcJudgeModule,
 } from "./admin-legacy-sync";
 import {
@@ -282,6 +283,7 @@ export async function resolveSudyamBootstrap(
       courts: normalizedCourts,
       ppc: normalizedPpc,
       raundCount: normalizedRaundCount,
+      takeoversMode: normalizeKotcTakeoversMode(settings.kotcTakeoversMode),
       playerIds: mainParticipants.map((participant) => participant.playerId),
     });
 

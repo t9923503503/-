@@ -46,4 +46,29 @@ describe('Admin tournaments page source contract', () => {
     expect(preflightRoute).toContain('canGoLive');
     expect(preflightRoute).toContain('pair-order-rule');
   });
+
+  it('routes Thai mixed auto-add into the first empty slot of the matching gender', () => {
+    const adminPage = read('web/app/admin/tournaments/page.tsx');
+
+    expect(adminPage).toContain('function findFirstMatchingThaiSlot(');
+    expect(adminPage).toContain('const preferredThaiSlot =');
+    expect(adminPage).toContain("player.gender === 'W'");
+    expect(adminPage).toContain(
+      "findFirstMatchingThaiSlot(\n              current,\n              participantLimit,\n              thaiSettings.thaiVariant,\n              player.gender,",
+    );
+    expect(adminPage).toContain(
+      "draftPlayers.filter(\n          (draftPlayer) => draftPlayer && draftPlayer.gender === player.gender,",
+    );
+  });
+
+  it('exposes a dedicated KOTC Next no-takeovers toggle', () => {
+    const adminPage = read('web/app/admin/tournaments/page.tsx');
+
+    expect(adminPage).toContain('Без заходов');
+    expect(adminPage).toContain('type="checkbox"');
+    expect(adminPage).toContain("event.target.checked ? 'no_takeovers' : 'standard'");
+    expect(adminPage).toContain('Таблица считается без учета заходов.');
+    expect(adminPage).toContain('Заходы учитываются как дополнительный критерий.');
+    expect(adminPage).toContain('kotcTakeoversMode');
+  });
 });

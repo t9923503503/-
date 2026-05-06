@@ -246,12 +246,16 @@ export function ThaiJudgeWorkspace({
   const [selectedTourNo, setSelectedTourNo] = useState(initialSnapshot.currentTourNo);
   const [scoreEditor, setScoreEditor] = useState<ScoreEditorState | null>(null);
   const [standingsOpen, setStandingsOpen] = useState(false);
+  const [toursOpen, setToursOpen] = useState(true);
   const [pointHistoryByMatch, setPointHistoryByMatch] = useState<Record<string, ThaiJudgePointHistoryEvent[]>>({});
   const [serveStateByMatch, setServeStateByMatch] = useState<Record<string, ThaiJudgeServeState>>({});
   const [historyFilterByMatch, setHistoryFilterByMatch] = useState<Record<string, HistoryFilter>>({});
+  const [historyOpenByMatch, setHistoryOpenByMatch] = useState<Record<string, true>>({});
   const [swappedMatchSides, setSwappedMatchSides] = useState<Record<string, true>>({});
   const [serveSetupState, setServeSetupState] = useState<ServeSetupState | null>(null);
   const [lastEdit, setLastEdit] = useState<LastEditState | null>(null);
+  const [pendingUndoMatchId, setPendingUndoMatchId] = useState<string | null>(null);
+  const [pendingUndoUntil, setPendingUndoUntil] = useState(0);
   const [confirmCooldownUntil, setConfirmCooldownUntil] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const scoreTapRef = useRef<Record<string, number>>({});
@@ -286,6 +290,9 @@ export function ThaiJudgeWorkspace({
     setSwappedMatchSides({});
     setServeSetupState(null);
     setConfirmCooldownUntil(0);
+    setHistoryOpenByMatch({});
+    setPendingUndoMatchId(null);
+    setPendingUndoUntil(0);
   }, [initialSnapshot]);
 
   useEffect(() => {
@@ -473,6 +480,8 @@ export function ThaiJudgeWorkspace({
   }
 
   function rememberLastEdit(matchId: string) {
+    setPendingUndoMatchId(null);
+    setPendingUndoUntil(0);
     setLastEdit({
       matchId,
       previousScore: scores[matchId] ?? { team1: 0, team2: 0 },
@@ -647,6 +656,13 @@ export function ThaiJudgeWorkspace({
 
   function undoLastScoreAction() {
     if (!isViewingEditableTour || !lastEdit) return;
+    const isUndoArmed = pendingUndoMatchId === lastEdit.matchId && pendingUndoUntil > Date.now();
+    if (!isUndoArmed) {
+      setPendingUndoMatchId(lastEdit.matchId);
+      setPendingUndoUntil(Date.now() + 5000);
+      setToast({ tone: 'info', message: 'Нажмите ещё раз, чтобы отменить последнее изменение.' });
+      return;
+    }
     const nextScores = { ...scores, [lastEdit.matchId]: lastEdit.previousScore };
     const nextPointHistory = { ...pointHistoryByMatch, [lastEdit.matchId]: lastEdit.previousPointHistory };
     const nextServeStates = buildNextServeStateMap(lastEdit.matchId, lastEdit.previousServeState);
@@ -658,6 +674,8 @@ export function ThaiJudgeWorkspace({
     setServeStateByMatch(nextServeStates);
     setTouchedMatches(nextTouched);
     writeDraft(nextScores, nextServeStates, nextPointHistory);
+    setPendingUndoMatchId(null);
+    setPendingUndoUntil(0);
     setToast({ tone: 'info', message: 'Последнее изменение отменено.' });
     setLastEdit(null);
   }
@@ -812,78 +830,99 @@ export function ThaiJudgeWorkspace({
         ) : null}
 
         <section className="rounded-[18px] border border-[#2a2a3f] bg-[linear-gradient(180deg,rgba(18,17,29,0.98),rgba(12,12,24,0.98))] px-3 py-3 shadow-[0_20px_60px_rgba(0,0,0,0.3)]">
-          {navigationMode === 'standalone' ? (
+          <button
+            type="button"
+            onClick={() => setToursOpen((value) => !value)}
+            className="flex w-full items-center justify-between gap-3 text-left"
+            aria-expanded={toursOpen}
+          >
+            <div className="text-[10px] uppercase tracking-[0.22em] text-[#8f7c4a]">Туры</div>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#aeb6c8]">
+              {toursOpen ? 'Скрыть' : 'Показать'}
+            </span>
+          </button>
+          {toursOpen ? (
             <>
-              <div className="mb-3 flex flex-wrap gap-2">
-                {snapshot.roundNav.map((round) => {
-                  const isActive = round.isActive;
-                  const disabled = !round.isAvailable || !round.judgeUrl;
-                  const className = `rounded-full border px-4 py-2 text-[11px] font-bold uppercase tracking-[0.24em] transition ${roundTabTone(round, isActive)} ${disabled ? 'cursor-not-allowed opacity-55' : ''}`;
-                  if (disabled) {
-                    return (
-                      <span key={round.roundType} aria-disabled="true" className={className}>
-                        {resolveRoundTabLabel(round)}
-                      </span>
-                    );
-                  }
+              {navigationMode === 'standalone' ? (
+                <>
+                  <div className="mb-3 mt-3 flex flex-wrap gap-2">
+                    {snapshot.roundNav.map((round) => {
+                      const isActive = round.isActive;
+                      const disabled = !round.isAvailable || !round.judgeUrl;
+                      const className = `rounded-full border px-4 py-2 text-[11px] font-bold uppercase tracking-[0.24em] transition ${roundTabTone(round, isActive)} ${disabled ? 'cursor-not-allowed opacity-55' : ''}`;
+                      if (disabled) {
+                        return (
+                          <span key={round.roundType} aria-disabled="true" className={className}>
+                            {resolveRoundTabLabel(round)}
+                          </span>
+                        );
+                      }
+                      return (
+                        <Link key={round.roundType} href={round.judgeUrl ?? '/'} aria-current={isActive ? 'page' : undefined} className={className}>
+                          {resolveRoundTabLabel(round)}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                  <div className="mb-3 text-[11px] uppercase tracking-[0.22em] text-[#7d8498]">
+                    {snapshot.roundNav.map((round) => `${round.label}: ${roundStatusLabel(round)}`).join(' • ')}
+                  </div>
+                  {snapshot.roundNav.find((round) => !round.isAvailable && round.unavailableReason) ? (
+                    <div className="mb-3 rounded-[14px] border border-white/8 bg-white/5 px-3 py-2 text-[12px] text-[#c6cad6]">
+                      {snapshot.roundNav.find((round) => !round.isAvailable && round.unavailableReason)?.unavailableReason}
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2">
+                {snapshot.tours.map((tour) => {
+                  const isActive = selectedTour?.tourNo === tour.tourNo;
+                  const disabled = tour.tourNo > snapshot.currentTourNo;
                   return (
-                    <Link key={round.roundType} href={round.judgeUrl ?? '/'} aria-current={isActive ? 'page' : undefined} className={className}>
-                      {resolveRoundTabLabel(round)}
-                    </Link>
+                    <button
+                      key={tour.tourId}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => setSelectedTourNo(tour.tourNo)}
+                      className={`rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] transition ${tourTabTone(tour, isActive)} ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+                    >
+                      T{tour.tourNo}
+                    </button>
                   );
                 })}
               </div>
-              <div className="mb-3 text-[11px] uppercase tracking-[0.22em] text-[#7d8498]">
-                {snapshot.roundNav.map((round) => `${round.label}: ${roundStatusLabel(round)}`).join(' • ')}
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-[#7d8498]">
+                <span>{selectedTour?.isEditable ? 'LIVE' : selectedTour?.status === 'confirmed' ? 'RO' : 'Ждите'}</span>
+                <span className="rounded-full border border-[#5b4713] bg-[#1b160d] px-2 py-1 text-[9px] tracking-[0.14em] text-[#ffd24a]">
+                  До {snapshot.pointLimit}
+                </span>
+                <span className="rounded-full border border-white/8 bg-white/5 px-2 py-1 text-[9px] tracking-[0.14em] text-[#aeb6c8]">
+                  Обновлено {freshnessLabel}
+                </span>
+                {hasDraftScores && isViewingEditableTour ? (
+                  <span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-2 py-1 text-[9px] tracking-[0.14em] text-amber-100">
+                    Черновик сохранён
+                  </span>
+                ) : null}
+                {lastEdit && isViewingEditableTour ? (
+                  <button
+                    type="button"
+                    onClick={undoLastScoreAction}
+                    className={`rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] transition ${
+                      pendingUndoMatchId === lastEdit.matchId && pendingUndoUntil > nowMs
+                        ? 'border-red-400/35 bg-red-500/15 text-red-100 hover:border-red-300/45 hover:bg-red-500/20'
+                        : 'border-white/10 bg-white/5 text-white/85 hover:border-white/20 hover:bg-white/10'
+                    }`}
+                  >
+                    {pendingUndoMatchId === lastEdit.matchId && pendingUndoUntil > nowMs
+                      ? 'Подтвердить отмену'
+                      : 'Отменить последнее'}
+                  </button>
+                ) : null}
               </div>
-              {snapshot.roundNav.find((round) => !round.isAvailable && round.unavailableReason) ? (
-                <div className="mb-3 rounded-[14px] border border-white/8 bg-white/5 px-3 py-2 text-[12px] text-[#c6cad6]">
-                  {snapshot.roundNav.find((round) => !round.isAvailable && round.unavailableReason)?.unavailableReason}
-                </div>
-              ) : null}
             </>
           ) : null}
-
-          <div className="flex flex-wrap gap-2">
-            {snapshot.tours.map((tour) => {
-              const isActive = selectedTour?.tourNo === tour.tourNo;
-              const disabled = tour.tourNo > snapshot.currentTourNo;
-              return (
-                <button
-                  key={tour.tourId}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => setSelectedTourNo(tour.tourNo)}
-                  className={`rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] transition ${tourTabTone(tour, isActive)} ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
-                >
-                  T{tour.tourNo}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-[#7d8498]">
-            <span>{selectedTour?.isEditable ? 'LIVE' : selectedTour?.status === 'confirmed' ? 'RO' : 'Ждите'}</span>
-            <span className="rounded-full border border-[#5b4713] bg-[#1b160d] px-2 py-1 text-[9px] tracking-[0.14em] text-[#ffd24a]">
-              До {snapshot.pointLimit}
-            </span>
-            <span className="rounded-full border border-white/8 bg-white/5 px-2 py-1 text-[9px] tracking-[0.14em] text-[#aeb6c8]">
-              Обновлено {freshnessLabel}
-            </span>
-            {hasDraftScores && isViewingEditableTour ? (
-              <span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-2 py-1 text-[9px] tracking-[0.14em] text-amber-100">
-                Черновик сохранён
-              </span>
-            ) : null}
-            {lastEdit && isViewingEditableTour ? (
-              <button
-                type="button"
-                onClick={undoLastScoreAction}
-                className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/20 hover:bg-white/10"
-              >
-                Отменить последнее
-              </button>
-            ) : null}
-          </div>
         </section>
 
         {(snapshot.kind !== 'active' || !selectedTour?.isEditable) && snapshot.message ? (
@@ -959,6 +998,7 @@ export function ThaiJudgeWorkspace({
               },
               [],
             );
+            const isHistoryOpen = Boolean(historyOpenByMatch[match.matchId]);
             const matchError = scoreErrorsByMatch.get(match.matchId) ?? null;
             const isMissing = !touchedMatches[match.matchId];
             const needsAttention = Boolean(matchError || isMissing);
@@ -1156,7 +1196,24 @@ export function ThaiJudgeWorkspace({
                   <div className="mt-4 rounded-[20px] border border-white/10 bg-black/20 p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <div className="text-[10px] uppercase tracking-[0.24em] text-[#8f7c4a]">История очков</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-[10px] uppercase tracking-[0.24em] text-[#8f7c4a]">История очков</div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setHistoryOpenByMatch((current) => {
+                                const next = { ...current };
+                                if (next[match.matchId]) delete next[match.matchId];
+                                else next[match.matchId] = true;
+                                return next;
+                              })
+                            }
+                            className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-white/85 transition hover:border-white/20 hover:bg-white/10"
+                            aria-expanded={isHistoryOpen}
+                          >
+                            {isHistoryOpen ? 'Скрыть' : 'Показать'}
+                          </button>
+                        </div>
                         <div className="mt-1 text-xs text-white/72">
                           {pointHistory.length ? `${pointHistory.length} событий` : 'История появится после первого розыгрыша.'}
                         </div>
@@ -1197,68 +1254,72 @@ export function ThaiJudgeWorkspace({
                       </div>
                     </div>
 
-                    {!serveState && isViewingEditableTour ? (
-                      <div className="mt-3 rounded-[14px] border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
-                        Перед первым розыгрышем задайте очередь подачи для матча.
-                      </div>
-                    ) : null}
+                    {isHistoryOpen ? (
+                      <>
+                        {!serveState && isViewingEditableTour ? (
+                          <div className="mt-3 rounded-[14px] border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                            Перед первым розыгрышем задайте очередь подачи для матча.
+                          </div>
+                        ) : null}
 
-                    {visiblePointHistory.length ? (
-                      <div
-                        ref={(node) => {
-                          pointHistoryFeedRefs.current[match.matchId] = node;
-                        }}
-                        className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1"
-                      >
-                        {visiblePointHistory.map(({ event, index }) => {
-                          const streak = getHistoryStreak(pointHistory, index);
-                          const teamLabel =
-                            event.scoringSide === 1
-                              ? match.team1.label
-                              : event.scoringSide === 2
-                                ? match.team2.label
-                                : 'Коррекция';
-                          const serverLabel = event.serverPlayerBefore?.playerName ?? 'не задана';
-                          return (
-                            <div
-                              key={`${match.matchId}-history-${event.seqNo}`}
-                              className={`rounded-[16px] border px-3 py-2 text-sm ${
-                                event.kind === 'correction'
-                                  ? 'border-white/10 bg-white/5 text-white/78'
-                                  : event.scoringSide === 1
-                                    ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
-                                    : 'border-orange-400/25 bg-orange-500/10 text-orange-100'
-                              }`}
-                            >
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-[11px] text-white/45">{formatHistoryScore(event.scoreBefore)}</span>
-                                <span className="text-base font-black">→</span>
-                                <span className="font-semibold">{teamLabel}</span>
-                                {event.kind === 'rally' ? (
-                                  <span className="text-[12px] italic text-white/70">(подача: {serverLabel})</span>
-                                ) : null}
-                                <span className="ml-auto text-base font-black text-[#ffd24a]">
-                                  {formatHistoryScore(event.scoreAfter)}
-                                </span>
-                              </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-white/55">
-                                {event.kind === 'correction' ? <span>Коррекция счёта</span> : null}
-                                {event.isSideOut ? <span className="rounded-full border border-white/10 px-2 py-0.5">side-out</span> : null}
-                                {streak >= 2 ? (
-                                  <span className="rounded-full border border-white/10 px-2 py-0.5">{streak} подряд</span>
-                                ) : null}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="mt-3 rounded-[14px] border border-white/8 bg-white/5 px-3 py-3 text-sm text-white/62">
-                        {historyFilter === 'all'
-                          ? 'История очков пока пустая.'
-                          : 'По текущему фильтру событий пока нет.'}
-                      </div>
-                    )}
+                        {visiblePointHistory.length ? (
+                          <div
+                            ref={(node) => {
+                              pointHistoryFeedRefs.current[match.matchId] = node;
+                            }}
+                            className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1"
+                          >
+                            {visiblePointHistory.map(({ event, index }) => {
+                              const streak = getHistoryStreak(pointHistory, index);
+                              const teamLabel =
+                                event.scoringSide === 1
+                                  ? match.team1.label
+                                  : event.scoringSide === 2
+                                    ? match.team2.label
+                                    : 'Коррекция';
+                              const serverLabel = event.serverPlayerBefore?.playerName ?? 'не задана';
+                              return (
+                                <div
+                                  key={`${match.matchId}-history-${event.seqNo}`}
+                                  className={`rounded-[16px] border px-3 py-2 text-sm ${
+                                    event.kind === 'correction'
+                                      ? 'border-white/10 bg-white/5 text-white/78'
+                                      : event.scoringSide === 1
+                                        ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
+                                        : 'border-orange-400/25 bg-orange-500/10 text-orange-100'
+                                  }`}
+                                >
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-[11px] text-white/45">{formatHistoryScore(event.scoreBefore)}</span>
+                                    <span className="text-base font-black">→</span>
+                                    <span className="font-semibold">{teamLabel}</span>
+                                    {event.kind === 'rally' ? (
+                                      <span className="text-[12px] italic text-white/70">(подача: {serverLabel})</span>
+                                    ) : null}
+                                    <span className="ml-auto text-base font-black text-[#ffd24a]">
+                                      {formatHistoryScore(event.scoreAfter)}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-white/55">
+                                    {event.kind === 'correction' ? <span>Коррекция счёта</span> : null}
+                                    {event.isSideOut ? <span className="rounded-full border border-white/10 px-2 py-0.5">side-out</span> : null}
+                                    {streak >= 2 ? (
+                                      <span className="rounded-full border border-white/10 px-2 py-0.5">{streak} подряд</span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="mt-3 rounded-[14px] border border-white/8 bg-white/5 px-3 py-3 text-sm text-white/62">
+                            {historyFilter === 'all'
+                              ? 'История очков пока пустая.'
+                              : 'По текущему фильтру событий пока нет.'}
+                          </div>
+                        )}
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </article>

@@ -1,7 +1,10 @@
-// KOTC Next — shared type definitions
+// KOTC Next вЂ” shared type definitions
 // Mirrors Thai Next structure but for King-of-the-Court mechanics
 
+import type { KotcTakeoversMode } from '@/lib/admin-legacy-sync';
+
 export type KotcNextVariant = 'MF' | 'MM' | 'WW' | 'MN';
+export type KotcNextTakeoversMode = KotcTakeoversMode;
 export type KotcNextRoundType = 'r1' | 'r2';
 export type KotcNextRoundStatus = 'pending' | 'live' | 'finished';
 export type KotcNextCourtStatus = 'pending' | 'live' | 'finished';
@@ -22,26 +25,27 @@ export type KotcNextOperatorActionName =
   | 'bootstrap_r2'
   | 'finish_r2';
 
-// ─── Judge params (tournament-level config) ───────────────────────────────────
+// в”Ђв”Ђв”Ђ Judge params (tournament-level config) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 export interface KotcNextJudgeParams {
   variant: KotcNextVariant;
-  courts: number;      // 1–4
-  ppc: number;         // pairs per court (3–5)
-  raundCount: number;  // rounds per tour (1–4)
-  raundTimerMinutes: number; // 9–20
+  courts: number;      // 1вЂ“4
+  ppc: number;         // pairs per court (3вЂ“5)
+  raundCount: number;  // rounds per tour (1вЂ“4)
+  raundTimerMinutes: number; // 9вЂ“20
+  takeoversMode: KotcNextTakeoversMode;
 }
 
-// ─── Pair (fixed for the duration of a round) ─────────────────────────────────
+// в”Ђв”Ђв”Ђ Pair (fixed for the duration of a round) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 export interface KotcNextPairView {
   pairIdx: number;
   primaryPlayer: { id: string; name: string } | null;
   secondaryPlayer: { id: string; name: string } | null;
-  label: string; // e.g. "Иванов / Сабанцева"
+  label: string; // e.g. "РРІР°РЅРѕРІ / РЎР°Р±Р°РЅС†РµРІР°"
 }
 
-// ─── Live state (per raund, returned by API after each game event) ────────────
+// в”Ђв”Ђв”Ђ Live state (per raund, returned by API after each game event) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 export interface KotcNextPairLiveState {
   pairIdx: number;
@@ -61,7 +65,7 @@ export interface KotcNextCourtLiveState {
   status: KotcNextRaundStatus;
 }
 
-// ─── Game event (one entry in kotcn_game) ─────────────────────────────────────
+// в”Ђв”Ђв”Ђ Game event (one entry in kotcn_game) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 export interface KotcNextGameEvent {
   id: string;
@@ -72,7 +76,7 @@ export interface KotcNextGameEvent {
   playedAt: string;
 }
 
-// ─── Judge snapshot (returned to judge UI) ────────────────────────────────────
+// в”Ђв”Ђв”Ђ Judge snapshot (returned to judge UI) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 export interface KotcNextRaundHistoryEntry {
   raundNo: number;
@@ -124,7 +128,7 @@ export interface KotcNextJudgeSnapshot {
   canUndo: boolean; // true if there is at least one game event to undo
 }
 
-// ─── Operator state (returned to operator/sudyam UI) ──────────────────────────
+// в”Ђв”Ђв”Ђ Operator state (returned to operator/sudyam UI) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 export interface KotcNextCourtRaundProgress {
   raundNo: number;
@@ -191,11 +195,11 @@ export interface KotcNextOperatorState {
   canFinishR2: boolean;
 }
 
-// ─── Final results ─────────────────────────────────────────────────────────────
+// в”Ђв”Ђв”Ђ Final results в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 export interface KotcNextFinalZoneResult {
   zone: KotcNextZoneKey;
-  zoneLabel: string; // 'КИН' | 'АДАНС' | 'МЕДИУМ' | 'ЛАЙТ'
+  zoneLabel: string; // 'РљРРќ' | 'РђР”РђРќРЎ' | 'РњР•Р”РРЈРњ' | 'Р›РђР™Рў'
   pairs: Array<{
     position: number;
     pairLabel: string;
@@ -206,7 +210,7 @@ export interface KotcNextFinalZoneResult {
   }>;
 }
 
-// ─── Spectator board payload ───────────────────────────────────────────────────
+// в”Ђв”Ђв”Ђ Spectator board payload в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 export interface KotcNextFunStats {
   kingslayer: { pairLabel: string; takeovers: number } | null;      // max takeovers

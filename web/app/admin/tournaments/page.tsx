@@ -53,12 +53,14 @@ import {
   normalizeGoAdminSettings,
   normalizeKotcAdminSettings,
   normalizeKotcJudgeModule,
+  normalizeKotcTakeoversMode,
   normalizeThaiAdminSettings,
   normalizeThaiRosterMode,
   normalizeThaiRulesPreset,
   normalizeThaiTourCount,
   normalizeThaiVariant,
   type KotcJudgeModule,
+  type KotcTakeoversMode,
   validateThaiRoster,
 } from '@/lib/admin-legacy-sync';
 import { buildSudyamLaunchUrl, getSudyamFormatForTournament } from '@/lib/sudyam-launch';
@@ -113,6 +115,7 @@ type TournamentSettings = {
   iptFinishType: 'hard' | 'balance';
   kotcJudgeModule: KotcJudgeModule;
   kotcJudgeBootstrapSignature: string | null;
+  kotcTakeoversMode: KotcTakeoversMode;
   kotcPpc: number;
   kotcRaundCount: number;
   kotcRaundTimerMinutes: number;
@@ -230,6 +233,7 @@ const defaultSettings: TournamentSettings = {
   iptFinishType: 'hard',
   kotcJudgeModule: 'next',
   kotcJudgeBootstrapSignature: null,
+  kotcTakeoversMode: 'standard',
   kotcPpc: KOTC_ADMIN_DEFAULT_PPC,
   kotcRaundCount: KOTC_ADMIN_DEFAULT_RAUNDS,
   kotcRaundTimerMinutes: KOTC_ADMIN_DEFAULT_TIMER,
@@ -465,6 +469,7 @@ function normalizeKotcSettings(
     playersPerCourt: kotcSettings.playersPerCourt,
     kotcJudgeModule: normalizeKotcJudgeModule(base.kotcJudgeModule, fallbackModule),
     kotcJudgeBootstrapSignature: kotcSettings.kotcJudgeBootstrapSignature,
+    kotcTakeoversMode: normalizeKotcTakeoversMode(base.kotcTakeoversMode ?? kotcSettings.kotcTakeoversMode),
     kotcPpc: kotcSettings.ppc,
     kotcRaundCount: kotcSettings.raundCount,
     kotcRaundTimerMinutes: kotcSettings.raundTimerMinutes,
@@ -547,6 +552,30 @@ function getThaiSlotHint(variant: ThaiVariant, slotIndex: number): string | null
   if (variant === 'WW') return 'Женщина';
   if (variant === 'MF') return slotIndex < 4 ? 'M' : 'Ж';
   return null;
+}
+
+function getThaiExpectedSlotGender(variant: ThaiVariant, slotIndex: number): 'M' | 'W' | null {
+  if (variant === 'MM') return 'M';
+  if (variant === 'WW') return 'W';
+  if (variant !== 'MF') return null;
+  const localSlotIndex =
+    ((slotIndex % THAI_ADMIN_PLAYERS_PER_COURT) + THAI_ADMIN_PLAYERS_PER_COURT) %
+    THAI_ADMIN_PLAYERS_PER_COURT;
+  return localSlotIndex < THAI_ADMIN_PLAYERS_PER_COURT / 2 ? 'M' : 'W';
+}
+
+function findFirstMatchingThaiSlot(
+  draftPlayers: Array<DraftPlayer | undefined>,
+  participantLimit: number,
+  variant: ThaiVariant,
+  gender: 'M' | 'W',
+): number {
+  for (let index = 0; index < participantLimit; index += 1) {
+    if (draftPlayers[index]) continue;
+    const expectedGender = getThaiExpectedSlotGender(variant, index);
+    if (!expectedGender || expectedGender === gender) return index;
+  }
+  return -1;
 }
 
 function buildJudgeLaunchUrl(row: Pick<Row, 'id' | 'format'>): string {
@@ -1782,6 +1811,7 @@ export default function AdminTournamentsPage() {
         currentSettings.playersPerCourt === nextSettings.playersPerCourt &&
         currentSettings.kotcJudgeModule === nextSettings.kotcJudgeModule &&
         currentSettings.kotcJudgeBootstrapSignature === nextSettings.kotcJudgeBootstrapSignature &&
+        currentSettings.kotcTakeoversMode === nextSettings.kotcTakeoversMode &&
         currentSettings.kotcPpc === nextSettings.kotcPpc &&
         currentSettings.kotcRaundCount === nextSettings.kotcRaundCount &&
         currentSettings.kotcRaundTimerMinutes === nextSettings.kotcRaundTimerMinutes
@@ -2085,7 +2115,9 @@ export default function AdminTournamentsPage() {
         return;
       }
       if (thaiSettings.thaiVariant === 'MF') {
-        const sameGenderCount = draftPlayers.filter((draftPlayer) => draftPlayer.gender === player.gender).length;
+        const sameGenderCount = draftPlayers.filter(
+          (draftPlayer) => draftPlayer && draftPlayer.gender === player.gender,
+        ).length;
         const sameGenderLimit = participantLimit / 2;
         if (sameGenderCount >= sameGenderLimit) {
           setMessage(
@@ -2097,11 +2129,38 @@ export default function AdminTournamentsPage() {
         }
       }
     }
+    const preferredThaiSlot =
+      isThaiFormat && thaiSettings
+        ? findFirstMatchingThaiSlot(
+            draftPlayers,
+            participantLimit,
+            thaiSettings.thaiVariant,
+            player.gender,
+          )
+        : -1;
+    if (isThaiFormat && thaiSettings && preferredThaiSlot === -1) {
+      setMessage(
+        player.gender === 'W'
+          ? 'Нет свободных женских слотов на кортах.'
+          : 'Нет свободных мужских слотов на кортах.',
+      );
+      return;
+    }
+
     let nextDraftRef: DraftPlayer[] = [];
     setDraftPlayers((current) => {
-      const holeIndex = current.findIndex((p) => !p);
+      const holeIndex =
+        isThaiFormat && thaiSettings
+          ? findFirstMatchingThaiSlot(
+              current,
+              participantLimit,
+              thaiSettings.thaiVariant,
+              player.gender,
+            )
+          : current.findIndex((p) => !p);
       if (holeIndex !== -1 && holeIndex < participantLimit) {
         const next = [...current];
+        while (next.length <= holeIndex) next.push(undefined as unknown as DraftPlayer);
         next[holeIndex] = {
           playerId: player.id,
           playerName: player.name,
@@ -3143,6 +3202,20 @@ export default function AdminTournamentsPage() {
               />
             </div>
 
+            <label className="flex min-h-[44px] items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-xs text-text-secondary">
+              <span>Без заходов</span>
+              <input
+                type="checkbox"
+                checked={(kotcSettings?.kotcTakeoversMode ?? settings.kotcTakeoversMode) === 'no_takeovers'}
+                onChange={(event) =>
+                  updateSettings({
+                    kotcTakeoversMode: event.target.checked ? 'no_takeovers' : 'standard',
+                  } satisfies Pick<TournamentSettings, 'kotcTakeoversMode'>)
+                }
+                className="h-4 w-4 accent-brand"
+              />
+            </label>
+
             <div className="flex items-center justify-between gap-3">
               <label className="text-xs text-text-secondary">Пар на корт</label>
               <Stepper
@@ -3178,6 +3251,10 @@ export default function AdminTournamentsPage() {
               KOTC Next: {settings.courts} корт(а), по {kotcSettings?.kotcPpc ?? settings.kotcPpc} пар на корт,
               {` `}{playersPerCourt} игроков на площадку, {kotcSettings?.kotcRaundCount ?? settings.kotcRaundCount} раунд(а) по
               {` `}{kotcSettings?.kotcRaundTimerMinutes ?? settings.kotcRaundTimerMinutes} мин.
+              {` `}
+              {(kotcSettings?.kotcTakeoversMode ?? settings.kotcTakeoversMode) === 'no_takeovers'
+                ? 'Таблица считается без учета заходов.'
+                : 'Заходы учитываются как дополнительный критерий.'}
             </div>
 
             {kotcSettings?.kotcJudgeModule === 'next' ? (
@@ -4003,4 +4080,3 @@ export default function AdminTournamentsPage() {
     </div>
   );
 }
-

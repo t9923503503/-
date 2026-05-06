@@ -57,6 +57,11 @@ describe('Thai judge v2 source contract', () => {
     expect(workspace).toContain('scoreErrorsByMatch');
     expect(workspace).toContain('confirmBlockedReason');
     expect(workspace).toContain('undoLastScoreAction');
+    expect(workspace).toContain('pendingUndoMatchId');
+    expect(workspace).toContain('pendingUndoUntil');
+    expect(workspace).toContain('toursOpen');
+    expect(workspace).toContain('Туры');
+    expect(workspace).toContain('Подтвердить отмену');
     expect(workspace).toContain('Обновлено {freshnessLabel}');
     expect(workspace).toContain('Черновик сохранён');
     expect(workspace).toContain('Ввести');
@@ -85,6 +90,7 @@ describe('Thai judge v2 source contract', () => {
     expect(tournamentWorkspace).toContain('router.replace');
     expect(tournamentWorkspace).toContain('canAutoRefreshToNextStage');
     expect(tournamentWorkspace).toContain('unavailableReason');
+    expect(tournamentWorkspace).toContain('judgeScreenOpen');
     expect(tournamentWorkspace).toContain('snapshot.rounds.map');
     expect(tournamentWorkspace).toContain('selectedRound.courts.map');
     expect(tournamentWorkspace).toContain('switchSelection');

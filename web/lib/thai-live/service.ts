@@ -2763,6 +2763,19 @@ export interface ThaiAdminTourCorrectionAudit {
   afterMatches: Array<{ matchId: string; team1Score: number | null; team2Score: number | null }>;
 }
 
+export interface ThaiPlayerReplacementAudit {
+  tournamentId: string;
+  oldPlayerId: string;
+  oldPlayerName: string;
+  oldGender: 'M' | 'W';
+  newPlayerId: string;
+  newPlayerName: string;
+  newGender: 'M' | 'W';
+  roundsTouched: number;
+  matchesTouched: number;
+  resultsTouched: number;
+}
+
 /**
  * Исправление счёта уже подтверждённого тура (оператор/админ).
  * Пересчитывает thai_player_round_stat для раунда. Не меняет состав R2, если он уже разыгран.
@@ -2887,6 +2900,204 @@ export async function adminCorrectThaiTourScores(
       roundType,
       beforeMatches,
       afterMatches,
+    };
+  });
+}
+
+function rewritePointHistoryPlayerRefs(
+  history: ThaiJudgePointHistoryEvent[],
+  input: { oldPlayerId: string; newPlayerId: string; newPlayerName: string },
+): ThaiJudgePointHistoryEvent[] {
+  return history.map((event) => ({
+    ...event,
+    serverPlayerBefore:
+      event.serverPlayerBefore?.playerId === input.oldPlayerId
+        ? {
+            ...event.serverPlayerBefore,
+            playerId: input.newPlayerId,
+            playerName: input.newPlayerName,
+          }
+        : event.serverPlayerBefore,
+    serverPlayerAfter:
+      event.serverPlayerAfter?.playerId === input.oldPlayerId
+        ? {
+            ...event.serverPlayerAfter,
+            playerId: input.newPlayerId,
+            playerName: input.newPlayerName,
+          }
+        : event.serverPlayerAfter,
+  }));
+}
+
+export async function replaceThaiTournamentPlayer(
+  tournamentId: string,
+  input: { oldPlayerId: string; newPlayerId: string },
+): Promise<ThaiPlayerReplacementAudit> {
+  const normalizedTournamentId = String(tournamentId || '').trim();
+  const oldPlayerId = String(input.oldPlayerId || '').trim();
+  const newPlayerId = String(input.newPlayerId || '').trim();
+  if (!normalizedTournamentId) throw new ThaiJudgeError(400, 'tournamentId is required');
+  if (!oldPlayerId) throw new ThaiJudgeError(400, 'oldPlayerId is required');
+  if (!newPlayerId) throw new ThaiJudgeError(400, 'newPlayerId is required');
+  if (oldPlayerId === newPlayerId) {
+    throw new ThaiJudgeError(400, 'Нужно выбрать другого игрока для замены');
+  }
+
+  return withTransaction(async (client) => {
+    const tournament = await loadTournamentTx(client, normalizedTournamentId, { forUpdate: true });
+    const tournamentStatus = getTournamentStatusKey(tournament.status);
+    if (tournamentStatus === 'cancelled') {
+      throw new ThaiJudgeError(409, 'Нельзя менять состав в отменённом турнире');
+    }
+
+    const oldPlayerRes = await client.query(
+      `
+        SELECT tp.player_id, tp.position, COALESCE(tp.is_waitlist, false) AS is_waitlist, p.name, p.gender
+        FROM tournament_participants tp
+        JOIN players p ON p.id = tp.player_id
+        WHERE tp.tournament_id = $1
+          AND tp.player_id = $2
+        LIMIT 1
+        FOR UPDATE OF tp
+      `,
+      [normalizedTournamentId, oldPlayerId],
+    );
+    const oldPlayerRow = oldPlayerRes.rows[0];
+    if (!oldPlayerRow) {
+      throw new ThaiJudgeError(404, 'Игрок для замены не найден в составе турнира');
+    }
+    if (Boolean(oldPlayerRow.is_waitlist)) {
+      throw new ThaiJudgeError(409, 'Через Thai Live можно заменять только игрока основного состава');
+    }
+
+    const newPlayerRes = await client.query(
+      `SELECT id, name, gender FROM players WHERE id = $1 LIMIT 1`,
+      [newPlayerId],
+    );
+    const newPlayerRow = newPlayerRes.rows[0];
+    if (!newPlayerRow) {
+      throw new ThaiJudgeError(404, 'Новый игрок не найден');
+    }
+
+    const oldGender = String(oldPlayerRow.gender || 'M') === 'W' ? 'W' : 'M';
+    const newGender = String(newPlayerRow.gender || 'M') === 'W' ? 'W' : 'M';
+    if (oldGender !== newGender) {
+      throw new ThaiJudgeError(409, 'Замена возможна только на игрока того же пола');
+    }
+
+    const duplicateRes = await client.query(
+      `
+        SELECT 1
+        FROM tournament_participants
+        WHERE tournament_id = $1
+          AND player_id = $2
+        LIMIT 1
+      `,
+      [normalizedTournamentId, newPlayerId],
+    );
+    if (duplicateRes.rows[0]) {
+      throw new ThaiJudgeError(409, 'Этот игрок уже есть в составе турнира');
+    }
+
+    await client.query(
+      `
+        UPDATE tournament_participants
+        SET player_id = $3
+        WHERE tournament_id = $1
+          AND player_id = $2
+      `,
+      [normalizedTournamentId, oldPlayerId, newPlayerId],
+    );
+
+    const matchHistoryRes = await client.query(
+      `
+        SELECT m.id AS match_id, m.point_history
+        FROM thai_match m
+        JOIN thai_tour tt ON tt.id = m.tour_id
+        JOIN thai_court c ON c.id = tt.court_id
+        JOIN thai_match_player mp ON mp.match_id = m.id
+        WHERE c.tournament_id = $1
+          AND mp.player_id = $2
+        FOR UPDATE OF m
+      `,
+      [normalizedTournamentId, oldPlayerId],
+    );
+
+    for (const row of matchHistoryRes.rows) {
+      const history = normalizeThaiJudgePointHistory(row.point_history);
+      if (!history.some((event) => event.serverPlayerBefore?.playerId === oldPlayerId || event.serverPlayerAfter?.playerId === oldPlayerId)) {
+        continue;
+      }
+      const rewritten = rewritePointHistoryPlayerRefs(history, {
+        oldPlayerId,
+        newPlayerId,
+        newPlayerName: String(newPlayerRow.name || ''),
+      });
+      await client.query(
+        `
+          UPDATE thai_match
+          SET point_history = $2::jsonb,
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [String(row.match_id), JSON.stringify(rewritten)],
+      );
+    }
+
+    const matchUpdateRes = await client.query(
+      `
+        UPDATE thai_match_player mp
+        SET player_id = $3
+        FROM thai_match m
+        JOIN thai_tour tt ON tt.id = m.tour_id
+        JOIN thai_court c ON c.id = tt.court_id
+        WHERE mp.match_id = m.id
+          AND c.tournament_id = $1
+          AND mp.player_id = $2
+      `,
+      [normalizedTournamentId, oldPlayerId, newPlayerId],
+    );
+
+    const roundIdsRes = await client.query(
+      `SELECT id FROM thai_round WHERE tournament_id = $1 ORDER BY round_no ASC`,
+      [normalizedTournamentId],
+    );
+    const roundIds = roundIdsRes.rows.map((row) => String(row.id || '')).filter(Boolean);
+    for (const roundId of roundIds) {
+      await recomputeRoundStatsTx(client, roundId);
+    }
+
+    const resultsUpdateRes = await client.query(
+      `
+        UPDATE tournament_results
+        SET player_id = $3
+        WHERE tournament_id = $1
+          AND player_id = $2
+      `,
+      [normalizedTournamentId, oldPlayerId, newPlayerId],
+    );
+
+    const nextParticipants = await listTournamentStructureParticipantsTx(client, normalizedTournamentId);
+    const storedSignature = normalizeThaiJudgeBootstrapSignature(tournament.settings.thaiJudgeBootstrapSignature);
+    if (storedSignature || roundIds.length > 0) {
+      const nextSignature = buildThaiJudgeStructuralSignature({
+        settings: tournament.settings,
+        participants: nextParticipants,
+      });
+      await persistThaiJudgeBootstrapSignatureTx(client, tournament, nextSignature);
+    }
+
+    return {
+      tournamentId: normalizedTournamentId,
+      oldPlayerId,
+      oldPlayerName: String(oldPlayerRow.name || ''),
+      oldGender,
+      newPlayerId,
+      newPlayerName: String(newPlayerRow.name || ''),
+      newGender,
+      roundsTouched: roundIds.length,
+      matchesTouched: Number(matchUpdateRes.rowCount || 0),
+      resultsTouched: Number(resultsUpdateRes.rowCount || 0),
     };
   });
 }

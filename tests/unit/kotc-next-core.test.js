@@ -4,6 +4,7 @@ import {
   applyKingPoint,
   applyTakeover,
   applyUndo,
+  calcKotcNextRaundStandings,
   getInitialKotcNextCourtState,
   seedKotcNextR2Courts,
 } from '../../web/lib/kotc-next/core.ts';
@@ -71,5 +72,22 @@ describe('kotc-next core', () => {
     expect(draft.map((zone) => zone.zone)).toEqual(['kin', 'lite']);
     expect(draft[0].pairRefs.map((pair) => pair.pairLabel)).toEqual(['A', 'B']);
     expect(draft[1].pairRefs.map((pair) => pair.pairLabel)).toEqual(['C', 'D']);
+  });
+
+  it('supports a standings mode without takeover tie-breaks', () => {
+    const rows = [
+      { pairIdx: 0, kingWins: 8, takeovers: 1, gamesPlayed: 10 },
+      { pairIdx: 1, kingWins: 8, takeovers: 4, gamesPlayed: 12 },
+      { pairIdx: 2, kingWins: 7, takeovers: 9, gamesPlayed: 9 },
+    ];
+
+    expect(calcKotcNextRaundStandings(rows).map((row) => row.pairIdx)).toEqual([1, 0, 2]);
+    expect(calcKotcNextRaundStandings(rows, 'no_takeovers').map((row) => row.pairIdx)).toEqual([0, 1, 2]);
+    expect(seedKotcNextR2Courts([
+      { courtNo: 1, pairIdx: 0, pairLabel: 'A', kingWins: 8, takeovers: 1, gamesPlayed: 10 },
+      { courtNo: 1, pairIdx: 1, pairLabel: 'B', kingWins: 8, takeovers: 4, gamesPlayed: 12 },
+      { courtNo: 2, pairIdx: 0, pairLabel: 'C', kingWins: 7, takeovers: 9, gamesPlayed: 9 },
+      { courtNo: 2, pairIdx: 1, pairLabel: 'D', kingWins: 6, takeovers: 0, gamesPlayed: 9 },
+    ], 'no_takeovers')[0].pairRefs.map((pair) => pair.pairLabel)).toEqual(['A', 'B']);
   });
 });

@@ -203,6 +203,7 @@ describe('admin legacy IPT sync helpers', () => {
         kotcRaundTimerMinutes: 18,
         kotcJudgeModule: 'legacy',
         kotcJudgeBootstrapSignature: ' sig-1 ',
+        kotcTakeoversMode: 'no_takeovers',
       })
     ).toEqual({
       courts: 2,
@@ -212,6 +213,7 @@ describe('admin legacy IPT sync helpers', () => {
       raundTimerMinutes: 18,
       kotcJudgeModule: 'legacy',
       kotcJudgeBootstrapSignature: 'sig-1',
+      kotcTakeoversMode: 'no_takeovers',
     });
 
     expect(
@@ -226,6 +228,7 @@ describe('admin legacy IPT sync helpers', () => {
       raundTimerMinutes: 10,
       kotcJudgeModule: 'next',
       kotcJudgeBootstrapSignature: null,
+      kotcTakeoversMode: 'standard',
     });
 
     expect(getKotcSeatCount(3, 5)).toBe(30);

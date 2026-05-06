@@ -133,6 +133,9 @@ export function ThaiTournamentJudgeWorkspace({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [judgeScreenOpen, setJudgeScreenOpen] = useState(true);
+  const [roundsOpen, setRoundsOpen] = useState(true);
+  const [courtsOpen, setCourtsOpen] = useState(true);
 
   useEffect(() => {
     setSnapshot(initialSnapshot);
@@ -216,110 +219,153 @@ export function ThaiTournamentJudgeWorkspace({
     <div className="min-h-screen min-h-[100dvh] overflow-x-hidden bg-[radial-gradient(circle_at_top,rgba(255,210,74,0.08),transparent_14%),linear-gradient(180deg,#080813,#0d0d18_28%,#090913)] px-3 pb-7 pt-3 text-white">
       <div className="mx-auto flex w-full max-w-[720px] flex-col gap-3">
         <section className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(14,15,27,0.98),rgba(10,10,19,0.98))] px-4 py-4 shadow-[0_18px_50px_rgba(0,0,0,0.3)]">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="text-[10px] uppercase tracking-[0.28em] text-white/34">Судейский экран</div>
-              <div className="mt-2 font-heading text-[20px] leading-[0.98] uppercase tracking-[0.05em] text-[#ffd24a] sm:text-[24px]">
-                {snapshot.tournamentName}
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#aeb6c8]">
-                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
-                  {snapshot.variant.toUpperCase()}
-                </span>
-                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
-                  До {snapshot.pointLimit}
-                </span>
-                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
-                  {loading ? 'Обновляем...' : `${snapshot.activeSnapshot.roundType.toUpperCase()} ${activeCourtBadgeLabel(snapshot).toUpperCase()}`}
-                </span>
-              </div>
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-2">
-              <div className="rounded-full border border-[#ff4d43]/45 bg-[#221010] px-3 py-2 text-[11px] font-bold uppercase tracking-[0.16em] text-[#ff938b]">
-                {snapshot.activeSnapshot.kind === 'finished' ? 'WAIT' : 'LIVE'}
-              </div>
-              <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#aeb6c8]">
-                Обновлено {freshnessLabel}
-              </div>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => setJudgeScreenOpen((value) => !value)}
+            className="flex w-full items-center justify-between gap-3 text-left"
+            aria-expanded={judgeScreenOpen}
+          >
+            <div className="text-[10px] uppercase tracking-[0.28em] text-white/34">Судейский экран</div>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#aeb6c8]">
+              {judgeScreenOpen ? 'Скрыть' : 'Показать'}
+            </span>
+          </button>
 
-          {snapshot.activeSnapshot.canAutoRefreshToNextStage ? (
-            <div className="mt-3 rounded-[14px] border border-[#ffd24a]/18 bg-[#ffd24a]/8 px-3 py-2 text-[12px] text-[#f6dd93]">
-              Проверяем запуск следующего этапа автоматически каждые 15 секунд.
-            </div>
-          ) : null}
+          {judgeScreenOpen ? (
+            <>
+              <div className="mt-3 flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="font-heading text-[20px] leading-[0.98] uppercase tracking-[0.05em] text-[#ffd24a] sm:text-[24px]">
+                    {snapshot.tournamentName}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#aeb6c8]">
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
+                      {snapshot.variant.toUpperCase()}
+                    </span>
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
+                      До {snapshot.pointLimit}
+                    </span>
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
+                      {loading ? 'Обновляем...' : `${snapshot.activeSnapshot.roundType.toUpperCase()} ${activeCourtBadgeLabel(snapshot).toUpperCase()}`}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <div className="rounded-full border border-[#ff4d43]/45 bg-[#221010] px-3 py-2 text-[11px] font-bold uppercase tracking-[0.16em] text-[#ff938b]">
+                    {snapshot.activeSnapshot.kind === 'finished' ? 'WAIT' : 'LIVE'}
+                  </div>
+                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#aeb6c8]">
+                    Обновлено {freshnessLabel}
+                  </div>
+                </div>
+              </div>
 
-          {error ? (
-            <div className="mt-3 rounded-[14px] border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">
-              {error}
-            </div>
+              {snapshot.activeSnapshot.canAutoRefreshToNextStage ? (
+                <div className="mt-3 rounded-[14px] border border-[#ffd24a]/18 bg-[#ffd24a]/8 px-3 py-2 text-[12px] text-[#f6dd93]">
+                  Проверяем запуск следующего этапа автоматически каждые 15 секунд.
+                </div>
+              ) : null}
+
+              {error ? (
+                <div className="mt-3 rounded-[14px] border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+                  {error}
+                </div>
+              ) : null}
+            </>
           ) : null}
         </section>
 
         <section className="rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(14,15,27,0.98),rgba(10,10,19,0.98))] px-3.5 py-3.5 shadow-[0_18px_48px_rgba(0,0,0,0.28)]">
           <div>
-            <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-[#7d8498]">Раунды</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {snapshot.rounds.map((round) => {
-                const fallbackCourt = round.courts.find((court) => court.isAvailable) ?? round.courts[0] ?? null;
-                const href = fallbackCourt
-                  ? resolveCourtSelectionHref(pathname, snapshot.tournamentId, round.roundType, fallbackCourt)
-                  : null;
-                const className = `rounded-full border px-4 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] transition ${roundTabClass(round.isSelected, round.isAvailable)} ${!round.isAvailable || loading || !href ? 'cursor-not-allowed opacity-55' : ''}`;
-                if (!href || !round.isAvailable || loading) {
-                  return (
-                    <span key={round.roundType} aria-disabled="true" className={className}>
-                      {round.label}
-                    </span>
-                  );
-                }
-                return (
-                  <Link key={round.roundType} href={href} prefetch={false} className={className} aria-current={round.isSelected ? 'page' : undefined}>
-                    {round.label}
-                  </Link>
-                );
-              })}
-            </div>
-            {resolveRoundHelperText(snapshot) ? (
-              <div className="mt-2 text-[12px] text-[#9ca5bb]">{resolveRoundHelperText(snapshot)}</div>
+            <button
+              type="button"
+              onClick={() => setRoundsOpen((value) => !value)}
+              className="flex w-full items-center justify-between gap-3 text-left"
+              aria-expanded={roundsOpen}
+            >
+              <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-[#7d8498]">Раунды</div>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#aeb6c8]">
+                {roundsOpen ? 'Скрыть' : 'Показать'}
+              </span>
+            </button>
+            {roundsOpen ? (
+              <>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {snapshot.rounds.map((round) => {
+                    const fallbackCourt = round.courts.find((court) => court.isAvailable) ?? round.courts[0] ?? null;
+                    const href = fallbackCourt
+                      ? resolveCourtSelectionHref(pathname, snapshot.tournamentId, round.roundType, fallbackCourt)
+                      : null;
+                    const className = `rounded-full border px-4 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] transition ${roundTabClass(round.isSelected, round.isAvailable)} ${!round.isAvailable || loading || !href ? 'cursor-not-allowed opacity-55' : ''}`;
+                    if (!href || !round.isAvailable || loading) {
+                      return (
+                        <span key={round.roundType} aria-disabled="true" className={className}>
+                          {round.label}
+                        </span>
+                      );
+                    }
+                    return (
+                      <Link key={round.roundType} href={href} prefetch={false} className={className} aria-current={round.isSelected ? 'page' : undefined}>
+                        {round.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+                {resolveRoundHelperText(snapshot) ? (
+                  <div className="mt-2 text-[12px] text-[#9ca5bb]">{resolveRoundHelperText(snapshot)}</div>
+                ) : null}
+              </>
             ) : null}
           </div>
 
           {selectedRound ? (
             <div className="mt-3">
-              <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-[#7d8498]">Корты</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {selectedRound.courts.map((court) => {
-                  const href = resolveCourtSelectionHref(
-                    pathname,
-                    snapshot.tournamentId,
-                    selectedRound.roundType,
-                    court,
-                  );
-                  const className = `rounded-full border px-4 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] transition ${courtTabClass(court.isSelected, court.isAvailable)} ${!court.isAvailable || loading || !href ? 'cursor-not-allowed opacity-55' : ''}`;
-                  if (!href || !court.isAvailable || loading) {
-                    return (
-                      <span key={`${selectedRound.roundType}-${court.courtNo}`} aria-disabled="true" className={className}>
-                        {localizeCourtLabel(court.label)}
-                      </span>
-                    );
-                  }
-                  return (
-                    <Link
-                      key={`${selectedRound.roundType}-${court.courtNo}`}
-                      href={href}
-                      prefetch={false}
-                      className={className}
-                      aria-current={court.isSelected ? 'page' : undefined}
-                    >
-                      {localizeCourtLabel(court.label)}
-                    </Link>
-                  );
-                })}
-              </div>
-              {resolveCourtHelperText(selectedRound) ? (
-                <div className="mt-2 text-[12px] text-[#9ca5bb]">{resolveCourtHelperText(selectedRound)}</div>
+              <button
+                type="button"
+                onClick={() => setCourtsOpen((value) => !value)}
+                className="flex w-full items-center justify-between gap-3 text-left"
+                aria-expanded={courtsOpen}
+              >
+                <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-[#7d8498]">Корты</div>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#aeb6c8]">
+                  {courtsOpen ? 'Скрыть' : 'Показать'}
+                </span>
+              </button>
+              {courtsOpen ? (
+                <>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {selectedRound.courts.map((court) => {
+                      const href = resolveCourtSelectionHref(
+                        pathname,
+                        snapshot.tournamentId,
+                        selectedRound.roundType,
+                        court,
+                      );
+                      const className = `rounded-full border px-4 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] transition ${courtTabClass(court.isSelected, court.isAvailable)} ${!court.isAvailable || loading || !href ? 'cursor-not-allowed opacity-55' : ''}`;
+                      if (!href || !court.isAvailable || loading) {
+                        return (
+                          <span key={`${selectedRound.roundType}-${court.courtNo}`} aria-disabled="true" className={className}>
+                            {localizeCourtLabel(court.label)}
+                          </span>
+                        );
+                      }
+                      return (
+                        <Link
+                          key={`${selectedRound.roundType}-${court.courtNo}`}
+                          href={href}
+                          prefetch={false}
+                          className={className}
+                          aria-current={court.isSelected ? 'page' : undefined}
+                        >
+                          {localizeCourtLabel(court.label)}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                  {resolveCourtHelperText(selectedRound) ? (
+                    <div className="mt-2 text-[12px] text-[#9ca5bb]">{resolveCourtHelperText(selectedRound)}</div>
+                  ) : null}
+                </>
               ) : null}
             </div>
           ) : null}

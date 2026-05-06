@@ -9,6 +9,7 @@ import {
   type ThaiOperatorBootstrapPhase,
   type ThaiOperatorPanelActionName,
 } from '@/components/thai-live/ThaiOperatorPanel';
+import { ThaiPlayerReplacementPanel } from '@/components/thai-live/ThaiPlayerReplacementPanel';
 import { getThaiErrorText } from '@/lib/thai-ui-helpers';
 
 // ─── State ──────────────────────────────────────────────────────────────────
@@ -484,6 +485,15 @@ export function ThaiTournamentControlClient({
             onOpenR2Seed: () => void runThaiAdminAction('preview_r2_seed'),
             onConfirmR2Seed: (zones) => void runThaiAdminAction('confirm_r2_seed', { zones }),
           }}
+        />
+      ) : null}
+
+      {thaiLivePayload ? (
+        <ThaiPlayerReplacementPanel
+          tournamentId={id}
+          participants={thaiLivePayload.bootstrapState.participants}
+          disabled={anyLoading}
+          onChanged={loadThaiLive}
         />
       ) : null}
 

@@ -36,6 +36,10 @@ function EntityText({ text }: { text: string }) {
 }
 
 const FINISHED_TOURNAMENT_HERO_FALLBACKS: Record<string, string> = {
+  '4bca6863-beb1-4fc6-ab16-9db4105552f4':
+    'https://lpvolley.ru/images/tournaments/4bca6863-beb1-4fc6-ab16-9db4105552f4/hero.jpg',
+  '695d6e20-5d3f-4f51-86d1-f0999e74a090':
+    'https://lpvolley.ru/images/tournaments/695d6e20-5d3f-4f51-86d1-f0999e74a090/hero.jpg',
   'a19522bb-864e-4520-8182-61e035c27894':
     'https://lpvolley.ru/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/hero.jpg',
 };

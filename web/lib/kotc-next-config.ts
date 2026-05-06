@@ -2,6 +2,7 @@
 // Mirrors web/lib/thai-judge-config.ts pattern
 
 import crypto from 'crypto';
+import { normalizeKotcTakeoversMode, type KotcTakeoversMode } from './admin-legacy-sync';
 import type { KotcNextVariant } from './kotc-next/types';
 
 export const KOTC_NEXT_FORMAT = 'King of the Court';
@@ -33,6 +34,7 @@ export interface KotcNextStructureInput {
   raundCount: number;
   raundTimerMinutes: number;
   variant: KotcNextVariant;
+  takeoversMode: KotcTakeoversMode;
   playerIds: string[]; // primary player ids (one per pair per court)
   storedSignature?: string | null;
 }
@@ -48,10 +50,11 @@ export function buildKotcNextStructuralSignature(input: {
   courts: number;
   ppc: number;
   raundCount: number;
+  takeoversMode: KotcTakeoversMode;
   playerIds: string[];
 }): string {
   const sortedIds = [...input.playerIds].sort().join(',');
-  return `variant=${input.variant};courts=${input.courts};ppc=${input.ppc};raunds=${input.raundCount};players=${sortedIds}`;
+  return `variant=${input.variant};courts=${input.courts};ppc=${input.ppc};raunds=${input.raundCount};takeoversMode=${input.takeoversMode};players=${sortedIds}`;
 }
 
 export function kotcNextSignaturesMatch(a: string, b: string): boolean {
@@ -83,8 +86,9 @@ export function normalizeKotcAdminSettings(settings: Record<string, unknown> | n
   const ppc = clamp(toInt(raw.kotcPpc ?? raw.ppc, KOTC_NEXT_DEFAULT_PPC), KOTC_NEXT_MIN_PPC, KOTC_NEXT_MAX_PPC);
   const raundCount = clamp(toInt(raw.kotcRaundCount ?? raw.raundCount, KOTC_NEXT_DEFAULT_RAUNDS), KOTC_NEXT_MIN_RAUNDS, KOTC_NEXT_MAX_RAUNDS);
   const raundTimerMinutes = clamp(toInt(raw.kotcRaundTimerMinutes ?? raw.raundTimerMinutes, KOTC_NEXT_DEFAULT_TIMER), KOTC_NEXT_MIN_TIMER, KOTC_NEXT_MAX_TIMER);
+  const takeoversMode = normalizeKotcTakeoversMode(raw.kotcTakeoversMode);
 
-  return { courts, ppc, raundCount, raundTimerMinutes };
+  return { courts, ppc, raundCount, raundTimerMinutes, takeoversMode };
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────

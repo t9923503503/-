@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { KotcNextR2SeedZone, KotcNextZoneKey } from '@/lib/kotc-next';
+import type { KotcNextR2SeedZone, KotcNextZoneKey } from '@/lib/kotc-next/types';
 import { zoneLabel } from '@/lib/kotc-next-config';
 
 interface DraftEntry {

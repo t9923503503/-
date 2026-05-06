@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { KotcNextJudgeSnapshot, KotcNextPairLiveState } from '@/lib/kotc-next';
+import { calcKotcNextRaundStandings } from '@/lib/kotc-next/core';
+import type { KotcNextJudgeSnapshot, KotcNextPairLiveState } from '@/lib/kotc-next/types';
 import { useScreenWakeLock } from '@/components/kotc-live/wake-lock';
 
 type JudgeAction = 'start' | 'king-point' | 'takeover' | 'undo' | 'finish' | 'reset';
@@ -486,14 +487,8 @@ export function KotcNextJudgeScreen({
   }, [snapshot.liveState.timerMinutes, snapshot.liveState.timerStartedAt, nowTs]);
 
   const standings = useMemo(
-    () =>
-      [...snapshot.liveState.pairs].sort(
-        (left, right) =>
-          right.kingWins - left.kingWins ||
-          right.takeovers - left.takeovers ||
-          left.pairIdx - right.pairIdx,
-      ),
-    [snapshot.liveState.pairs],
+    () => calcKotcNextRaundStandings(snapshot.liveState.pairs, snapshot.params.takeoversMode),
+    [snapshot.liveState.pairs, snapshot.params.takeoversMode],
   );
 
   const queueCards = useMemo(

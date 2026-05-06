@@ -2,7 +2,8 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import type { KotcNextSpectatorPayload } from '@/lib/kotc-next';
+import { calcKotcNextRaundStandings } from '@/lib/kotc-next/core';
+import type { KotcNextSpectatorPayload } from '@/lib/kotc-next/types';
 
 function formatStage(stage: string | undefined): string {
   switch (stage) {
@@ -94,12 +95,7 @@ export function KotcNextSpectatorBoard({ data }: { data: KotcNextSpectatorPayloa
                 {round.courts.map((court) => {
                   const standings =
                     court.liveState?.pairs?.length
-                      ? [...court.liveState.pairs].sort(
-                          (left, right) =>
-                            right.kingWins - left.kingWins ||
-                            right.takeovers - left.takeovers ||
-                            left.pairIdx - right.pairIdx,
-                        )
+                      ? calcKotcNextRaundStandings(court.liveState.pairs, data.params.takeoversMode)
                       : [...court.raunds]
                           .reverse()
                           .find((raund) => Array.isArray(raund.standings))

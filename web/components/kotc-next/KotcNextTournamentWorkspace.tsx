@@ -3,7 +3,7 @@
 import { startTransition, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SudyamBootstrapPayload } from '@/lib/sudyam-bootstrap';
-import type { KotcNextR2SeedZone } from '@/lib/kotc-next';
+import type { KotcNextR2SeedZone } from '@/lib/kotc-next/types';
 import { KotcNextOperatorPanel, type KotcNextOperatorBootstrapPhase } from './KotcNextOperatorPanel';
 
 function getErrorText(error: unknown, fallback: string): string {

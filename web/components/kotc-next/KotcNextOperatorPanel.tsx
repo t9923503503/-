@@ -3,8 +3,14 @@
 import { memo, useMemo } from 'react';
 import { makeQrDataUrl } from '@/public/shared/qr-gen.js';
 import { resolveAbsoluteJudgeUrl } from '@/lib/thai-ui-helpers';
+import { calcKotcNextRaundStandings } from '@/lib/kotc-next/core';
 import type { SudyamBootstrapPayload } from '@/lib/sudyam-bootstrap';
-import type { KotcNextCourtOperatorView, KotcNextOperatorState, KotcNextR2SeedZone } from '@/lib/kotc-next';
+import type {
+  KotcNextCourtOperatorView,
+  KotcNextOperatorState,
+  KotcNextR2SeedZone,
+  KotcNextTakeoversMode,
+} from '@/lib/kotc-next/types';
 import { zoneLabel } from '@/lib/kotc-next-config';
 import { KotcNextR2SeedEditor } from './KotcNextR2SeedEditor';
 
@@ -71,14 +77,12 @@ function formatCourtStatus(status: string | undefined): string {
   return 'PENDING';
 }
 
-function pickStandings(court: KotcNextCourtOperatorView) {
+function pickStandings(
+  court: KotcNextCourtOperatorView,
+  takeoversMode: KotcNextTakeoversMode,
+) {
   if (court.liveState?.pairs?.length) {
-    return [...court.liveState.pairs].sort(
-      (left, right) =>
-        right.kingWins - left.kingWins ||
-        right.takeovers - left.takeovers ||
-        left.pairIdx - right.pairIdx,
-    );
+    return calcKotcNextRaundStandings(court.liveState.pairs, takeoversMode);
   }
   const latestFinished = [...court.raunds].reverse().find((raund) => Array.isArray(raund.standings));
   return latestFinished?.standings ?? [];
@@ -314,7 +318,7 @@ export function KotcNextOperatorPanel({
 
               <div className="grid gap-4 xl:grid-cols-2">
                 {round.courts.map((court) => {
-                  const standings = pickStandings(court);
+                  const standings = pickStandings(court, operatorState?.params.takeoversMode ?? 'standard');
                   const isLive = court.status === 'live';
                   return (
                     <article

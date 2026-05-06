@@ -13,6 +13,21 @@ function variantTitle(v: string): string {
   return u;
 }
 
+function ScoreCell({ matchKey }: { matchKey: string }) {
+  return (
+    <td
+      key={`${matchKey}-score`}
+      className="hidden w-24 py-2 pl-2 pr-0 align-middle text-right print:table-cell"
+    >
+      <div className="flex items-center justify-end gap-1">
+        <div className="h-8 w-8 rounded-sm border border-black" />
+        <span className="font-bold text-black">:</span>
+        <div className="h-8 w-8 rounded-sm border border-black" />
+      </div>
+    </td>
+  );
+}
+
 export function ThaiSchedulePrintClient({
   tournamentId,
   initialSeed,
@@ -32,11 +47,13 @@ export function ThaiSchedulePrintClient({
     setError(null);
     try {
       const seed = seedInput.trim() ? Math.trunc(Number(seedInput) || 0) : 0;
-      const qs =
-        seed >= 1 ? `?seed=${encodeURIComponent(String(seed))}` : '';
-      const res = await fetch(`/api/admin/tournaments/${encodeURIComponent(id)}/schedule-print${qs}`, {
-        cache: 'no-store',
-      });
+      const qs = seed >= 1 ? `?seed=${encodeURIComponent(String(seed))}` : '';
+      const res = await fetch(
+        `/api/admin/tournaments/${encodeURIComponent(id)}/schedule-print${qs}`,
+        {
+          cache: 'no-store',
+        },
+      );
       const data = (await res.json().catch(() => ({}))) as {
         success?: boolean;
         payload?: ThaiSchedulePrintPayload;
@@ -101,7 +118,9 @@ export function ThaiSchedulePrintClient({
       <div className="mx-auto max-w-4xl px-4 py-8 print:max-w-none print:px-6 print:py-4">
         {loading ? <p className="text-zinc-500">Загрузка…</p> : null}
         {error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {error}
+          </div>
         ) : null}
 
         {payload ? (
@@ -111,16 +130,16 @@ export function ThaiSchedulePrintClient({
                 Расписание турнира (Thai)
               </h1>
               <p className="mt-2 text-lg font-semibold text-zinc-800">{payload.tournamentName}</p>
-              <p className="mt-1 text-sm text-zinc-600">
+              <p className="mt-1 text-sm text-zinc-600 print:text-black">
                 {payload.tournamentDate}
                 {payload.tournamentTime ? ` · ${payload.tournamentTime}` : ''}
                 {payload.tournamentLocation ? ` · ${payload.tournamentLocation}` : ''}
               </p>
-              <p className="mt-2 text-sm text-zinc-700">
-                Формат: {variantTitle(payload.variant)} · Туров: {payload.tourCount} · Лимит R1: {payload.pointLimitR1} / R2:{' '}
-                {payload.pointLimitR2}
+              <p className="mt-2 text-sm text-zinc-700 print:text-black">
+                Формат: {variantTitle(payload.variant)} · Туров: {payload.tourCount} · Лимит R1:{' '}
+                {payload.pointLimitR1} / R2: {payload.pointLimitR2}
               </p>
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-zinc-500 print:text-black">
                 Жеребьёвка R1 (seed): {payload.r1SeedUsed}{' '}
                 {payload.r1SeedSource === 'database'
                   ? '(зафиксирована в системе)'
@@ -134,59 +153,83 @@ export function ThaiSchedulePrintClient({
               <h2 className="mb-4 border-b border-amber-600/40 pb-2 font-heading text-xl font-bold uppercase text-zinc-900 print:text-lg">
                 Раунд 1 — корты
               </h2>
-              <p className="mb-4 text-sm text-zinc-600">
-                В матчах указаны фамилии и условные пары: для MN — П = профи, Н = новичок (номер — место в четвёрке на корту); для MF — М / Ж;
-                для MM/WW — №1…№8 по списку на корту.
+              <p className="mb-4 text-sm text-zinc-600 print:text-black">
+                В матчах указаны фамилии и условные пары: для MN — П = профи, Н = новичок
+                (номер — место в четвёрке на корту); для MF — М / Ж; для MM/WW — №1…№8 по
+                списку на корту.
               </p>
               <div className="space-y-8">
                 {payload.r1Courts.map((court) => (
                   <article
                     key={`r1-${court.courtNo}`}
-                    className="rounded-xl border border-zinc-300 bg-white p-5 shadow-sm print:break-inside-avoid print:rounded-none print:border print:shadow-none"
+                    className="rounded-xl border border-zinc-300 bg-white p-5 shadow-sm print:break-after-page print:break-inside-avoid print:rounded-none print:border print:border-black print:p-4 print:shadow-none"
                   >
                     <h3 className="text-lg font-bold text-zinc-900">
                       Корт {court.courtLabel}
-                      <span className="ml-2 text-sm font-normal text-zinc-500">(сид расписания туров: {court.courtScheduleSeed})</span>
+                      <span className="ml-2 text-sm font-normal text-zinc-500 print:text-black">
+                        (сид расписания туров: {court.courtScheduleSeed})
+                      </span>
                     </h3>
-                    <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2">
+                    <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2 print:mt-2 print:gap-0.5 print:text-[13px]">
                       {court.rosterLines.map((line, i) => (
-                        <li key={i} className="text-zinc-700">
+                        <li key={i} className="text-zinc-700 print:text-black">
                           {line}
                         </li>
                       ))}
                     </ul>
-                    <div className="mt-4 space-y-4">
+                    <div className="mt-4 space-y-4 print:mt-3 print:space-y-3">
                       {court.tours.map((tour) => (
                         <div key={tour.tourNo}>
-                          <div className="font-semibold text-zinc-800">Тур {tour.tourNo}</div>
+                          <div className="font-semibold text-zinc-800 print:text-black">
+                            Тур {tour.tourNo}
+                          </div>
                           <table className="mt-2 w-full border-collapse text-sm">
                             <thead>
-                              <tr className="border-b border-zinc-300 text-left text-xs uppercase text-zinc-500">
+                              <tr className="border-b border-zinc-300 text-left text-xs uppercase text-zinc-500 print:border-gray-800 print:text-black">
                                 <th className="py-1 pr-2">#</th>
-                                <th className="py-1 pr-2">Условно</th>
+                                <th className="py-1 pr-2 print:hidden">Условно</th>
                                 <th className="py-1">Игроки</th>
+                                <th className="hidden py-1 pl-2 text-right print:table-cell">
+                                  Счёт
+                                </th>
                               </tr>
                             </thead>
                             <tbody>
                               {tour.matches.map((m) => (
-                                <tr key={m.matchNo} className="border-b border-zinc-200 align-top">
-                                  <td className="py-2 pr-2 font-medium text-zinc-800">М{m.matchNo}</td>
-                                  <td className="py-2 pr-2 font-mono text-xs text-zinc-900">
+                                <tr
+                                  key={m.matchNo}
+                                  className="border-b border-zinc-200 align-top print:border-gray-800"
+                                >
+                                  <td className="py-2 pr-2 font-medium text-zinc-800 print:text-black">
+                                    М{m.matchNo}
+                                  </td>
+                                  <td className="py-2 pr-2 font-mono text-xs text-zinc-900 print:hidden">
                                     <div>
-                                      {m.team1Symbolic} <span className="text-zinc-400">—</span> {m.team2Symbolic}
+                                      {m.team1Symbolic}{' '}
+                                      <span className="text-zinc-400 print:text-black">—</span>{' '}
+                                      {m.team2Symbolic}
                                     </div>
                                   </td>
-                                  <td className="py-2 text-zinc-800">
+                                  <td className="py-2 text-zinc-800 print:text-black">
                                     <div>
-                                      {m.team1Names} <span className="text-zinc-400">—</span> {m.team2Names}
+                                      {m.team1Names}{' '}
+                                      <span className="text-zinc-400 print:text-black">—</span>{' '}
+                                      {m.team2Names}
                                     </div>
                                   </td>
+                                  <ScoreCell
+                                    matchKey={`r1-${court.courtNo}-${tour.tourNo}-${m.matchNo}`}
+                                  />
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
                       ))}
+                    </div>
+                    <div className="hidden justify-between border-t border-black pt-4 print:mt-6 print:flex">
+                      <span>Судья на корте: _________________</span>
+                      <span>Подпись: _________________</span>
                     </div>
                   </article>
                 ))}
@@ -199,15 +242,16 @@ export function ThaiSchedulePrintClient({
               </h2>
               {payload.r2IsTemplate ? (
                 <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 print:border-amber-300 print:bg-amber-50/80">
-                  Ниже — шаблон схемы пар по турам (условные П1…Н4). После завершения R1 имена подставятся автоматически по итоговым
-                  местам в пулах.
+                  Ниже — шаблон схемы пар по турам (условные П1…Н4). После завершения R1 имена
+                  подставятся автоматически по итоговым местам в пулах.
                 </p>
               ) : (
-                <p className="mb-4 text-sm text-zinc-600">
-                  Составы зон R2 рассчитаны по итогам R1 (глобальная сортировка внутри пулов). Условные обозначения — порядок на корте R2.
+                <p className="mb-4 text-sm text-zinc-600 print:text-black">
+                  Составы зон R2 рассчитаны по итогам R1 (глобальная сортировка внутри пулов).
+                  Условные обозначения — порядок на корте R2.
                 </p>
               )}
-              <ul className="mb-6 list-disc space-y-2 pl-5 text-sm text-zinc-700">
+              <ul className="mb-6 list-disc space-y-2 pl-5 text-sm text-zinc-700 print:text-black">
                 {payload.r2Legend.map((line, i) => (
                   <li key={i}>{line}</li>
                 ))}
@@ -216,53 +260,74 @@ export function ThaiSchedulePrintClient({
                 {payload.r2Courts.map((court) => (
                   <article
                     key={`r2-${court.courtNo}`}
-                    className="rounded-xl border border-zinc-300 bg-white p-5 shadow-sm print:break-inside-avoid print:rounded-none print:border print:shadow-none"
+                    className="rounded-xl border border-zinc-300 bg-white p-5 shadow-sm print:break-after-page print:break-inside-avoid print:rounded-none print:border print:border-black print:p-4 print:shadow-none"
                   >
                     <h3 className="text-lg font-bold text-zinc-900">
                       {court.zoneLabel ?? court.courtLabel}
-                      <span className="ml-2 text-sm font-normal text-zinc-500">
+                      <span className="ml-2 text-sm font-normal text-zinc-500 print:text-black">
                         · корт {court.courtNo} · сид туров {court.courtScheduleSeed}
                       </span>
                     </h3>
-                    <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2">
+                    <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2 print:mt-2 print:gap-0.5 print:text-[13px]">
                       {court.rosterLines.map((line, i) => (
-                        <li key={i} className="text-zinc-700">
+                        <li key={i} className="text-zinc-700 print:text-black">
                           {line}
                         </li>
                       ))}
                     </ul>
-                    <div className="mt-4 space-y-4">
+                    <div className="mt-4 space-y-4 print:mt-3 print:space-y-3">
                       {court.tours.map((tour) => (
                         <div key={tour.tourNo}>
-                          <div className="font-semibold text-zinc-800">Тур {tour.tourNo}</div>
+                          <div className="font-semibold text-zinc-800 print:text-black">
+                            Тур {tour.tourNo}
+                          </div>
                           <table className="mt-2 w-full border-collapse text-sm">
                             <thead>
-                              <tr className="border-b border-zinc-300 text-left text-xs uppercase text-zinc-500">
+                              <tr className="border-b border-zinc-300 text-left text-xs uppercase text-zinc-500 print:border-gray-800 print:text-black">
                                 <th className="py-1 pr-2">#</th>
-                                <th className="py-1 pr-2">Условно</th>
+                                <th className="py-1 pr-2 print:hidden">Условно</th>
                                 <th className="py-1">Игроки</th>
+                                <th className="hidden py-1 pl-2 text-right print:table-cell">
+                                  Счёт
+                                </th>
                               </tr>
                             </thead>
                             <tbody>
                               {tour.matches.map((m) => (
-                                <tr key={m.matchNo} className="border-b border-zinc-200 align-top">
-                                  <td className="py-2 pr-2 font-medium text-zinc-800">М{m.matchNo}</td>
-                                  <td className="py-2 pr-2 font-mono text-xs text-zinc-900">
+                                <tr
+                                  key={m.matchNo}
+                                  className="border-b border-zinc-200 align-top print:border-gray-800"
+                                >
+                                  <td className="py-2 pr-2 font-medium text-zinc-800 print:text-black">
+                                    М{m.matchNo}
+                                  </td>
+                                  <td className="py-2 pr-2 font-mono text-xs text-zinc-900 print:hidden">
                                     <div>
-                                      {m.team1Symbolic} <span className="text-zinc-400">—</span> {m.team2Symbolic}
+                                      {m.team1Symbolic}{' '}
+                                      <span className="text-zinc-400 print:text-black">—</span>{' '}
+                                      {m.team2Symbolic}
                                     </div>
                                   </td>
-                                  <td className="py-2 text-zinc-800">
+                                  <td className="py-2 text-zinc-800 print:text-black">
                                     <div>
-                                      {m.team1Names} <span className="text-zinc-400">—</span> {m.team2Names}
+                                      {m.team1Names}{' '}
+                                      <span className="text-zinc-400 print:text-black">—</span>{' '}
+                                      {m.team2Names}
                                     </div>
                                   </td>
+                                  <ScoreCell
+                                    matchKey={`r2-${court.courtNo}-${tour.tourNo}-${m.matchNo}`}
+                                  />
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
                       ))}
+                    </div>
+                    <div className="hidden justify-between border-t border-black pt-4 print:mt-6 print:flex">
+                      <span>Судья на корте: _________________</span>
+                      <span>Подпись: _________________</span>
                     </div>
                   </article>
                 ))}

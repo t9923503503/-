@@ -24,6 +24,8 @@ export const IPT_MIXED_POINT_LIMIT_MAX = 21;
 
 export const KOTC_JUDGE_MODULES = ['legacy', 'next'] as const;
 export type KotcJudgeModule = (typeof KOTC_JUDGE_MODULES)[number];
+export const KOTC_TAKEOVERS_MODES = ['standard', 'no_takeovers'] as const;
+export type KotcTakeoversMode = (typeof KOTC_TAKEOVERS_MODES)[number];
 export const KOTC_ADMIN_MIN_COURTS = 1;
 export const KOTC_ADMIN_MAX_COURTS = 4;
 export const KOTC_ADMIN_DEFAULT_COURTS = 2;
@@ -377,6 +379,10 @@ export function normalizeKotcJudgeBootstrapSignature(value: unknown): string | n
   return raw || null;
 }
 
+export function normalizeKotcTakeoversMode(value: unknown): KotcTakeoversMode {
+  return String(value ?? '').trim().toLowerCase() === 'no_takeovers' ? 'no_takeovers' : 'standard';
+}
+
 export function normalizeKotcAdminSettings(settings?: Record<string, unknown>, participantCount?: unknown) {
   const source = settings ?? {};
   const ppc = clamp(
@@ -406,6 +412,7 @@ export function normalizeKotcAdminSettings(settings?: Record<string, unknown>, p
     ),
     kotcJudgeModule: normalizeKotcJudgeModule(source.kotcJudgeModule),
     kotcJudgeBootstrapSignature: normalizeKotcJudgeBootstrapSignature(source.kotcJudgeBootstrapSignature),
+    kotcTakeoversMode: normalizeKotcTakeoversMode(source.kotcTakeoversMode),
   };
 }
 
