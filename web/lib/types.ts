@@ -103,6 +103,13 @@ export interface TournamentResult {
 export type RatingType = 'M' | 'W' | 'Mix';
 export type TournamentFormatFilter = 'all' | 'kotc' | 'dt' | 'thai';
 
+export interface RegistrationEntry {
+  id: string;
+  name: string;
+  gender: string;
+  formatRating: number | null;
+}
+
 export type TeamStatus = 'looking_for_partner' | 'confirmed' | 'waitlist' | 'withdrawn';
 
 export interface Team {

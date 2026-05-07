@@ -1,5 +1,5 @@
 import { getPool } from './db';
-import type { LeaderboardEntry, MedalEntry, Player, Tournament, RatingType, TournamentFormatFilter, Team, RatingHistoryEntry } from './types';
+import type { LeaderboardEntry, MedalEntry, Player, Tournament, RatingType, TournamentFormatFilter, Team, RatingHistoryEntry, RegistrationEntry } from './types';
 import {
   applyTournamentOverride,
   applyTournamentOverrides,
@@ -1129,6 +1129,62 @@ export interface TournamentResultRow {
   balls: number;
   ratingType: string;
   gender: string;
+}
+
+export async function fetchTournamentRegistrations(
+  tournamentId: string,
+  formatCode: string
+): Promise<RegistrationEntry[]> {
+  if (!process.env.DATABASE_URL) return [];
+  const pool = getPool();
+
+  const fc = String(formatCode || '').toLowerCase();
+  let formatClause = '';
+  if (fc === 'kotc' || fc.includes('king')) {
+    formatClause = `AND (LOWER(COALESCE(t2.format, '')) = 'kotc' OR LOWER(COALESCE(t2.format, '')) LIKE '%king%')`;
+  } else if (fc === 'thai' || fc.includes('thai')) {
+    formatClause = `AND LOWER(COALESCE(t2.format, '')) LIKE '%thai%'`;
+  } else if (fc === 'dt' || fc === 'ipt' || fc.includes('ipt') || fc.includes('double')) {
+    formatClause = `AND (LOWER(COALESCE(t2.format, '')) LIKE '%ipt%' OR LOWER(COALESCE(t2.format, '')) LIKE '%double%')`;
+  }
+
+  const eff = sqlEffectiveRatingPointsExpr('tr');
+  const valuesRows = RATING_POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
+
+  try {
+    const { rows } = await pool.query(
+      `WITH pts(place, pts) AS (VALUES ${valuesRows})
+       SELECT
+         pr.id,
+         pr.name,
+         pr.gender,
+         CASE WHEN p.id IS NOT NULL
+              THEN COALESCE(SUM(${eff}), 0)::int
+              ELSE NULL
+         END AS format_rating
+       FROM player_requests pr
+       LEFT JOIN players p ON p.id::text = pr.approved_player_id
+       LEFT JOIN tournament_results tr ON tr.player_id = p.id
+       LEFT JOIN tournaments t2 ON t2.id = tr.tournament_id
+         AND t2.status = 'finished'
+         ${formatClause}
+       LEFT JOIN pts lk ON lk.place = tr.place
+       WHERE pr.tournament_id = $1
+         AND pr.status = 'approved'
+       GROUP BY pr.id, pr.name, pr.gender, p.id, pr.created_at
+       ORDER BY pr.created_at ASC`,
+      [tournamentId]
+    );
+
+    return rows.map((r) => ({
+      id: String(r.id ?? ''),
+      name: String(r.name ?? ''),
+      gender: String(r.gender ?? ''),
+      formatRating: r.format_rating != null ? Number(r.format_rating) : null,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchTournamentResults(tournamentId: string): Promise<TournamentResultRow[]> {
