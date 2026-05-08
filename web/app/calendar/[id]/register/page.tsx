@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import TournamentRegisterForm from '@/components/calendar/TournamentRegisterForm';
-import { fetchTournamentById } from '@/lib/queries';
+import RegisteredParticipantsList from '@/components/calendar/RegisteredParticipantsList';
+import { fetchTournamentById, fetchTournamentRegistrations } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +27,8 @@ export default async function TournamentRegisterPage({ params }: PageProps) {
   const isRegistrationClosed =
     tournament.status === 'finished' || tournament.status === 'cancelled';
 
+  const registrations = await fetchTournamentRegistrations(id, tournament.formatCode);
+
   return (
     <main className="max-w-2xl mx-auto px-4 py-10">
       <nav className="text-text-secondary text-sm font-body">
@@ -44,6 +47,14 @@ export default async function TournamentRegisterPage({ params }: PageProps) {
       <p className="mt-1 text-text-secondary font-body text-sm">
         Статус: <span className="text-text-primary/90">{tournament.status}</span>
       </p>
+
+      <RegisteredParticipantsList
+        registrations={registrations}
+        capacity={tournament.capacity}
+        participantCount={tournament.participantCount}
+        waitlistCount={tournament.waitlistCount ?? 0}
+        spotsLeft={tournament.spotsLeft}
+      />
 
       {isRegistrationClosed ? (
         <section className="mt-8 rounded-xl border border-white/10 bg-surface-light/20 p-6 md:p-8">
