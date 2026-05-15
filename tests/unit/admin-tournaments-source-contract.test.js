@@ -71,4 +71,17 @@ describe('Admin tournaments page source contract', () => {
     expect(adminPage).toContain('Заходы учитываются как дополнительный критерий.');
     expect(adminPage).toContain('kotcTakeoversMode');
   });
+
+  it('keeps KOTC Next rounds locked to pairs per court', () => {
+    const adminPage = read('web/app/admin/tournaments/page.tsx');
+    const legacySync = read('web/lib/admin-legacy-sync.ts');
+    const nextConfig = read('web/lib/kotc-next-config.ts');
+
+    expect(adminPage).toContain('onChange={(value) => updateSettings({ kotcPpc: value, kotcRaundCount: value })}');
+    expect(adminPage).toContain('автоматически = пар на корт');
+    expect(adminPage).not.toContain('onChange={(value) => updateSettings({ kotcRaundCount: value })}');
+    expect(legacySync).toContain('raundCount: ppc');
+    expect(nextConfig).toContain('const raundCount = ppc');
+    expect(nextConfig).toContain('raundCount !== ppc');
+  });
 });

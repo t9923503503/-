@@ -25,10 +25,8 @@ import {
   KOTC_ADMIN_DEFAULT_TIMER,
   KOTC_ADMIN_FORMAT,
   KOTC_ADMIN_MAX_PPC,
-  KOTC_ADMIN_MAX_RAUNDS,
   KOTC_ADMIN_MAX_TIMER,
   KOTC_ADMIN_MIN_PPC,
-  KOTC_ADMIN_MIN_RAUNDS,
   KOTC_ADMIN_MIN_TIMER,
   getKotcSeatCount,
   THAI_ADMIN_COURTS,
@@ -3220,7 +3218,7 @@ export default function AdminTournamentsPage() {
               <label className="text-xs text-text-secondary">Пар на корт</label>
               <Stepper
                 value={kotcSettings?.kotcPpc ?? settings.kotcPpc}
-                onChange={(value) => updateSettings({ kotcPpc: value })}
+                onChange={(value) => updateSettings({ kotcPpc: value, kotcRaundCount: value })}
                 min={KOTC_ADMIN_MIN_PPC}
                 max={KOTC_ADMIN_MAX_PPC}
               />
@@ -3228,12 +3226,14 @@ export default function AdminTournamentsPage() {
 
             <div className="flex items-center justify-between gap-3">
               <label className="text-xs text-text-secondary">Раундов на корт</label>
-              <Stepper
-                value={kotcSettings?.kotcRaundCount ?? settings.kotcRaundCount}
-                onChange={(value) => updateSettings({ kotcRaundCount: value })}
-                min={KOTC_ADMIN_MIN_RAUNDS}
-                max={KOTC_ADMIN_MAX_RAUNDS}
-              />
+              <div className="text-right">
+                <div className="font-mono text-sm font-semibold text-brand">
+                  {kotcSettings?.kotcPpc ?? settings.kotcPpc}
+                </div>
+                <div className="text-[10px] uppercase tracking-wide text-text-secondary">
+                  автоматически = пар на корт
+                </div>
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-3">

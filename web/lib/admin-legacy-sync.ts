@@ -33,8 +33,8 @@ export const KOTC_ADMIN_MIN_PPC = 3;
 export const KOTC_ADMIN_MAX_PPC = 5;
 export const KOTC_ADMIN_DEFAULT_PPC = 4;
 export const KOTC_ADMIN_MIN_RAUNDS = 1;
-export const KOTC_ADMIN_MAX_RAUNDS = 4;
-export const KOTC_ADMIN_DEFAULT_RAUNDS = 2;
+export const KOTC_ADMIN_MAX_RAUNDS = KOTC_ADMIN_MAX_PPC;
+export const KOTC_ADMIN_DEFAULT_RAUNDS = KOTC_ADMIN_DEFAULT_PPC;
 export const KOTC_ADMIN_MIN_TIMER = 9;
 export const KOTC_ADMIN_MAX_TIMER = 20;
 export const KOTC_ADMIN_DEFAULT_TIMER = 10;
@@ -400,11 +400,7 @@ export function normalizeKotcAdminSettings(settings?: Record<string, unknown>, p
     courts,
     playersPerCourt: ppc * 2,
     ppc,
-    raundCount: clamp(
-      toFiniteInt(source.kotcRaundCount ?? source.raundCount, KOTC_ADMIN_DEFAULT_RAUNDS),
-      KOTC_ADMIN_MIN_RAUNDS,
-      KOTC_ADMIN_MAX_RAUNDS,
-    ),
+    raundCount: ppc,
     raundTimerMinutes: clamp(
       toFiniteInt(source.kotcRaundTimerMinutes ?? source.raundTimerMinutes, KOTC_ADMIN_DEFAULT_TIMER),
       KOTC_ADMIN_MIN_TIMER,

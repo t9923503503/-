@@ -263,10 +263,7 @@ export async function resolveSudyamBootstrap(
       1,
       Math.trunc(Number(settings.courts) || Math.ceil(mainParticipants.length / Math.max(1, normalizedPpc * 2)) || 1),
     );
-    const normalizedRaundCount = Math.max(
-      1,
-      Math.trunc(Number(settings.kotcRaundCount ?? tournament.kotcRaundCount ?? 2) || 2),
-    );
+    const normalizedRaundCount = normalizedPpc;
     const normalizedTimer = Math.max(
       1,
       Math.trunc(Number(settings.kotcRaundTimerMinutes ?? tournament.kotcRaundTimerMinutes ?? 10) || 10),

@@ -31,7 +31,7 @@ export interface KotcNextJudgeParams {
   variant: KotcNextVariant;
   courts: number;      // 1вЂ“4
   ppc: number;         // pairs per court (3вЂ“5)
-  raundCount: number;  // rounds per tour (1вЂ“4)
+  raundCount: number;  // rounds per tour, always equals pairs per court
   raundTimerMinutes: number; // 9вЂ“20
   takeoversMode: KotcNextTakeoversMode;
 }
