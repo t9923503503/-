@@ -1,5 +1,16 @@
 import { getPool } from './db';
-import type { LeaderboardEntry, MedalEntry, Player, Tournament, RatingType, TournamentFormatFilter, Team, RatingHistoryEntry, RegistrationEntry } from './types';
+import type {
+  LeaderboardEntry,
+  MedalEntry,
+  Player,
+  Tournament,
+  RatingType,
+  TournamentFormatFilter,
+  Team,
+  RatingHistoryEntry,
+  RegistrationEntry,
+  TournamentResult,
+} from './types';
 import {
   applyTournamentOverride,
   applyTournamentOverrides,
@@ -13,10 +24,22 @@ import { sortTournamentsForCalendar } from './calendar';
 import {
   RATING_POINTS_TABLE,
   effectiveRatingPtsFromStored,
+  normalizeTournamentRatingLevel,
+  normalizeTournamentRatingLevelFromZone,
+  ratingPointsForLevelPlace,
   sqlEffectiveRatingPointsExpr,
 } from './rating-points';
 import { sanitizeServerImageUrl } from './server-image-url';
 import { resolveThaiSpectatorBoardUrlForArchive } from './thai-archive-meta';
+import { isKotcNextDemoTournament } from './kotc-next-demo-config';
+import { getKotcNextOperatorStateSummary } from './kotc-next';
+import {
+  buildPlayerFormatInsights,
+  emptyPlayerFormatInsights,
+  type KotcPlayerInsightNativeRow,
+  type PlayerFormatInsights,
+  type ThaiPlayerInsightNativeRow,
+} from './player-format-insights';
 
 const PLAYER_DB_EXTERNAL_ID = '__playerdb__';
 
@@ -42,11 +65,46 @@ function normalizeTournamentSettings(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function isKotcFormatValue(value: unknown): boolean {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized.includes('king') || normalized.includes('kotc');
+}
+
+function resolveResultRatingPts(input: {
+  place: number;
+  pool: 'pro' | 'novice';
+  storedRatingPts: number | null | undefined;
+  tournamentFormat?: unknown;
+  tournamentLevel?: string | null | undefined;
+  kotcZone?: string | null | undefined;
+}): number {
+  if (isKotcFormatValue(input.tournamentFormat) && String(input.kotcZone || '').trim()) {
+    return ratingPointsForLevelPlace(
+      input.place,
+      normalizeTournamentRatingLevelFromZone(input.kotcZone),
+      input.pool,
+    );
+  }
+
+  const level = input.tournamentLevel ? normalizeTournamentRatingLevel(input.tournamentLevel) : undefined;
+  return effectiveRatingPtsFromStored(input.place, input.pool, input.storedRatingPts, level);
+}
+
 export function shouldHideTournamentFromPublic(input: {
   name?: unknown;
   location?: unknown;
+  format?: unknown;
+  status?: unknown;
   settings?: unknown;
 }): boolean {
+  if (String(input.status || '').trim().toLowerCase() === 'draft') {
+    return true;
+  }
+
+  if (isKotcNextDemoTournament({ format: input.format, settings: input.settings })) {
+    return true;
+  }
+
   const settings = normalizeTournamentSettings(input.settings);
   if (
     settings.hideFromPublic === true ||
@@ -194,18 +252,65 @@ export async function fetchLeaderboard(
        END AS top_level
      FROM tournament_results tr
      JOIN players p ON p.id = tr.player_id AND p.status = 'active'
-     JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished' ${formatClause}
+     JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
+       AND COALESCE(t.settings->>'kotcNextDemoEnabled', 'false') <> 'true' ${formatClause}
      LEFT JOIN pts lk ON lk.place = tr.place
      WHERE tr.rating_type = $1
      GROUP BY p.id, p.name, p.gender, p.photo_url
      HAVING COALESCE(SUM(${eff}), 0) > 0
-     ORDER BY rating DESC
+     ORDER BY rating DESC, tournaments DESC, p.name ASC
      LIMIT $2`,
     [type, limit]
   );
 
+  const previousRankByPlayerId = new Map<string, number>();
+  if (rows.length > 0) {
+    const { rows: previousRanks } = await pool.query(
+      `WITH pts(place, pts) AS (VALUES ${valuesRows}),
+       latest_date AS (
+         SELECT MAX(t.date) AS value
+         FROM tournament_results tr
+         JOIN players p ON p.id = tr.player_id AND p.status = 'active'
+         JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
+           AND COALESCE(t.settings->>'kotcNextDemoEnabled', 'false') <> 'true' ${formatClause}
+         WHERE tr.rating_type = $1
+       ),
+       previous_totals AS (
+         SELECT
+           p.id,
+           p.name,
+           COALESCE(SUM(${eff}), 0)::int AS rating,
+           COUNT(DISTINCT tr.tournament_id)::int AS tournaments
+         FROM tournament_results tr
+         JOIN players p ON p.id = tr.player_id AND p.status = 'active'
+         JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
+           AND COALESCE(t.settings->>'kotcNextDemoEnabled', 'false') <> 'true' ${formatClause}
+         LEFT JOIN pts lk ON lk.place = tr.place
+         CROSS JOIN latest_date
+         WHERE tr.rating_type = $1
+           AND t.date < latest_date.value
+         GROUP BY p.id, p.name
+         HAVING COALESCE(SUM(${eff}), 0) > 0
+       )
+       SELECT
+         id,
+         ROW_NUMBER() OVER (ORDER BY rating DESC, tournaments DESC, name ASC)::int AS previous_rank
+       FROM previous_totals`,
+      [type]
+    );
+
+    for (const row of previousRanks) {
+      previousRankByPlayerId.set(String(row.id), Number(row.previous_rank));
+    }
+  }
+
   return rows.map((row, i) => ({
     rank: i + 1,
+    previousRank: previousRankByPlayerId.get(String(row.id)) ?? null,
+    rankDelta:
+      previousRankByPlayerId.has(String(row.id))
+        ? Number(previousRankByPlayerId.get(String(row.id))) - (i + 1)
+        : null,
     playerId: row.id,
     name: row.name,
     gender: row.gender,
@@ -264,7 +369,8 @@ export async function fetchMedalsLeaderboard(
        ) THEN 1 END)::int AS ipt_wins
      FROM tournament_results tr
      JOIN players p ON p.id = tr.player_id AND p.status = 'active'
-     JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished' ${formatClause}
+     JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
+       AND COALESCE(t.settings->>'kotcNextDemoEnabled', 'false') <> 'true' ${formatClause}
      WHERE tr.rating_type = $1
      GROUP BY p.id, p.name, p.photo_url, p.gender
      HAVING COUNT(CASE WHEN tr.place = 1 THEN 1 END) > 0
@@ -305,21 +411,32 @@ export async function fetchPlayer(id: string): Promise<Player | null> {
   const data = rows[0];
   if (!data) return null;
 
-  const valuesRows = RATING_POINTS_TABLE.map((pts, i) => `(${i + 1}, ${pts})`).join(',');
-  const eff = sqlEffectiveRatingPointsExpr('tr');
   const { rows: computed } = await pool.query(
-    `WITH pts(place, pts) AS (VALUES ${valuesRows})
-     SELECT
+    `SELECT
        tr.rating_type,
-       COALESCE(SUM(${eff}), 0)::int AS rating,
-       COUNT(DISTINCT tr.tournament_id)::int AS tournaments,
-       COALESCE(SUM(tr.wins), 0)::int AS wins,
-       MAX(t.date) AS last_seen
+       tr.tournament_id,
+       tr.place,
+       tr.rating_pts,
+       tr.rating_pool,
+       COALESCE(tr.wins, 0) AS wins,
+       t.date AS tournament_date,
+       t.format AS tournament_format,
+       COALESCE(t.level, '') AS tournament_level,
+       kotc_deep.zone AS kotc_zone
      FROM tournament_results tr
      LEFT JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
-     LEFT JOIN pts lk ON lk.place = tr.place
+       AND COALESCE(t.settings->>'kotcNextDemoEnabled', 'false') <> 'true'
+     LEFT JOIN LATERAL (
+       SELECT stats.zone
+       FROM kotcn_player_round_stat stats
+       JOIN kotcn_round r ON r.id = stats.round_id
+       WHERE r.tournament_id = tr.tournament_id
+         AND stats.player_id = tr.player_id
+       ORDER BY r.round_no DESC
+       LIMIT 1
+     ) kotc_deep ON TRUE
      WHERE tr.player_id = $1
-     GROUP BY tr.rating_type`,
+       AND t.id IS NOT NULL`,
     [id]
   );
 
@@ -327,19 +444,38 @@ export async function fetchPlayer(id: string): Promise<Player | null> {
   let tournamentsM = 0, tournamentsW = 0, tournamentsMix = 0;
   let totalWins = 0;
   let lastSeen = '';
+  const tournamentIdsByType = {
+    M: new Set<string>(),
+    W: new Set<string>(),
+    Mix: new Set<string>(),
+  };
 
   for (const r of computed) {
-    const rating = Number(r.rating ?? 0);
-    const tournaments = Number(r.tournaments ?? 0);
+    const ratingType = r.rating_type === 'W' ? 'W' : r.rating_type === 'Mix' ? 'Mix' : 'M';
+    const rating = resolveResultRatingPts({
+      place: Number(r.place ?? 0),
+      pool: r.rating_pool === 'novice' ? 'novice' : 'pro',
+      storedRatingPts: r.rating_pts != null ? Number(r.rating_pts) : undefined,
+      tournamentFormat: r.tournament_format,
+      tournamentLevel: String(r.tournament_level ?? ''),
+      kotcZone: String(r.kotc_zone ?? ''),
+    });
     const wins = Number(r.wins ?? 0);
-    const seen = toIsoDate(r.last_seen);
+    const seen = toIsoDate(r.tournament_date);
     totalWins += wins;
     if (seen > lastSeen) lastSeen = seen;
 
-    if (r.rating_type === 'M') { ratingM = rating; tournamentsM = tournaments; }
-    else if (r.rating_type === 'W') { ratingW = rating; tournamentsW = tournaments; }
-    else if (r.rating_type === 'Mix') { ratingMix = rating; tournamentsMix = tournaments; }
+    const tournamentId = String(r.tournament_id ?? '');
+    if (tournamentId) tournamentIdsByType[ratingType].add(tournamentId);
+
+    if (ratingType === 'M') ratingM += rating;
+    else if (ratingType === 'W') ratingW += rating;
+    else ratingMix += rating;
   }
+
+  tournamentsM = tournamentIdsByType.M.size;
+  tournamentsW = tournamentIdsByType.W.size;
+  tournamentsMix = tournamentIdsByType.Mix.size;
 
   return {
     id: data.id,
@@ -429,6 +565,8 @@ export async function fetchTournaments(
       return !shouldHideTournamentFromPublic({
         name: row.name,
         location: row.location,
+        format: row.format,
+        status: row.status,
         settings: row.settings,
       });
     });
@@ -519,7 +657,7 @@ export async function fetchActiveThaiJudgeTournaments(): Promise<ActiveThaiJudge
        AND r.status = 'live'
       LEFT JOIN thai_court c ON c.round_id = r.id
       WHERE LOWER(COALESCE(t.format, '')) = 'thai'
-        AND COALESCE(t.status, '') <> 'cancelled'
+        AND COALESCE(t.status, '') NOT IN ('cancelled', 'draft')
       GROUP BY t.id, t.name, t.date, t.time, t.location, t.settings, r.round_no, r.round_type, r.current_tour_no
       ORDER BY
         t.date DESC NULLS LAST,
@@ -533,6 +671,9 @@ export async function fetchActiveThaiJudgeTournaments(): Promise<ActiveThaiJudge
       !shouldHideTournamentFromPublic({
         name: row.name,
         location: row.tournament_location,
+        format: 'thai',
+        status: 'open',
+        settings: row.settings,
       })
     )
     .map((row) => ({
@@ -554,24 +695,49 @@ export interface RankingCounts {
   men: number;
   women: number;
   mix: number;
+  menTournaments: number;
+  womenTournaments: number;
+  mixTournaments: number;
   total: number;
 }
 
 export async function fetchRankingCounts(): Promise<RankingCounts> {
-  if (!process.env.DATABASE_URL) return { men: 0, women: 0, mix: 0, total: 0 };
+  if (!process.env.DATABASE_URL) {
+    return {
+      men: 0,
+      women: 0,
+      mix: 0,
+      menTournaments: 0,
+      womenTournaments: 0,
+      mixTournaments: 0,
+      total: 0,
+    };
+  }
   const pool = getPool();
   const { rows } = await pool.query(`
     SELECT
       count(DISTINCT player_id) FILTER (WHERE rating_type = 'M')::int   AS men,
       count(DISTINCT player_id) FILTER (WHERE rating_type = 'W')::int   AS women,
       count(DISTINCT player_id) FILTER (WHERE rating_type = 'Mix')::int AS mix,
+      count(DISTINCT tr.tournament_id) FILTER (WHERE rating_type = 'M')::int   AS men_tournaments,
+      count(DISTINCT tr.tournament_id) FILTER (WHERE rating_type = 'W')::int   AS women_tournaments,
+      count(DISTINCT tr.tournament_id) FILTER (WHERE rating_type = 'Mix')::int AS mix_tournaments,
       count(DISTINCT player_id)::int AS total
     FROM tournament_results tr
     JOIN players p ON p.id = tr.player_id AND p.status = 'active'
     JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
+      AND COALESCE(t.settings->>'kotcNextDemoEnabled', 'false') <> 'true'
   `);
   const r = rows[0];
-  return { men: r?.men ?? 0, women: r?.women ?? 0, mix: r?.mix ?? 0, total: r?.total ?? 0 };
+  return {
+    men: r?.men ?? 0,
+    women: r?.women ?? 0,
+    mix: r?.mix ?? 0,
+    menTournaments: r?.men_tournaments ?? 0,
+    womenTournaments: r?.women_tournaments ?? 0,
+    mixTournaments: r?.mix_tournaments ?? 0,
+    total: r?.total ?? 0,
+  };
 }
 
 export async function fetchTournamentById(
@@ -658,6 +824,18 @@ export async function fetchTournamentById(
     }));
   }
 
+  if (
+    shouldHideTournamentFromPublic({
+      name: data.name,
+      location: data.location,
+      format: data.format,
+      status: data.status,
+      settings: data.settings,
+    })
+  ) {
+    return null;
+  }
+
   return enrichTournamentRuntimeState(
     applyTournamentOverride({
       ...mapTournamentRow(data),
@@ -669,7 +847,7 @@ export async function fetchTournamentById(
 export async function fetchPlayerMatches(
   playerId: string,
   limit = 20
-) {
+): Promise<TournamentResult[]> {
   if (!process.env.DATABASE_URL) return [];
   if (!isUuid(playerId)) return [];
 
@@ -695,10 +873,48 @@ export async function fetchPlayerMatches(
         t.date AS tournament_date,
         t.format AS tournament_format,
         t.settings AS tournament_settings,
-        t.level AS tournament_level
+        t.level AS tournament_level,
+        thai_deep.points_p AS thai_points_p,
+        thai_deep.wins AS thai_round_wins,
+        thai_deep.total_diff AS thai_round_diff,
+        thai_deep.round_type AS thai_round_type,
+        thai_deep.zone AS thai_zone,
+        kotc_deep.king_wins AS kotc_king_wins,
+        kotc_deep.takeovers AS kotc_takeovers,
+        kotc_deep.games_played AS kotc_games_played,
+        kotc_deep.round_no AS kotc_round_no,
+        kotc_deep.zone AS kotc_zone
       FROM tournament_results tr
       JOIN tournaments t ON t.id = tr.tournament_id
       JOIN players p ON p.id = tr.player_id
+      LEFT JOIN LATERAL (
+        SELECT
+          r.round_type,
+          stats.points_p,
+          stats.wins,
+          stats.total_diff,
+          stats.zone
+        FROM thai_player_round_stat stats
+        JOIN thai_round r ON r.id = stats.round_id
+        WHERE stats.tournament_id = t.id
+          AND stats.player_id = tr.player_id
+        ORDER BY r.round_no DESC
+        LIMIT 1
+      ) thai_deep ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT
+          r.round_no,
+          stats.king_wins,
+          stats.takeovers,
+          stats.games_played,
+          stats.zone
+        FROM kotcn_player_round_stat stats
+        JOIN kotcn_round r ON r.id = stats.round_id
+        WHERE r.tournament_id = t.id
+          AND stats.player_id = tr.player_id
+        ORDER BY r.round_no DESC
+        LIMIT 1
+      ) kotc_deep ON TRUE
       WHERE tr.player_id = $1
         AND t.status = 'finished'
       ORDER BY t.date DESC, tr.place ASC
@@ -718,16 +934,22 @@ export async function fetchPlayerMatches(
       String(r.tournament_format ?? ''),
       settings,
     );
+    const place = Number(r.place ?? 0);
+    const ratingPool = r.rating_pool === 'novice' ? 'novice' : 'pro';
+    const ratingPts = resolveResultRatingPts({
+      place,
+      pool: ratingPool,
+      storedRatingPts: r.rating_pts != null ? Number(r.rating_pts) : undefined,
+      tournamentFormat: r.tournament_format,
+      tournamentLevel: r.tournament_level ? String(r.tournament_level) : null,
+      kotcZone: String(r.kotc_zone || ''),
+    });
     return {
       playerId: r.player_id,
       playerName: r.player_name,
-      place: Number(r.place ?? 0),
+      place,
       gamePts: Number(r.game_pts ?? 0),
-      ratingPts: effectiveRatingPtsFromStored(
-        Number(r.place ?? 0),
-        r.rating_pool === 'novice' ? 'novice' : 'pro',
-        r.rating_pts != null ? Number(r.rating_pts) : undefined,
-      ),
+      ratingPts,
       gender: (r.gender ?? 'M') as 'M' | 'W',
       tournamentId: tid,
       tournamentName: r.tournament_name ?? '',
@@ -740,6 +962,33 @@ export async function fetchPlayerMatches(
       thaiSpectatorBoardUrl,
       level: r.tournament_level ? String(r.tournament_level) : null,
       format: r.tournament_format ? String(r.tournament_format) : null,
+      thaiPointsP: r.thai_points_p != null ? Number(r.thai_points_p) : null,
+      thaiRoundWins: r.thai_round_wins != null ? Number(r.thai_round_wins) : null,
+      thaiRoundDiff: r.thai_round_diff != null ? Number(r.thai_round_diff) : null,
+      thaiRoundType: (() => {
+        const roundType = String(r.thai_round_type || '').trim().toLowerCase();
+        if (roundType === 'r2') return 'r2' as const;
+        if (roundType === 'r1') return 'r1' as const;
+        return null;
+      })(),
+      thaiZone: (() => {
+        const zone = String(r.thai_zone || '').trim().toLowerCase();
+        if (zone === 'advance') return 'advanced';
+        if (zone === 'hard' || zone === 'advanced' || zone === 'medium' || zone === 'light') return zone as 'hard' | 'advanced' | 'medium' | 'light';
+        return null;
+      })(),
+      kotcKingWins: r.kotc_king_wins != null ? Number(r.kotc_king_wins) : null,
+      kotcTakeovers: r.kotc_takeovers != null ? Number(r.kotc_takeovers) : null,
+      kotcGamesPlayed: r.kotc_games_played != null ? Number(r.kotc_games_played) : null,
+      kotcRoundNo: r.kotc_round_no != null ? (Number(r.kotc_round_no) === 2 ? 2 : 1) as 1 | 2 : null,
+      kotcZone: (() => {
+        const zone = String(r.kotc_zone || '').trim().toLowerCase();
+        if (zone === 'advance') return 'advanced';
+        if (zone === 'hard') return 'kin';
+        if (zone === 'kin' || zone === 'advanced' || zone === 'medium' || zone === 'light') return zone as 'kin' | 'advanced' | 'medium' | 'light';
+        if (zone === 'lite') return 'light';
+        return null;
+      })(),
     };
   });
 }
@@ -837,7 +1086,7 @@ export async function fetchPartnerRequests(filters: PartnerFilters = {}): Promis
     `pr.status = 'pending'`,
     `COALESCE(pr.registration_type, 'solo') = 'solo'`,
     `COALESCE(pr.partner_wanted, true) = true`,
-    `COALESCE(t.status, 'open') <> 'cancelled'`,
+    `COALESCE(t.status, 'open') NOT IN ('cancelled', 'draft')`,
     `(t.date IS NULL OR t.date >= CURRENT_DATE)`,
   ];
   const params: string[] = [];
@@ -867,6 +1116,7 @@ export async function fetchPartnerRequests(filters: PartnerFilters = {}): Promis
          COALESCE(t.name, '') AS tournament_name,
          t.date AS tournament_date,
          COALESCE(t.level, '') AS tournament_level,
+         t.settings AS tournament_settings,
          pr.created_at
        FROM player_requests pr
        LEFT JOIN tournaments t ON t.id = pr.tournament_id
@@ -876,19 +1126,28 @@ export async function fetchPartnerRequests(filters: PartnerFilters = {}): Promis
       params
     );
 
-    return rows.map((r) => ({
-      id: String(r.id ?? ''),
-      name: String(r.name ?? ''),
-      gender: String(r.gender ?? 'M') === 'W' ? 'W' : 'M',
-      phone: String(r.phone ?? ''),
-      requesterUserId:
-        r.requester_user_id != null ? Number(r.requester_user_id) : null,
-      tournamentId: String(r.tournament_id ?? ''),
-      tournamentName: String(r.tournament_name ?? ''),
-      tournamentDate: toIsoDate(r.tournament_date),
-      tournamentLevel: String(r.tournament_level ?? ''),
-      createdAt: String(r.created_at ?? ''),
-    }));
+    return rows
+      .filter((r) =>
+        !shouldHideTournamentFromPublic({
+          name: r.tournament_name,
+          format: '',
+          status: 'open',
+          settings: r.tournament_settings,
+        }),
+      )
+      .map((r) => ({
+        id: String(r.id ?? ''),
+        name: String(r.name ?? ''),
+        gender: String(r.gender ?? 'M') === 'W' ? 'W' : 'M',
+        phone: String(r.phone ?? ''),
+        requesterUserId:
+          r.requester_user_id != null ? Number(r.requester_user_id) : null,
+        tournamentId: String(r.tournament_id ?? ''),
+        tournamentName: String(r.tournament_name ?? ''),
+        tournamentDate: toIsoDate(r.tournament_date),
+        tournamentLevel: String(r.tournament_level ?? ''),
+        createdAt: String(r.created_at ?? ''),
+      }));
   } catch {
     // Backward compatible: partner columns may not exist before migration.
     return [];
@@ -955,6 +1214,9 @@ export interface PlayerExtendedStats {
   rankM: number | null;
   rankW: number | null;
   rankMix: number | null;
+  rankDeltaM: number | null;
+  rankDeltaW: number | null;
+  rankDeltaMix: number | null;
   formLast5: number[];
   levelPrizes: { hard: LevelBucket; advanced: LevelBucket; medium: LevelBucket; light: LevelBucket };
   formatStats: { kotc: FormatBucket; double: FormatBucket; thai: FormatBucket };
@@ -968,7 +1230,8 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
     topThreeRate: 0, avgPlace: 0, bestPlace: 0, totalRatingPts: 0, avgRatingPts: 0,
     winRate: 0, totalWins: 0, totalBalls: 0, avgBalls: 0,
     bestTournament: null, currentStreak: { type: 'none', count: 0 },
-    rankM: null, rankW: null, rankMix: null, formLast5: [],
+    rankM: null, rankW: null, rankMix: null,
+    rankDeltaM: null, rankDeltaW: null, rankDeltaMix: null, formLast5: [],
     levelPrizes: { hard: emptyLvl(), advanced: emptyLvl(), medium: emptyLvl(), light: emptyLvl() },
     formatStats: { kotc: emptyFmtDef(), double: emptyFmtDef(), thai: emptyFmtDef() },
   };
@@ -980,9 +1243,20 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
     `SELECT tr.place, tr.game_pts, tr.rating_pts, tr.wins, tr.diff, tr.balls, tr.rating_type,
             tr.rating_pool,
             t.id AS tournament_id, t.name AS tournament_name, t.date AS tournament_date, t.format,
-            COALESCE(t.level, '') AS tournament_level
+            COALESCE(t.level, '') AS tournament_level,
+            kotc_deep.zone AS kotc_zone
      FROM tournament_results tr
      JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
+       AND COALESCE(t.settings->>'kotcNextDemoEnabled', 'false') <> 'true'
+     LEFT JOIN LATERAL (
+       SELECT stats.zone
+       FROM kotcn_player_round_stat stats
+       JOIN kotcn_round r ON r.id = stats.round_id
+       WHERE r.tournament_id = t.id
+         AND stats.player_id = tr.player_id
+       ORDER BY r.round_no DESC
+       LIMIT 1
+     ) kotc_deep ON TRUE
      WHERE tr.player_id = $1
      ORDER BY t.date DESC, tr.place ASC`,
     [playerId]
@@ -998,12 +1272,14 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
   const avgPlace = places.length ? +(places.reduce((a, b) => a + b, 0) / places.length).toFixed(1) : 0;
   const bestPlace = places.length ? Math.min(...places) : 0;
   const totalRatingPts = results.reduce((s, r) => {
-    const pool = r.rating_pool === 'novice' ? 'novice' : 'pro';
-    return s + effectiveRatingPtsFromStored(
-      Number(r.place),
-      pool,
-      r.rating_pts != null ? Number(r.rating_pts) : undefined,
-    );
+    return s + resolveResultRatingPts({
+      place: Number(r.place),
+      pool: r.rating_pool === 'novice' ? 'novice' : 'pro',
+      storedRatingPts: r.rating_pts != null ? Number(r.rating_pts) : undefined,
+      tournamentFormat: r.format,
+      tournamentLevel: String(r.tournament_level ?? ''),
+      kotcZone: String(r.kotc_zone ?? ''),
+    });
   }, 0);
   const avgRatingPts = totalTournaments ? +(totalRatingPts / totalTournaments).toFixed(1) : 0;
   const totalWins = results.reduce((s, r) => s + Number(r.wins || 0), 0);
@@ -1016,12 +1292,14 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
   let bestTournament: PlayerExtendedStats['bestTournament'] = null;
   let bestPts = -Infinity;
   for (const r of results) {
-    const pool = r.rating_pool === 'novice' ? 'novice' : 'pro';
-    const pts = effectiveRatingPtsFromStored(
-      Number(r.place),
-      pool,
-      r.rating_pts != null ? Number(r.rating_pts) : undefined,
-    );
+    const pts = resolveResultRatingPts({
+      place: Number(r.place),
+      pool: r.rating_pool === 'novice' ? 'novice' : 'pro',
+      storedRatingPts: r.rating_pts != null ? Number(r.rating_pts) : undefined,
+      tournamentFormat: r.format,
+      tournamentLevel: String(r.tournament_level ?? ''),
+      kotcZone: String(r.kotc_zone ?? ''),
+    });
     if (pts > bestPts) {
       bestPts = pts;
       bestTournament = { id: r.tournament_id ? String(r.tournament_id) : undefined, name: r.tournament_name, date: toIsoDate(r.tournament_date), place: Number(r.place), pts };
@@ -1039,23 +1317,76 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
   const eff = sqlEffectiveRatingPointsExpr('tr');
   const { rows: ranks } = await pool.query(
     `WITH pts(place, pts) AS (VALUES ${valuesRows}),
-    ranked AS (
-      SELECT tr.player_id, tr.rating_type,
-             ROW_NUMBER() OVER (PARTITION BY tr.rating_type ORDER BY SUM(${eff}) DESC) AS rn
+    eligible AS (
+      SELECT
+        tr.player_id,
+        tr.rating_type,
+        p.name,
+        t.date,
+        ${eff} AS rating_points,
+        tr.tournament_id
       FROM tournament_results tr
       JOIN players p ON p.id = tr.player_id AND p.status = 'active'
+      JOIN tournaments t ON t.id = tr.tournament_id AND t.status = 'finished'
+        AND COALESCE(t.settings->>'kotcNextDemoEnabled', 'false') <> 'true'
       LEFT JOIN pts lk ON lk.place = tr.place
-      GROUP BY tr.player_id, tr.rating_type
-      HAVING SUM(${eff}) > 0
+    ),
+    latest_dates AS (
+      SELECT rating_type, MAX(date) AS latest_date
+      FROM eligible
+      GROUP BY rating_type
+    ),
+    current_totals AS (
+      SELECT player_id, rating_type, MIN(name) AS name,
+             SUM(rating_points)::int AS rating,
+             COUNT(DISTINCT tournament_id)::int AS tournaments
+      FROM eligible
+      GROUP BY player_id, rating_type
+      HAVING SUM(rating_points) > 0
+    ),
+    current_ranked AS (
+      SELECT player_id, rating_type,
+             ROW_NUMBER() OVER (
+               PARTITION BY rating_type
+               ORDER BY rating DESC, tournaments DESC, name ASC
+             ) AS rn
+      FROM current_totals
+    ),
+    previous_totals AS (
+      SELECT e.player_id, e.rating_type, MIN(e.name) AS name,
+             SUM(e.rating_points)::int AS rating,
+             COUNT(DISTINCT e.tournament_id)::int AS tournaments
+      FROM eligible e
+      JOIN latest_dates latest ON latest.rating_type = e.rating_type
+      WHERE e.date < latest.latest_date
+      GROUP BY e.player_id, e.rating_type
+      HAVING SUM(e.rating_points) > 0
+    ),
+    previous_ranked AS (
+      SELECT player_id, rating_type,
+             ROW_NUMBER() OVER (
+               PARTITION BY rating_type
+               ORDER BY rating DESC, tournaments DESC, name ASC
+             ) AS previous_rn
+      FROM previous_totals
     )
-    SELECT rating_type, rn FROM ranked WHERE player_id = $1`,
+    SELECT current.rating_type, current.rn, previous.previous_rn
+    FROM current_ranked current
+    LEFT JOIN previous_ranked previous
+      ON previous.player_id = current.player_id
+     AND previous.rating_type = current.rating_type
+    WHERE current.player_id = $1`,
     [playerId]
   );
   let rankM: number | null = null, rankW: number | null = null, rankMix: number | null = null;
+  let rankDeltaM: number | null = null, rankDeltaW: number | null = null, rankDeltaMix: number | null = null;
   for (const r of ranks) {
-    if (r.rating_type === 'M') rankM = Number(r.rn);
-    if (r.rating_type === 'W') rankW = Number(r.rn);
-    if (r.rating_type === 'Mix') rankMix = Number(r.rn);
+    const rank = Number(r.rn);
+    const previousRank = r.previous_rn == null ? null : Number(r.previous_rn);
+    const delta = previousRank == null ? null : previousRank - rank;
+    if (r.rating_type === 'M') { rankM = rank; rankDeltaM = delta; }
+    if (r.rating_type === 'W') { rankW = rank; rankDeltaW = delta; }
+    if (r.rating_type === 'Mix') { rankMix = rank; rankDeltaMix = delta; }
   }
 
   // ── Level prizes breakdown ───────────────────────────────────────────────
@@ -1099,23 +1430,169 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
     if (!key) continue;
     const b = formatStats[key];
     b.total++;
-    b.rating += effectiveRatingPtsFromStored(
-      Number(r.place),
-      r.rating_pool === 'novice' ? 'novice' : 'pro',
-      r.rating_pts != null ? Number(r.rating_pts) : undefined,
-    );
+    b.rating += resolveResultRatingPts({
+      place: Number(r.place),
+      pool: r.rating_pool === 'novice' ? 'novice' : 'pro',
+      storedRatingPts: r.rating_pts != null ? Number(r.rating_pts) : undefined,
+      tournamentFormat: r.format,
+      tournamentLevel: String(r.tournament_level ?? ''),
+      kotcZone: String(r.kotc_zone ?? ''),
+    });
     if (Number(r.place) === 1) b.gold++;
   }
 
   return {
     totalTournaments, gold, silver, bronze, topThreeRate,
     avgPlace, bestPlace, totalRatingPts, avgRatingPts, winRate, totalWins,
-    totalBalls, avgBalls, bestTournament, currentStreak, rankM, rankW, rankMix, formLast5,
+    totalBalls, avgBalls, bestTournament, currentStreak, rankM, rankW, rankMix,
+    rankDeltaM, rankDeltaW, rankDeltaMix, formLast5,
     levelPrizes, formatStats,
   };
 }
 
 // ─── Tournament Results (public page) ───────────────────────────────────
+
+export async function fetchPlayerFormatInsights(
+  playerId: string,
+  options?: { matches?: TournamentResult[]; stats?: PlayerExtendedStats | null; player?: Player | null },
+): Promise<PlayerFormatInsights> {
+  const empty = emptyPlayerFormatInsights();
+
+  if (!process.env.DATABASE_URL) return empty;
+  if (!isUuid(playerId)) return empty;
+
+  const pool = getPool();
+  const matches = options?.matches ?? (await fetchPlayerMatches(playerId, 30));
+  const stats = options?.stats ?? (await fetchPlayerExtendedStats(playerId));
+  const player = options?.player ?? (await fetchPlayer(playerId));
+  const primaryRating = player ? (player.gender === 'M' ? player.ratingM : player.ratingW) : 0;
+
+  const { rows: thaiRows } = await pool.query(
+    `
+      WITH latest_round AS (
+        SELECT DISTINCT ON (r.tournament_id)
+          r.tournament_id::text AS tournament_id,
+          COALESCE(t.name, '') AS tournament_name,
+          t.date AS tournament_date,
+          r.round_no,
+          r.round_type,
+          stats.points_p,
+          stats.wins,
+          stats.total_diff,
+          stats.kef,
+          stats.zone,
+          (
+            SELECT COUNT(*)::int
+            FROM thai_match tm
+            JOIN thai_tour tt ON tt.id = tm.tour_id
+            JOIN thai_court tc ON tc.id = tt.court_id
+            JOIN thai_match_player mp ON mp.match_id = tm.id
+            WHERE tc.round_id = r.id
+              AND mp.player_id = stats.player_id
+              AND tm.status = 'confirmed'
+              AND (
+                (mp.team_side = 1 AND tm.team1_score > tm.team2_score AND ABS(tm.team1_score - tm.team2_score) <= 2) OR
+                (mp.team_side = 2 AND tm.team2_score > tm.team1_score AND ABS(tm.team1_score - tm.team2_score) <= 2)
+              )
+          ) AS close_wins
+        FROM thai_player_round_stat stats
+        JOIN thai_round r ON r.id = stats.round_id
+        JOIN tournaments t ON t.id = r.tournament_id
+        WHERE stats.player_id = $1
+          AND t.status = 'finished'
+        ORDER BY r.tournament_id, r.round_no DESC
+      )
+      SELECT
+        tournament_id,
+        tournament_name,
+        tournament_date,
+        round_no,
+        round_type,
+        points_p,
+        wins,
+        total_diff,
+        kef,
+        zone,
+        close_wins
+      FROM latest_round
+      ORDER BY tournament_date DESC, round_no DESC
+    `,
+    [playerId],
+  );
+
+  const thaiNativeRows: ThaiPlayerInsightNativeRow[] = thaiRows.map((row) => ({
+    tournamentId: String(row.tournament_id || ''),
+    tournamentName: String(row.tournament_name || ''),
+    tournamentDate: toIsoDate(row.tournament_date),
+    roundNo: Number(row.round_no || 0),
+    roundType: String(row.round_type || '').trim().toLowerCase() === 'r2' ? 'r2' : 'r1',
+    pointsP: Number(row.points_p || 0),
+    wins: Number(row.wins || 0),
+    totalDiff: Number(row.total_diff || 0),
+    kef: Number(row.kef || 0),
+    zone: (() => {
+      const zone = String(row.zone || '').trim().toLowerCase();
+      if (zone === 'advance') return 'advanced';
+      if (zone === 'hard' || zone === 'advanced' || zone === 'medium' || zone === 'light') {
+        return zone as 'hard' | 'advanced' | 'medium' | 'light';
+      }
+      return null;
+    })(),
+    closeWins: Number(row.close_wins || 0),
+  }));
+
+  const { rows: kotcRows } = await pool.query(
+    `
+      SELECT
+        r.tournament_id::text AS tournament_id,
+        COALESCE(t.name, '') AS tournament_name,
+        t.date AS tournament_date,
+        r.round_no,
+        SUM(stats.king_wins)::int AS king_wins,
+        SUM(stats.takeovers)::int AS takeovers,
+        SUM(stats.games_played)::int AS games_played,
+        MAX(stats.king_wins)::int AS longest_king_run,
+        MAX(stats.zone) AS zone
+      FROM kotcn_player_round_stat stats
+      JOIN kotcn_round r ON r.id = stats.round_id
+      JOIN tournaments t ON t.id = r.tournament_id
+      WHERE stats.player_id = $1
+        AND t.status = 'finished'
+      GROUP BY r.tournament_id, t.name, t.date, r.round_no
+      ORDER BY t.date DESC, r.round_no ASC
+    `,
+    [playerId],
+  );
+
+  const kotcNativeRows: KotcPlayerInsightNativeRow[] = kotcRows.map((row) => ({
+    tournamentId: String(row.tournament_id || ''),
+    tournamentName: String(row.tournament_name || ''),
+    tournamentDate: toIsoDate(row.tournament_date),
+    roundNo: Number(row.round_no || 0),
+    kingWins: Number(row.king_wins || 0),
+    takeovers: Number(row.takeovers || 0),
+    gamesPlayed: Number(row.games_played || 0),
+    longestKingRun: Number(row.longest_king_run || 0),
+    zone: (() => {
+      const zone = String(row.zone || '').trim().toLowerCase();
+      if (zone === 'advance') return 'advanced';
+      if (zone === 'hard') return 'kin';
+      if (zone === 'kin' || zone === 'advanced' || zone === 'medium' || zone === 'light') {
+        return zone as 'kin' | 'advanced' | 'medium' | 'light';
+      }
+      if (zone === 'lite') return 'light';
+      return null;
+    })(),
+  }));
+
+  return buildPlayerFormatInsights({
+    matches,
+    primaryRating,
+    currentTop3Streak: stats?.currentStreak?.count ?? 0,
+    thaiNativeRows,
+    kotcNativeRows,
+  });
+}
 
 export interface TournamentResultRow {
   playerId: string;
@@ -1129,6 +1606,8 @@ export interface TournamentResultRow {
   balls: number;
   ratingType: string;
   gender: string;
+  ratingPool?: 'pro' | 'novice' | null;
+  zoneLabel?: string | null;
 }
 
 export async function fetchTournamentRegistrations(
@@ -1202,9 +1681,9 @@ export async function fetchTournamentResults(tournamentId: string): Promise<Tour
     [tournamentId]
   );
 
-  return rows.map((r) => {
+  const baseResults = rows.map((r) => {
     const place = Number(r.place ?? 0);
-    const poolKind = r.rating_pool === 'novice' ? 'novice' : 'pro';
+    const poolKind: 'pro' | 'novice' = r.rating_pool === 'novice' ? 'novice' : 'pro';
     const ratingPts = effectiveRatingPtsFromStored(place, poolKind, r.rating_pts);
 
     return {
@@ -1219,6 +1698,83 @@ export async function fetchTournamentResults(tournamentId: string): Promise<Tour
       balls: Number(r.balls ?? 0),
       ratingType: r.rating_type ?? '',
       gender: r.gender ?? '',
+      ratingPool: poolKind,
     };
   });
+
+  let format = '';
+  try {
+    const tournamentMeta = await pool.query(
+      `SELECT format FROM tournaments WHERE id = $1 LIMIT 1`,
+      [tournamentId],
+    );
+    format = String(tournamentMeta.rows[0]?.format ?? '').trim().toLowerCase();
+  } catch {
+    return baseResults;
+  }
+
+  if (!format.includes('king') && !format.includes('kotc')) {
+    return baseResults;
+  }
+
+  try {
+    const state = await getKotcNextOperatorStateSummary(tournamentId);
+    const finalRows = state?.finalIndividualResults ?? [];
+    if (!finalRows.length) return baseResults;
+
+    const playerIds = finalRows
+      .map((row) => String(row.playerId || '').trim())
+      .filter((value): value is string => Boolean(value) && isUuid(value));
+
+    const photoByPlayerId = new Map<string, string>();
+    if (playerIds.length) {
+      const photoRows = await pool.query(
+        `SELECT id, photo_url FROM players WHERE id = ANY($1::uuid[])`,
+        [playerIds],
+      );
+      for (const row of photoRows.rows) {
+        const playerId = String(row.id ?? '').trim();
+        if (!playerId) continue;
+        photoByPlayerId.set(playerId, sanitizeServerImageUrl(row.photo_url));
+      }
+    }
+
+    const baseByPlayerId = new Map(
+      baseResults
+        .filter((row) => row.playerId)
+        .map((row) => [row.playerId, row] as const),
+    );
+
+    return finalRows.map((row) => {
+      const normalizedPlayerId = String(row.playerId || '').trim();
+      const base = normalizedPlayerId ? baseByPlayerId.get(normalizedPlayerId) : undefined;
+      const r2 = row.r2;
+
+      return {
+        playerId: normalizedPlayerId,
+        playerName: row.playerName,
+        playerPhotoUrl:
+          (normalizedPlayerId ? photoByPlayerId.get(normalizedPlayerId) : '') ||
+          base?.playerPhotoUrl ||
+          '',
+        place: row.finalPosition,
+        gamePts: r2?.kingWins ?? base?.gamePts ?? 0,
+        ratingPts: resolveResultRatingPts({
+          place: row.finalPosition,
+          pool: 'pro',
+          storedRatingPts: undefined,
+          tournamentFormat: format,
+          kotcZone: row.finalZone,
+        }),
+        wins: r2?.kingWins ?? base?.wins ?? 0,
+        diff: r2?.takeovers ?? base?.diff ?? 0,
+        balls: r2?.gamesPlayed ?? base?.balls ?? 0,
+        ratingType: base?.ratingType ?? '',
+        gender: row.gender ?? base?.gender ?? '',
+        zoneLabel: row.finalZoneLabel,
+      };
+    });
+  } catch {
+    return baseResults;
+  }
 }

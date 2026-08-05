@@ -35,10 +35,14 @@ export async function POST(
       .map((r: Record<string, unknown>) => {
         const poolRaw = String(r.ratingPool ?? r.rating_pool ?? '').trim().toLowerCase();
         return {
+          playerId: String(r.playerId ?? r.player_id ?? '').trim() || undefined,
           playerName: String(r.playerName ?? r.player_name ?? '').trim(),
           gender: String(r.gender ?? 'M') === 'W' ? ('W' as const) : ('M' as const),
           placement: normalizePlacement(r.placement),
           points: Number(r.points ?? 0),
+          wins: Number(r.wins ?? 0),
+          diff: Number(r.diff ?? 0),
+          balls: Number(r.balls ?? 0),
           ratingPts: normalizeRatingPts(r.ratingPts ?? r.rating_pts),
           ratingPool: poolRaw === 'novice' ? ('novice' as const) : ('pro' as const),
         };

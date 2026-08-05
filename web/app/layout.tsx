@@ -1,18 +1,85 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+import { Suspense } from 'react';
 import './globals.css';
 import { SiteChrome } from '@/components/layout/SiteChrome';
+import { YandexMetrika } from '@/components/analytics/YandexMetrika';
+import {
+  buildSportsOrganizationJsonLd,
+  buildWebsiteJsonLd,
+  jsonLdScriptProps,
+} from '@/lib/seo';
+
+const METRIKA_ID = process.env.YANDEX_METRIKA_ID || process.env.NEXT_PUBLIC_YANDEX_METRIKA_ID || '108430286';
+
+const THEME_BOOTSTRAP = `(function(){var k='lpvolley-theme';var t='dark';try{var s=localStorage.getItem(k);t=s==='light'||s==='dark'?s:(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark')}catch(e){}document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t;var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',t==='light'?'#f8fafc':'#070b14')})()`;
 
 export const metadata: Metadata = {
-  title: '\u041b\u044e\u0442\u044b\u0435 \u041f\u043b\u044f\u0436\u043d\u0438\u043a\u0438 \u2014 King of the Court',
+  title: 'Пляжный волейбол в Сургуте: тренировки, игры, турниры | LPVOLLEY.RU',
   description:
-    '\u041f\u043b\u044f\u0436\u043d\u044b\u0439 \u0432\u043e\u043b\u0435\u0439\u0431\u043e\u043b \u0432 \u0444\u043e\u0440\u043c\u0430\u0442\u0435 King of the Court. \u0420\u0435\u0439\u0442\u0438\u043d\u0433\u0438, \u0442\u0443\u0440\u043d\u0438\u0440\u044b, \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0430.',
-  openGraph: {
-    title: '\u041b\u044e\u0442\u044b\u0435 \u041f\u043b\u044f\u0436\u043d\u0438\u043a\u0438 \u2014 King of the Court',
-    description:
-      '\u041f\u043b\u044f\u0436\u043d\u044b\u0439 \u0432\u043e\u043b\u0435\u0439\u0431\u043e\u043b: \u0440\u0435\u0439\u0442\u0438\u043d\u0433\u0438, \u0442\u0443\u0440\u043d\u0438\u0440\u044b, \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0430 \u0438\u0433\u0440\u043e\u043a\u043e\u0432.',
-    type: 'website',
-    locale: 'ru_RU',
+    'Пляжный волейбол в Сургуте: тренировки, игры, турниры, рейтинг игроков и поиск пары. LPVOLLEY.RU объединяет любителей пляжного волейбола. Форматы: THAI, King of the Court, миксты.',
+  keywords: [
+    'пляжный волейбол Сургут',
+    'пляжный волейбол в Сургуте',
+    'тренировки волейбол Сургут',
+    'турниры пляжный волейбол Сургут',
+    'волейбол 2 на 2 Сургут',
+    'King of the Court Сургут',
+    'рейтинг игроков пляжного волейбола',
+  ],
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
   },
+  alternates: {
+    canonical: 'https://lpvolley.ru',
+    languages: {
+      'ru-RU': 'https://lpvolley.ru',
+    },
+  },
+  openGraph: {
+    title: 'Пляжный волейбол в Сургуте: тренировки, игры, турниры | LPVOLLEY.RU',
+    description:
+      'Пляжный волейбол в Сургуте: тренировки, игры, турниры, рейтинг игроков и поиск пары.',
+    url: 'https://lpvolley.ru',
+    siteName: 'LPVOLLEY.RU',
+    locale: 'ru_RU',
+    type: 'website',
+    images: [
+      {
+        url: 'https://lpvolley.ru/og-banner.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'LPVolley — пляжный волейбол в Сургуте: турниры, тренировки, рейтинг',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Пляжный волейбол в Сургуте: тренировки, игры и турниры',
+    description:
+      'Пляжный волейбол в Сургуте: тренировки, игры, турниры, рейтинги игроков и поиск пары.',
+    images: {
+      url: 'https://lpvolley.ru/og-banner.jpg',
+      alt: 'LPVolley — пляжный волейбол в Сургуте',
+    },
+  },
+  icons: {
+    icon: [{ url: '/icon.png?v=20260805', type: 'image/png', sizes: '512x512' }],
+    shortcut: '/favicon.ico?v=20260805',
+    apple: [{ url: '/kotc/assets/logo_lp_192.png?v=20260805', sizes: '192x192', type: 'image/png' }],
+  },
+  applicationName: 'Лютые Пляжники',
+};
+
+export const viewport: Viewport = {
+  themeColor: '#070b14',
 };
 
 export default function RootLayout({
@@ -24,6 +91,11 @@ export default function RootLayout({
     <html lang="ru" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
+        <meta name="google-site-verification" content="QHxxU1_WOQ8QMaZZHrE-qxrL5gZiMCpr65VJOjrLSe4" />
+        <meta name="yandex-metrika-id" content={METRIKA_ID} />
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={jsonLdScriptProps(buildWebsiteJsonLd())} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={jsonLdScriptProps(buildSportsOrganizationJsonLd())} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"
@@ -40,6 +112,9 @@ export default function RootLayout({
         className="bg-surface text-text-primary font-body antialiased min-h-screen flex flex-col"
       >
         <SiteChrome>{children}</SiteChrome>
+        <Suspense fallback={null}>
+          <YandexMetrika counterId={METRIKA_ID} />
+        </Suspense>
       </body>
     </html>
   );

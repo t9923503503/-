@@ -1,7 +1,10 @@
 import type { ThaiSpectatorBoardPayload } from '@/lib/thai-spectator';
+import type { TournamentResultRow } from '@/lib/queries';
+import { buildThaiUnifiedResults } from '@/lib/thai-live/unified-results';
 import { splitCourtPlayersForSpectator } from '@/lib/thai-spectator-court-split';
 import { ThaiSpectatorFunStats } from '@/components/thai-live/ThaiSpectatorFunStats';
 import { ThaiStandingsTable } from '@/components/thai-live/ThaiStandingsTable';
+import { ThaiUnifiedResultsTable } from '@/components/thai-live/ThaiUnifiedResultsTable';
 import { ThaiBoardAutoRefresh } from '@/components/thai-live/ThaiBoardAutoRefresh';
 import { ThaiCourtTabs } from '@/components/thai-live/ThaiCourtTabs';
 
@@ -126,10 +129,17 @@ function MetaTile({ label, value }: { label: string; value: React.ReactNode }) {
 type ThaiSpectatorRound = ThaiSpectatorBoardPayload['rounds'][number];
 type ThaiSpectatorCourt = ThaiSpectatorRound['courts'][number];
 
-export function ThaiSpectatorBoard({ data }: { data: ThaiSpectatorBoardPayload }) {
+export function ThaiSpectatorBoard({
+  data,
+  storedResults = [],
+}: {
+  data: ThaiSpectatorBoardPayload;
+  storedResults?: TournamentResultRow[];
+}) {
   const variant = String(data.variant || '').trim().toUpperCase();
   const progressGroups = groupProgressRowsByPool(data.progress);
   const live = isLiveStage(data.stage);
+  const unifiedResults = buildThaiUnifiedResults(data, storedResults);
 
   function renderCourtCard(round: ThaiSpectatorRound, court: ThaiSpectatorCourt) {
     const currentTour = court.tours.find((tour) => tour.tourNo === court.currentTourNo) ?? null;
@@ -281,7 +291,13 @@ export function ThaiSpectatorBoard({ data }: { data: ThaiSpectatorBoardPayload }
           </div>
         </details>
 
-        <ThaiStandingsTable className="mt-4" groups={court.standingsGroups} tourCount={round.tourCount} />
+        <details className="group mt-4 rounded-2xl border border-white/10 bg-white/[0.03]">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70 marker:hidden [&::-webkit-details-marker]:hidden">
+            Локальная таблица корта
+            <span className="text-white/40 transition-transform group-open:rotate-180">⌄</span>
+          </summary>
+          <ThaiStandingsTable className="border-t border-white/10 px-3 pb-3 pt-4" groups={court.standingsGroups} tourCount={round.tourCount} />
+        </details>
       </article>
     );
   }
@@ -362,28 +378,43 @@ export function ThaiSpectatorBoard({ data }: { data: ThaiSpectatorBoardPayload }
         </div>
       </details>
 
+      <ThaiUnifiedResultsTable model={unifiedResults} surface="live" />
+
       {data.rounds.map((round) => {
         const courtTabs = round.courts.map((court) => ({
           label: court.label,
           sublabel: round.roundType === 'r2' ? 'зона' : `тур ${court.currentTourNo}`,
         }));
         return (
-          <section key={round.roundId} className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
+          <details
+            key={round.roundId}
+            open={round.roundStatus !== 'finished'}
+            className="group space-y-3"
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 marker:hidden [&::-webkit-details-marker]:hidden">
               <h2 className="font-heading text-xl uppercase tracking-[0.06em] text-[#ffd24a] sm:text-2xl">
                 {round.roundType.toUpperCase()} • {formatThaiStatusLabel(round.roundStatus)}
               </h2>
-              <div className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                {round.currentTourNo}/{round.tourCount} тур
+              <div className="flex items-center gap-3">
+                <div className="text-[11px] uppercase tracking-[0.2em] text-white/60">
+                  {round.currentTourNo}/{round.tourCount} тур
+                </div>
+                {round.roundStatus === 'finished' ? (
+                  <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold text-white/75 group-open:hidden">
+                    Открыть {round.roundType.toUpperCase()}
+                  </span>
+                ) : null}
               </div>
-            </div>
+            </summary>
 
-            <ThaiCourtTabs tabs={courtTabs}>
-              {round.courts.map((court) => (
-                <div key={court.courtId}>{renderCourtCard(round, court)}</div>
-              ))}
-            </ThaiCourtTabs>
-          </section>
+            <div className="mt-3">
+              <ThaiCourtTabs tabs={courtTabs}>
+                {round.courts.map((court) => (
+                  <div key={court.courtId}>{renderCourtCard(round, court)}</div>
+                ))}
+              </ThaiCourtTabs>
+            </div>
+          </details>
         );
       })}
 

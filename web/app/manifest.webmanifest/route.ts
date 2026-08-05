@@ -16,12 +16,12 @@ export function GET() {
       theme_color: '#111827',
       icons: [
         {
-          src: '/kotc/assets/logo_lp_192.png',
+          src: '/kotc/assets/logo_lp_192.png?v=20260805',
           sizes: '192x192',
           type: 'image/png',
         },
         {
-          src: '/kotc/assets/logo_lp_512.png',
+          src: '/kotc/assets/logo_lp_512.png?v=20260805',
           sizes: '512x512',
           type: 'image/png',
         },

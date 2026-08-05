@@ -3,6 +3,7 @@ import {
   createPostgrestAdminJwt,
   hasAdminPostgrestConfig,
   normalizeAdminApiBase,
+  requireCompleteTournamentResultPublish,
 } from '../../web/lib/admin-postgrest.ts';
 
 describe('admin postgrest helpers', () => {
@@ -27,5 +28,14 @@ describe('admin postgrest helpers', () => {
     expect(hasAdminPostgrestConfig()).toBe(true);
     delete process.env.APP_API_BASE;
     delete process.env.POSTGREST_JWT_SECRET;
+  });
+
+  it('accepts only an explicit successful and complete publish response', () => {
+    expect(requireCompleteTournamentResultPublish({ ok: true, results_saved: 24 }, 24)).toBe(24);
+    expect(() => requireCompleteTournamentResultPublish({ ok: false }, 24)).toThrow(/incomplete/i);
+    expect(() => requireCompleteTournamentResultPublish({ ok: true }, 24)).toThrow(/incomplete/i);
+    expect(() =>
+      requireCompleteTournamentResultPublish({ ok: true, results_saved: 23 }, 24),
+    ).toThrow(/incomplete/i);
   });
 });

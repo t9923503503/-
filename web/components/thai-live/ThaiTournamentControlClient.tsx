@@ -3,7 +3,13 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { SudyamBootstrapPayload } from '@/lib/sudyam-bootstrap';
-import type { ThaiDrawPreview, ThaiR2SeedDraft, ThaiR2SeedZone } from '@/lib/thai-live/types';
+import type {
+  ThaiDrawPreview,
+  ThaiOperatorStateSummary,
+  ThaiR2SeedDraft,
+  ThaiR2SeedZone,
+} from '@/lib/thai-live/types';
+import { ThaiInlineActionConfirm } from '@/components/thai-live/ThaiInlineActionConfirm';
 import {
   ThaiOperatorPanel,
   type ThaiOperatorBootstrapPhase,
@@ -11,6 +17,7 @@ import {
 } from '@/components/thai-live/ThaiOperatorPanel';
 import { ThaiPlayerReplacementPanel } from '@/components/thai-live/ThaiPlayerReplacementPanel';
 import { getThaiErrorText } from '@/lib/thai-ui-helpers';
+import TournamentControlMobileNav from '@/components/admin/TournamentControlMobileNav';
 
 // ─── State ──────────────────────────────────────────────────────────────────
 
@@ -27,6 +34,8 @@ type ThaiClientState = {
   syncRating: { loading: boolean; message: string | null };
   finishCalendar: { loading: boolean; message: string | null };
   lastRefreshedAt: number | null;
+  refreshError: string | null;
+  actionError: string | null;
 };
 
 type ThaiClientAction =
@@ -34,6 +43,7 @@ type ThaiClientAction =
   | { type: 'LOAD_OK'; payload: SudyamBootstrapPayload }
   | { type: 'LOAD_ERROR'; message: string }
   | { type: 'SILENT_REFRESH_OK'; payload: SudyamBootstrapPayload }
+  | { type: 'SILENT_REFRESH_ERROR'; message: string }
   | { type: 'THAI_ACTION_START'; name: string }
   | {
       type: 'THAI_ACTION_OK';
@@ -42,7 +52,7 @@ type ThaiClientAction =
       r2SeedDraft?: ThaiR2SeedDraft | null;
       actionName: string;
     }
-  | { type: 'THAI_ACTION_ERROR'; message: string }
+  | { type: 'THAI_ACTION_ERROR'; name: string; message: string }
   | { type: 'SYNC_START' }
   | { type: 'SYNC_OK'; message: string }
   | { type: 'SYNC_ERROR'; message: string }
@@ -57,7 +67,7 @@ function phaseFromPayload(payload: SudyamBootstrapPayload): ThaiOperatorBootstra
 function reducer(state: ThaiClientState, action: ThaiClientAction): ThaiClientState {
   switch (action.type) {
     case 'LOAD_START':
-      return { ...state, loading: true, message: null };
+      return { ...state, loading: true, message: null, actionError: null };
     case 'LOAD_OK':
       return {
         ...state,
@@ -71,6 +81,8 @@ function reducer(state: ThaiClientState, action: ThaiClientAction): ThaiClientSt
         r2SeedDraft: null,
         r2SeedLoading: false,
         lastRefreshedAt: Date.now(),
+        refreshError: null,
+        actionError: null,
       };
     case 'SILENT_REFRESH_OK':
       return {
@@ -78,20 +90,28 @@ function reducer(state: ThaiClientState, action: ThaiClientAction): ThaiClientSt
         payload: action.payload,
         phase: phaseFromPayload(action.payload),
         lastRefreshedAt: Date.now(),
+        refreshError: null,
+      };
+    case 'SILENT_REFRESH_ERROR':
+      return {
+        ...state,
+        refreshError: action.message,
       };
     case 'LOAD_ERROR':
       return {
         ...state,
         loading: false,
-        payload: null,
-        phase: 'error',
-        message: action.message,
+        payload: state.payload,
+        phase: state.payload ? state.phase : 'error',
+        message: state.payload ? state.message : action.message,
+        refreshError: action.message,
       };
     case 'THAI_ACTION_START': {
       const name = action.name;
       return {
         ...state,
         message: null,
+        actionError: null,
         phase: name === 'bootstrap_r1' ? 'bootstrapping' : state.phase,
         pendingAction:
           name === 'preview_draw' || name === 'preview_r2_seed' || name === 'confirm_r2_seed' || name === 'bootstrap_r1'
@@ -111,6 +131,8 @@ function reducer(state: ThaiClientState, action: ThaiClientAction): ThaiClientSt
         drawPreviewLoading: false,
         r2SeedLoading: false,
         lastRefreshedAt: Date.now(),
+        refreshError: null,
+        actionError: null,
         drawPreview:
           actionName === 'preview_draw'
             ? (preview ?? null)
@@ -128,8 +150,9 @@ function reducer(state: ThaiClientState, action: ThaiClientAction): ThaiClientSt
     case 'THAI_ACTION_ERROR':
       return {
         ...state,
-        phase: 'error',
-        message: action.message,
+        phase: action.name === 'bootstrap_r1' ? 'error' : state.phase,
+        message: action.name === 'bootstrap_r1' ? action.message : state.message,
+        actionError: action.message,
         pendingAction: null,
         drawPreviewLoading: false,
         r2SeedLoading: false,
@@ -163,21 +186,166 @@ function makeInitialState(initialPayload: SudyamBootstrapPayload | null): ThaiCl
     syncRating: { loading: false, message: null },
     finishCalendar: { loading: false, message: null },
     lastRefreshedAt: initialPayload ? Date.now() : null,
+    refreshError: null,
+    actionError: null,
   };
 }
 
-const POLL_INTERVAL_MS = 12_000;
-
-function shouldPoll(state: ThaiClientState): boolean {
-  if (!state.payload) return false;
-  const stage = state.payload.thaiOperatorState?.stage;
-  if (!stage) return false;
-  const tournamentStatus = String(state.payload.bootstrapState?.tournament?.status ?? '').toLowerCase();
-  if (tournamentStatus === 'finished') return false;
-  return stage === 'r1_live' || stage === 'r2_live';
-}
+const STALE_WARNING_MS = 25_000;
+const THAI_LIVE_POLL_MS = 9_000;
 
 // ─── Component ───────────────────────────────────────────────────────────────
+
+function formatThaiChecklistStatus(status: string | undefined): string {
+  switch (String(status || '').trim().toLowerCase()) {
+    case 'done':
+      return '\u0433\u043e\u0442\u043e\u0432\u043e';
+    case 'pending':
+      return '\u043e\u0436\u0438\u0434\u0430\u0435\u0442';
+    case 'unavailable':
+      return '\u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u043e';
+    default:
+      return status || '\u2014';
+  }
+}
+
+type ThaiOperatorDashboard = {
+  stageLabel: string;
+  matchProgressLabel: string;
+  confirmedMatches: number;
+  totalMatches: number;
+  currentRoundLabel: string;
+  currentTourLabel: string;
+  courtsNeedAction: number;
+  nextActionLabel: string;
+  attentionItems: Array<{ key: string; tone: 'danger' | 'warn' | 'info' | 'success'; title: string; detail: string }>;
+};
+
+function formatThaiOperatorStage(stage: string | undefined): string {
+  switch (stage) {
+    case 'r1_live':
+      return 'R1 идет';
+    case 'r1_finished':
+      return 'R1 завершен';
+    case 'r2_live':
+      return 'R2 идет';
+    case 'r2_finished':
+      return 'R2 завершен';
+    default:
+      return 'Настройка';
+  }
+}
+
+function buildThaiOperatorDashboard(
+  opState: ThaiOperatorStateSummary | null | undefined,
+  canSyncToRating: boolean,
+  canMarkCalendarFinished: boolean,
+  secAgo: number | null,
+): ThaiOperatorDashboard | null {
+  if (!opState) return null;
+
+  let confirmedMatches = 0;
+  let totalMatches = 0;
+  const pendingCourts: string[] = [];
+  const liveRound = opState.rounds.find((round) => round.roundStatus === 'live');
+  const currentRound = liveRound ?? opState.rounds.find((round) => round.roundStatus === 'pending') ?? opState.rounds.at(-1);
+
+  for (const round of opState.rounds) {
+    for (const court of round.courts) {
+      for (const tour of court.tours) {
+        for (const match of tour.matches) {
+          totalMatches += 1;
+          if (match.status === 'confirmed') confirmedMatches += 1;
+        }
+      }
+      if (round.roundStatus === 'live' && court.currentTourStatus === 'pending') {
+        pendingCourts.push(`${round.roundType.toUpperCase()} ${court.label} · тур ${court.currentTourNo}`);
+      }
+    }
+  }
+
+  const attentionItems: ThaiOperatorDashboard['attentionItems'] = [];
+  if (pendingCourts.length) {
+    attentionItems.push({
+      key: 'pending-courts',
+      tone: 'warn',
+      title: `Ждут подтверждения: ${pendingCourts.length}`,
+      detail: pendingCourts.slice(0, 4).join(', '),
+    });
+  }
+  if (opState.canFinishR1) {
+    attentionItems.push({
+      key: 'finish-r1',
+      tone: 'success',
+      title: 'R1 готов к закрытию',
+      detail: 'Все условия выполнены, можно завершить первый раунд.',
+    });
+  }
+  if (opState.canSeedR2) {
+    attentionItems.push({
+      key: 'seed-r2',
+      tone: 'success',
+      title: 'R2 готов к запуску',
+      detail: 'Проверьте зоны автопосева и подтвердите старт R2.',
+    });
+  }
+  if (opState.canFinishR2) {
+    attentionItems.push({
+      key: 'finish-r2',
+      tone: 'success',
+      title: 'R2 готов к закрытию',
+      detail: 'Все туры R2 закрыты, можно завершить игровой этап.',
+    });
+  }
+  if (canSyncToRating) {
+    attentionItems.push({
+      key: 'sync-rating',
+      tone: 'info',
+      title: 'Можно обновить рейтинг',
+      detail: 'Суммарные итоги всех завершенных раундов доступны для записи в архив.',
+    });
+  }
+  if (canMarkCalendarFinished) {
+    attentionItems.push({
+      key: 'finish-calendar',
+      tone: 'info',
+      title: 'Турнир готов к завершению',
+      detail: 'Одно действие сохранит результаты и закроет турнир на сайте.',
+    });
+  }
+  if (!attentionItems.length) {
+    attentionItems.push({
+      key: 'all-clear',
+      tone: 'success',
+      title: 'Критичных действий нет',
+      detail: secAgo == null ? 'Ожидаем первый live-снимок.' : `Последний снимок: ${secAgo} сек назад.`,
+    });
+  }
+
+  const nextActionLabel = opState.canFinishR1
+    ? 'Завершить R1'
+    : opState.canSeedR2
+      ? 'Проверить R2 seed'
+      : opState.canFinishR2
+        ? 'Завершить R2'
+        : canMarkCalendarFinished
+          ? 'Завершить турнир'
+          : canSyncToRating
+            ? 'Синхронизировать рейтинг'
+            : 'Следить за кортами';
+
+  return {
+    stageLabel: formatThaiOperatorStage(opState.stage),
+    matchProgressLabel: `${confirmedMatches}/${totalMatches}`,
+    confirmedMatches,
+    totalMatches,
+    currentRoundLabel: currentRound ? currentRound.roundType.toUpperCase() : '—',
+    currentTourLabel: currentRound ? `${currentRound.currentTourNo}/${currentRound.tourCount}` : '—',
+    courtsNeedAction: pendingCourts.length,
+    nextActionLabel,
+    attentionItems,
+  };
+}
 
 export function ThaiTournamentControlClient({
   tournamentId,
@@ -201,6 +369,8 @@ export function ThaiTournamentControlClient({
     r2SeedLoading: thaiR2SeedLoading,
     syncRating,
     finishCalendar,
+    refreshError,
+    actionError,
   } = state;
 
   const anyLoading =
@@ -210,9 +380,14 @@ export function ThaiTournamentControlClient({
     thaiR2SeedLoading ||
     syncRating.loading ||
     finishCalendar.loading;
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const loadInFlightRef = useRef(false);
+  const silentRefreshInFlightRef = useRef(false);
 
   const loadThaiLive = useCallback(async () => {
-    if (!id) return;
+    if (!id || loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     dispatch({ type: 'LOAD_START' });
     try {
       const response = await fetch(`/api/admin/tournaments/${encodeURIComponent(id)}/thai-live`, {
@@ -225,22 +400,33 @@ export function ThaiTournamentControlClient({
       dispatch({ type: 'LOAD_OK', payload: data });
     } catch (error) {
       dispatch({ type: 'LOAD_ERROR', message: getThaiErrorText(error, 'Не удалось загрузить Thai live state') });
+    } finally {
+      loadInFlightRef.current = false;
     }
   }, [id]);
 
-  const silentRefresh = useCallback(async () => {
-    if (!id) return;
+  const silentRefreshThaiLive = useCallback(async () => {
+    if (!id || loadInFlightRef.current || silentRefreshInFlightRef.current) return;
+    silentRefreshInFlightRef.current = true;
     try {
       const response = await fetch(`/api/admin/tournaments/${encodeURIComponent(id)}/thai-live`, {
         cache: 'no-store',
       });
-      if (!response.ok) return;
-      const data = (await response.json().catch(() => null)) as SudyamBootstrapPayload | null;
-      if (data) dispatch({ type: 'SILENT_REFRESH_OK', payload: data });
-    } catch {
-      // silent — не показываем ошибку фонового обновления
+      const data = (await response.json().catch(() => ({}))) as SudyamBootstrapPayload & { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || 'Не удалось обновить Thai live state');
+      }
+      dispatch({ type: 'SILENT_REFRESH_OK', payload: data });
+    } catch (error) {
+      dispatch({
+        type: 'SILENT_REFRESH_ERROR',
+        message: getThaiErrorText(error, 'Не удалось обновить Thai live state'),
+      });
+    } finally {
+      silentRefreshInFlightRef.current = false;
     }
   }, [id]);
+
 
   useEffect(() => {
     if (!initialPayload) {
@@ -248,20 +434,23 @@ export function ThaiTournamentControlClient({
     }
   }, [initialPayload, loadThaiLive]);
 
-  // Polling: каждые 12с пока идёт активный раунд
-  const stateRef = useRef(state);
-  stateRef.current = state;
-  const anyLoadingRef = useRef(anyLoading);
-  anyLoadingRef.current = anyLoading;
-
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (!anyLoadingRef.current && shouldPoll(stateRef.current)) {
-        void silentRefresh();
-      }
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [silentRefresh]);
+    const tick = setInterval(() => {
+      const current = stateRef.current;
+      const busy =
+        current.loading ||
+        current.pendingAction !== null ||
+        current.drawPreviewLoading ||
+        current.r2SeedLoading ||
+        current.syncRating.loading ||
+        current.finishCalendar.loading;
+      if (!current.payload || busy) return;
+      void silentRefreshThaiLive();
+    }, THAI_LIVE_POLL_MS);
+    return () => clearInterval(tick);
+  }, [silentRefreshThaiLive]);
+
+
 
   // Таймер "обновлено X сек назад"
   const [secAgo, setSecAgo] = useState<number | null>(null);
@@ -311,19 +500,12 @@ export function ThaiTournamentControlClient({
         actionName: action,
       });
     } catch (error) {
-      dispatch({ type: 'THAI_ACTION_ERROR', message: getThaiErrorText(error, 'Thai action failed') });
+      dispatch({ type: 'THAI_ACTION_ERROR', name: action, message: getThaiErrorText(error, 'Thai action failed') });
     }
   }
 
   async function markTournamentFinishedInCalendar() {
     if (!id) return;
-    if (
-      typeof window !== 'undefined' &&
-      !window.confirm(
-        'Завершить турнир в календаре?\n\nСтатус турнира будет изменён на «завершён» — это увидят участники на сайте.\n\nПродолжить?',
-      )
-    )
-      return;
     dispatch({ type: 'CALENDAR_START' });
     try {
       const response = await fetch('/api/admin/overrides', {
@@ -352,13 +534,6 @@ export function ThaiTournamentControlClient({
 
   async function syncThaiResultsToRating() {
     if (!id) return;
-    if (
-      typeof window !== 'undefined' &&
-      !window.confirm(
-        'Пересчитать Thai в рейтинг / архив?\n\nИтоги последнего завершённого раунда будут записаны в рейтинг и архив.\n\nПродолжить?',
-      )
-    )
-      return;
     dispatch({ type: 'SYNC_START' });
     try {
       const response = await fetch(`/api/admin/tournaments/${encodeURIComponent(id)}/sync-thai-results`, {
@@ -375,7 +550,7 @@ export function ThaiTournamentControlClient({
       }
       dispatch({
         type: 'SYNC_OK',
-        message: `Записано строк: ${data.inserted ?? 0} (раунд ${data.roundUsed ?? '—'}). Рейтинг и архив обновятся после обновления страницы.`,
+        message: `Записано строк: ${data.inserted ?? 0} (финальные места: ${data.roundUsed ?? '—'}, статистика: все завершённые раунды). Рейтинг и архив обновятся после обновления страницы.`,
       });
     } catch (error) {
       dispatch({ type: 'SYNC_ERROR', message: getThaiErrorText(error, 'Ошибка синхронизации') });
@@ -402,9 +577,13 @@ export function ThaiTournamentControlClient({
     Boolean(opState) &&
     (opState!.stage === 'r2_finished' || (opState!.stage === 'r1_finished' && !hasR2InModel));
   const canMarkCalendarFinished = tournamentRecordStatus !== 'finished' && playDoneForCalendar;
+  const staleMs = state.lastRefreshedAt ? Date.now() - state.lastRefreshedAt : null;
+  const isStale = !anyLoading && staleMs !== null && staleMs > STALE_WARNING_MS;
+  const checklist = thaiLivePayload?.thaiCompletionChecklist ?? null;
+  const opsLog = thaiLivePayload?.thaiOpsLog ?? [];
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6">
+    <div id="thai-live-overview" className="mx-auto flex w-full max-w-4xl scroll-mt-24 flex-col gap-4 px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link
@@ -435,13 +614,8 @@ export function ThaiTournamentControlClient({
             <span className="text-[10px] font-normal uppercase tracking-wide text-emerald-200/70">постер · П+Н</span>
           </Link>
           <p className="mt-3 max-w-xl text-xs text-text-secondary">
-            Кнопки «Завершить R1» / «Завершить R2» закрывают раунд в судейской системе. Чтобы турнир стал «завершённым» в
-            календаре и на карточке события, отдельно нажмите «Завершить турнир в календаре» ниже или выставьте статус
-            «Завершён» в{' '}
-            <Link href="/admin/tournaments" className="text-brand hover:underline">
-              списке турниров
-            </Link>
-            . Для Thai Next в этот момент итоги последнего завершённого раунда автоматически попадут в общий рейтинг и архив.
+            После завершения последнего раунда нажмите «Завершить турнир»: результаты автоматически попадут в рейтинг и
+            архив, а турнир закроется в календаре.
           </p>
         </div>
       </div>
@@ -452,6 +626,40 @@ export function ThaiTournamentControlClient({
 
       {secAgo !== null && secAgo > 0 && !thaiLiveLoading ? (
         <p className="text-right text-[11px] text-text-secondary/60">обновлено {secAgo} сек назад</p>
+      ) : null}
+
+      {refreshError && !thaiLiveLoading ? (
+        <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-sm text-red-100">
+          <div className="font-semibold">Не удалось обновить Thai live state</div>
+          <div className="mt-1">{refreshError}</div>
+          <button
+            type="button"
+            onClick={() => void loadThaiLive()}
+            className="mt-3 rounded-lg border border-red-300/35 bg-red-500/20 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-red-50"
+          >
+            Повторить
+          </button>
+        </div>
+      ) : null}
+
+      {actionError ? (
+        <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+          <div className="font-semibold">Не удалось выполнить действие Thai Live</div>
+          <div className="mt-1">{actionError}</div>
+        </div>
+      ) : null}
+
+      {isStale ? (
+        <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+          Снимок Thai live устарел. Данные не обновлялись уже {Math.max(1, Math.floor((staleMs ?? 0) / 1000))} сек.
+          <button
+            type="button"
+            onClick={() => void loadThaiLive()}
+            className="ml-3 rounded-lg border border-amber-300/35 bg-amber-500/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-amber-50"
+          >
+            Обновить сейчас
+          </button>
+        </div>
       ) : null}
 
       {thaiLivePayload ? (
@@ -497,49 +705,44 @@ export function ThaiTournamentControlClient({
         />
       ) : null}
 
-      {thaiLivePayload && canMarkCalendarFinished ? (
-        <div className="rounded-xl border border-sky-500/35 bg-sky-500/10 p-4">
-          <h2 className="text-sm font-semibold text-sky-100">Календарь и карточка турнира</h2>
-          <p className="mt-1 text-xs text-text-secondary">
-            Игровая часть Thai уже завершена (R2 или только R1 без второго раунда). Нажмите, чтобы в базе у турнира
-            статус стал «завершён» — так это увидят участники на сайте.
-          </p>
-          <button
-            type="button"
-            disabled={anyLoading}
-            onClick={() => void markTournamentFinishedInCalendar()}
-            className="mt-3 rounded-lg border border-sky-400/45 bg-sky-500/20 px-4 py-2 text-sm font-medium text-sky-50 hover:bg-sky-500/30 disabled:opacity-50"
-          >
-            {finishCalendar.loading ? 'Сохраняем…' : 'Завершить турнир в календаре'}
-          </button>
-          {finishCalendar.message ? (
-            <p
-              className={`mt-2 text-xs ${
-                finishCalendar.message.includes('завершён') ? 'text-emerald-200' : 'text-red-200'
-              }`}
-            >
-              {finishCalendar.message}
-            </p>
-          ) : null}
+      <div id="thai-live-results" className="scroll-mt-24" />
+
+      {checklist?.nextAction === 'mark_calendar_finished' && canMarkCalendarFinished ? (
+        <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4">
+          <h2 className="text-sm font-semibold text-emerald-50">Турнир готов к завершению</h2>
+          <p className="mt-1 text-xs text-emerald-100/75">Рейтинг, архив и календарь обновятся автоматически.</p>
+          <div className="mt-3">
+            <ThaiInlineActionConfirm
+              label="Завершить турнир"
+              armedLabel="Подтвердить завершение"
+              description="Итоги будут автоматически записаны в рейтинг и архив, после чего турнир закроется в календаре и на сайте."
+              onConfirm={() => void markTournamentFinishedInCalendar()}
+              disabled={anyLoading}
+              busy={finishCalendar.loading}
+              tone="accent"
+            />
+          </div>
         </div>
       ) : null}
 
-      {thaiLivePayload && canSyncToRating ? (
+      {thaiLivePayload && tournamentRecordStatus === 'finished' && canSyncToRating ? (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
           <h2 className="text-sm font-semibold text-amber-100">Рейтинг и архив</h2>
           <p className="mt-1 text-xs text-text-secondary">
-            Обычно Thai Next записывает итоги в общий рейтинг автоматически при переводе турнира в статус «завершён».
-            Эта кнопка нужна для ручной пересинхронизации после корректировки счёта или если хотите подготовить таблицу
-            результатов заранее по последнему завершённому раунду (R2, если он завершён, иначе R1).
+            Итоги уже записываются автоматически при завершении турнира. Используйте эту кнопку только если после этого
+            исправили счёт и хотите обновить рейтинг и архив повторно.
           </p>
-          <button
-            type="button"
-            disabled={anyLoading}
-            onClick={() => void syncThaiResultsToRating()}
-            className="mt-3 rounded-lg border border-amber-400/40 bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-50 hover:bg-amber-500/25 disabled:opacity-50"
-          >
-            {syncRating.loading ? 'Запись…' : 'Пересчитать Thai в рейтинг / архив'}
-          </button>
+          <div className="mt-3">
+            <ThaiInlineActionConfirm
+              label="Пересчитать Thai в рейтинг / архив"
+              armedLabel="Подтвердить синхронизацию"
+              description="Суммарные итоги R1 + R2 будут записаны в рейтинг и архив; финальные места останутся по R2."
+              onConfirm={() => void syncThaiResultsToRating()}
+              disabled={anyLoading}
+              busy={syncRating.loading}
+              tone="warn"
+            />
+          </div>
           {syncRating.message ? (
             <p
               className={`mt-2 text-xs ${syncRating.message.includes('Записано') ? 'text-emerald-200' : 'text-red-200'}`}
@@ -548,6 +751,55 @@ export function ThaiTournamentControlClient({
             </p>
           ) : null}
         </div>
+      ) : null}
+
+      {thaiLivePayload?.thaiOpsLog?.length ? (
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <h2 className="text-sm font-semibold text-white">Журнал Thai-операций</h2>
+          <div className="mt-3 space-y-2">
+            {opsLog.map((entry) => (
+              <div key={entry.id} className="rounded-lg border border-white/10 bg-slate-950/40 px-3 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-medium text-white">{entry.title}</div>
+                  <div className="text-[11px] text-text-secondary/70">{entry.createdAt}</div>
+                </div>
+                <div className="mt-1 text-xs text-text-secondary">{entry.summary}</div>
+                <div className="mt-2 text-[11px] text-text-secondary/70">
+                  {entry.actorRole} · {entry.actorId}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {opState ? (
+        <TournamentControlMobileNav
+          format="THAI"
+          overviewTargetId="thai-live-overview"
+          resultsTargetId="thai-live-results"
+          rounds={opState.rounds.map((round) => ({
+            key: round.roundType,
+            label: round.roundType.toUpperCase(),
+            status: round.roundStatus,
+            targetId: `thai-round-${round.roundType}`,
+            active: round.roundStatus === 'live' || round.roundStatus === 'pending',
+            courts: round.courts.map((court) => ({
+              key: court.courtId,
+              label: round.roundType === 'r2' ? court.label : `Корт ${court.label}`,
+              status: `${court.currentTourStatus} · тур ${court.currentTourNo}`,
+              targetId: `thai-court-${round.roundType}-${court.courtNo}`,
+              judgeUrl: court.judgeUrl,
+              active: round.roundStatus === 'live' && court.currentTourStatus === 'pending',
+            })),
+          }))}
+          extras={[
+            { href: `/live/thai/${encodeURIComponent(id)}`, label: 'Табло', note: 'Экран для зрителей', external: true },
+            { href: printHref, label: 'Печать', note: 'Расписание R1/R2', external: true },
+            { href: `/admin/tournaments/${encodeURIComponent(id)}/edit`, label: 'Настройки', note: 'Карточка турнира' },
+            { href: '/admin/tournaments', label: 'Все турниры', note: 'Вернуться к списку' },
+          ]}
+        />
       ) : null}
 
       {!thaiLivePayload && !thaiLiveLoading ? (

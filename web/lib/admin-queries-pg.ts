@@ -2,7 +2,8 @@ import { randomUUID } from 'crypto';
 import { PoolClient } from 'pg';
 import { getPool } from './db';
 import { getTournamentFormatCode, normalizeTournamentDbTime } from './admin-tournament-db';
-import { enrichTournamentRuntimeState, resolveTournamentStatus } from './tournament-status';
+import { resolveTournamentStatus } from './tournament-status';
+import { enrichAdminTournamentRuntimeState } from './admin-tournament-status';
 import {
   buildLegacyIptTournamentState,
   buildLegacyPlayerDbState,
@@ -17,6 +18,7 @@ import {
 } from './rating-points';
 import { sanitizeServerImageUrl } from './server-image-url';
 import { augmentArchiveTournamentWithThaiBoard } from './thai-archive-meta';
+import { isKotcNextDemoTournament } from './kotc-next-demo-config';
 
 export interface AdminTournament {
   id: string;
@@ -212,7 +214,7 @@ function mapTournament(row: Record<string, unknown>): AdminTournament {
   const baseSettings =
     typeof row.settings === 'object' && row.settings !== null ? (row.settings as Record<string, unknown>) : {};
   const kotc = mergeKotcSettings(String(row.format ?? ''), baseSettings, row);
-  return enrichTournamentRuntimeState({
+  return enrichAdminTournamentRuntimeState({
     id: String(row.id ?? ''),
     name: String(row.name ?? ''),
     date: toIsoDate(row.date),
@@ -1509,17 +1511,19 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
              t.level, t.capacity, t.status, t.photo_url, t.settings
     ORDER BY t.date DESC
   `);
-  return rows.map((row) => {
-    const raw = (row.results as ArchiveResult[]) ?? [];
-    const results = raw.map((r) => {
-      const pool: RatingPool = r.ratingPool === 'novice' ? 'novice' : 'pro';
-      const placement = Number(r.placement) || 0;
-      const ratingPts = effectiveRatingPtsFromStored(placement, pool, r.ratingPts);
-      return { ...r, ratingPts, ratingPool: pool };
+  return rows
+    .filter((row) => !isKotcNextDemoTournament({ format: row.format, settings: row.settings }))
+    .map((row) => {
+      const raw = (row.results as ArchiveResult[]) ?? [];
+      const results = raw.map((r) => {
+        const pool: RatingPool = r.ratingPool === 'novice' ? 'novice' : 'pro';
+        const placement = Number(r.placement) || 0;
+        const ratingPts = effectiveRatingPtsFromStored(placement, pool, r.ratingPts);
+        return { ...r, ratingPts, ratingPool: pool };
+      });
+      const base = { ...mapTournament(row), results };
+      return augmentArchiveTournamentWithThaiBoard(base);
     });
-    const base = { ...mapTournament(row), results };
-    return augmentArchiveTournamentWithThaiBoard(base);
-  });
 }
 
 export async function setTournamentPhotoUrl(
@@ -1557,10 +1561,14 @@ function normalizeTournamentResultPlace(value: unknown): number {
 export async function upsertTournamentResults(
   tournamentId: string,
   results: Array<{
+    playerId?: string;
     playerName: string;
     gender: 'M' | 'W';
     placement: number;
     points: number;
+    wins?: number;
+    diff?: number;
+    balls?: number;
     ratingPts?: number;
     ratingPool?: RatingPool;
   }>,
@@ -1576,17 +1584,37 @@ export async function upsertTournamentResults(
     let inserted = 0;
     for (const r of results) {
       const gender = r.gender === 'W' ? 'W' : 'M';
-      const playerRes = await client.query(
-        `INSERT INTO players (name, gender, status)
-         VALUES ($1, $2, 'active')
-         ON CONFLICT (lower(trim(name)), gender) DO UPDATE SET name = EXCLUDED.name
-         RETURNING id`,
-        [r.playerName.trim(), gender]
-      );
-      const playerId = String(playerRes.rows[0]?.id ?? '');
-      if (!playerId) continue;
+      const requestedPlayerId = String(r.playerId ?? '').trim();
+      let playerId = '';
+      if (requestedPlayerId) {
+        const playerRes = await client.query<{ id: string }>(
+          `SELECT id::text AS id FROM players WHERE id = $1`,
+          [requestedPlayerId],
+        );
+        playerId = String(playerRes.rows[0]?.id ?? '');
+        if (!playerId) {
+          throw new Error(`Tournament result player not found: ${requestedPlayerId}`);
+        }
+      } else {
+        const playerRes = await client.query<{ id: string }>(
+          `INSERT INTO players (name, gender, status)
+           VALUES ($1, $2, 'active')
+           ON CONFLICT (lower(trim(name)), gender) DO UPDATE SET name = EXCLUDED.name
+           RETURNING id::text AS id`,
+          [r.playerName.trim(), gender],
+        );
+        playerId = String(playerRes.rows[0]?.id ?? '');
+        if (!playerId) {
+          throw new Error(`Could not resolve tournament result player: ${r.playerName.trim()}`);
+        }
+      }
       const place = normalizeTournamentResultPlace(r.placement);
-      if (place <= 0) continue;
+      if (place <= 0) {
+        if (requestedPlayerId) {
+          throw new Error(`Invalid tournament result place for player: ${requestedPlayerId}`);
+        }
+        continue;
+      }
       const poolKind: RatingPool = r.ratingPool === 'novice' ? 'novice' : 'pro';
       const ratingPts = effectiveRatingPtsFromStored(
         place,
@@ -1597,14 +1625,18 @@ export async function upsertTournamentResults(
       const ratingType = ratingTypeFromDivision(division, gender);
       await client.query(
         `INSERT INTO tournament_results (
-           tournament_id, player_id, place, game_pts, rating_pts, gender, rating_type, rating_pool
+           tournament_id, player_id, place, game_pts, wins, diff, balls,
+           rating_pts, gender, rating_type, rating_pool
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           tournamentId,
           playerId,
           place,
           Number(r.points),
+          Number(r.wins ?? 0),
+          Number(r.diff ?? 0),
+          Number(r.balls ?? 0),
           ratingPts,
           gender,
           ratingType,

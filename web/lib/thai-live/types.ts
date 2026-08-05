@@ -16,6 +16,16 @@ export type ThaiOperatorActionName =
   | 'confirm_r2_seed'
   | 'seed_r2'
   | 'finish_r2';
+export type ThaiOpsLogAction =
+  | 'bootstrap_r1'
+  | 'reshuffle_r1'
+  | 'finish_r1'
+  | 'confirm_r2_seed'
+  | 'finish_r2'
+  | 'replace_player'
+  | 'sync_results'
+  | 'mark_calendar_finished';
+export type ThaiCompletionStepStatus = 'done' | 'pending' | 'unavailable';
 
 export interface ThaiJudgePlayerView {
   id: string;
@@ -288,12 +298,28 @@ export interface ThaiStandingsRow {
   kef: number;
   totalScored: number;
   wins: number;
+  tourMatchups: Array<ThaiStandingsTourMatchup | null>;
 }
 
 export interface ThaiStandingsGroup {
   pool: ThaiStandingsPoolKey;
   label: string;
   rows: ThaiStandingsRow[];
+}
+
+export interface ThaiStandingsTourMatchup {
+  tourNo: number;
+  matchId: string;
+  /** Optional for backwards compatibility with saved spectator snapshots. */
+  partnerId?: string | null;
+  partnerName: string;
+  /** Optional for backwards compatibility with saved spectator snapshots. */
+  opponentIds?: string[];
+  opponentNames: string[];
+  teamScore: number | null;
+  opponentScore: number | null;
+  delta: number | null;
+  status: ThaiMatchStatus;
 }
 
 export interface ThaiOperatorTourMatchSummary {
@@ -389,6 +415,29 @@ export interface ThaiOperatorStateSummary {
   rounds: ThaiOperatorRoundView[];
   finalResults: ThaiOperatorFinalZoneResult[];
   progress: ThaiOperatorProgressRow[];
+}
+
+export interface ThaiOpsLogEntry {
+  id: number;
+  createdAt: string;
+  actorId: string;
+  actorRole: string;
+  action: ThaiOpsLogAction;
+  title: string;
+  summary: string;
+}
+
+export interface ThaiCompletionChecklistStep {
+  key: 'play_closed' | 'results_synced' | 'calendar_finished';
+  label: string;
+  status: ThaiCompletionStepStatus;
+  source: string;
+  timestamp: string | null;
+}
+
+export interface ThaiCompletionChecklist {
+  steps: ThaiCompletionChecklistStep[];
+  nextAction: 'sync_results' | 'mark_calendar_finished' | null;
 }
 
 export interface ThaiR2SeedPlayer {

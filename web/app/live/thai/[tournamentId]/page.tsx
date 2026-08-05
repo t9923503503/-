@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { ThaiSpectatorBoard } from '@/components/thai-live/ThaiSpectatorBoard';
+import { fetchTournamentResults } from '@/lib/queries';
 import { getThaiSpectatorBoardPayload } from '@/lib/thai-spectator';
 
 export const dynamic = 'force-dynamic';
@@ -25,5 +26,7 @@ export default async function ThaiSpectatorPage({ params }: PageProps) {
   if (!data) {
     notFound();
   }
-  return <ThaiSpectatorBoard data={data} />;
+  const storedResults =
+    data.stage === 'r2_finished' ? await fetchTournamentResults(tournamentId).catch(() => []) : [];
+  return <ThaiSpectatorBoard data={data} storedResults={storedResults} />;
 }

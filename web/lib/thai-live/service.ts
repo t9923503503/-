@@ -19,6 +19,7 @@ import {
 import {
   buildThaiCourtBootstrapTours,
   buildThaiCourtLabel,
+  orderThaiCourtPlayersForSpectator,
   buildThaiProgressRows,
   buildThaiStandingsGroups,
   resolveThaiPointLimitForRound,
@@ -169,6 +170,35 @@ interface CourtAggregateView {
   playerNames: string[];
   tours: ThaiOperatorTourSummary[];
   standingsGroups: ThaiStandingsGroup[];
+}
+
+function buildPoolLabel(variant: string, role: ThaiPlayerRole): string {
+  if (variant === 'MF') return role === 'primary' ? '\u041c\u0443\u0436\u0447\u0438\u043d\u044b' : '\u0416\u0435\u043d\u0449\u0438\u043d\u044b';
+  if (variant === 'MN') return role === 'primary' ? '\u041f\u0440\u043e\u0444\u0438' : '\u041d\u043e\u0432\u0438\u0447\u043a\u0438';
+  return '\u041e\u0431\u0449\u0438\u0439';
+}
+
+function buildEmptyStandingsRow(
+  player: LoadedMatchPlayer,
+  variant: string,
+  tourCount: number,
+): ThaiStandingsRow {
+  const pool: ThaiStandingsRow['pool'] = variant === 'MF' || variant === 'MN' ? player.playerRole : 'all';
+  return {
+    playerId: player.playerId,
+    playerName: player.playerName,
+    role: player.playerRole,
+    pool,
+    poolLabel: buildPoolLabel(variant, player.playerRole),
+    place: 0,
+    tourDiffs: Array.from({ length: tourCount }, () => 0),
+    totalDiff: 0,
+    pointsP: 0,
+    kef: 1,
+    totalScored: 0,
+    wins: 0,
+    tourMatchups: Array.from({ length: tourCount }, () => null),
+  };
 }
 
 export class ThaiJudgeError extends Error {
@@ -1119,52 +1149,105 @@ function appendMatchStats(
   variant: string,
   tourCount: number,
 ): void {
-  if (match.team1Score == null || match.team2Score == null || match.status !== 'confirmed') {
-    return;
-  }
-
-  const diff = match.team1Score - match.team2Score;
+  const diff = match.team1Score != null && match.team2Score != null ? match.team1Score - match.team2Score : null;
   const byTeam = [
-    { teamSide: 1 as const, score: match.team1Score, delta: diff },
-    { teamSide: 2 as const, score: match.team2Score, delta: -diff },
+    {
+      teamSide: 1 as const,
+      score: match.team1Score,
+      delta: diff,
+      players: match.players.filter((entry) => entry.teamSide === 1),
+      opponents: match.players.filter((entry) => entry.teamSide === 2),
+    },
+    {
+      teamSide: 2 as const,
+      score: match.team2Score,
+      delta: diff == null ? null : -diff,
+      players: match.players.filter((entry) => entry.teamSide === 2),
+      opponents: match.players.filter((entry) => entry.teamSide === 1),
+    },
   ];
 
   for (const team of byTeam) {
-    for (const player of match.players.filter((entry) => entry.teamSide === team.teamSide)) {
-      const pool: ThaiStandingsRow['pool'] =
-        variant === 'MF' || variant === 'MN' ? player.playerRole : 'all';
-      const existing = rows.get(player.playerId) ?? {
-        playerId: player.playerId,
-        playerName: player.playerName,
-        role: player.playerRole,
-        pool,
-        poolLabel:
-          variant === 'MF'
-            ? player.playerRole === 'primary'
-              ? 'Мужчины'
-              : 'Женщины'
-            : variant === 'MN'
-              ? player.playerRole === 'primary'
-                ? 'Профи'
-                : 'Новички'
-              : 'Общий',
-        place: 0,
-        tourDiffs: Array.from({ length: tourCount }, () => 0),
-        totalDiff: 0,
-        pointsP: 0,
-        kef: 1,
-        totalScored: 0,
-        wins: 0,
+    for (const player of team.players) {
+      const existing = rows.get(player.playerId) ?? buildEmptyStandingsRow(player, variant, tourCount);
+      const partner = team.players.find((entry) => entry.playerId !== player.playerId) ?? null;
+      existing.tourMatchups[tourIndex] = {
+        tourNo: tourIndex + 1,
+        matchId: match.matchId,
+        partnerId: partner?.playerId ?? null,
+        partnerName: partner?.playerName ?? player.playerName,
+        opponentIds: team.opponents.map((entry) => entry.playerId),
+        opponentNames: team.opponents.map((entry) => entry.playerName),
+        teamScore: team.score,
+        opponentScore: team.teamSide === 1 ? match.team2Score : match.team1Score,
+        delta: match.status === 'confirmed' ? team.delta : null,
+        status: match.status,
       };
-      existing.tourDiffs[tourIndex] += team.delta;
-      existing.totalDiff += team.delta;
-      existing.totalScored += team.score;
-      existing.pointsP += team.delta > 0 ? (team.delta === 1 ? 10 : team.delta === 2 ? 11 : team.delta <= 4 ? 12 : 13) : 0;
-      if (team.delta > 0) existing.wins += 1;
-      existing.kef = (60 - existing.totalDiff) <= 0 ? 999.99 : (60 + existing.totalDiff) / (60 - existing.totalDiff);
+      if (match.team1Score != null && match.team2Score != null && match.status === 'confirmed' && team.delta != null) {
+        existing.tourDiffs[tourIndex] += team.delta;
+        existing.totalDiff += team.delta;
+        existing.totalScored += team.score ?? 0;
+        existing.pointsP += team.delta > 0 ? (team.delta === 1 ? 10 : team.delta === 2 ? 11 : team.delta <= 4 ? 12 : 13) : 0;
+        if (team.delta > 0) existing.wins += 1;
+        existing.kef = (60 - existing.totalDiff) <= 0 ? 999.99 : (60 + existing.totalDiff) / (60 - existing.totalDiff);
+      }
       rows.set(player.playerId, existing);
     }
   }
+}
+
+function headToHeadDelta(tours: LoadedTour[], leftPlayerId: string, rightPlayerId: string): number {
+  let total = 0;
+  for (const tour of tours) {
+    for (const match of tour.matches) {
+      if (match.team1Score == null || match.team2Score == null || match.status !== 'confirmed') continue;
+      const left = match.players.find((player) => player.playerId === leftPlayerId);
+      const right = match.players.find((player) => player.playerId === rightPlayerId);
+      if (!left || !right || left.teamSide === right.teamSide) continue;
+      const diff = Number(match.team1Score) - Number(match.team2Score);
+      total += left.teamSide === 1 ? diff : -diff;
+    }
+  }
+  return total;
+}
+
+function applyThaiHeadToHeadTieBreakers(
+  groups: ThaiStandingsGroup[],
+  tours: LoadedTour[],
+): ThaiStandingsGroup[] {
+  return groups.map((group) => {
+    const rows = group.rows.slice();
+    // A direct encounter can break only a real tie. In particular, it must
+    // never move a player with fewer wins above a player with more wins.
+    const byWinsAndPoints = new Map<string, ThaiStandingsRow[]>();
+    for (const row of rows) {
+      const key = `${row.wins}:${row.pointsP}`;
+      const bucket = byWinsAndPoints.get(key) ?? [];
+      bucket.push(row);
+      byWinsAndPoints.set(key, bucket);
+    }
+
+    for (const bucket of byWinsAndPoints.values()) {
+      if (bucket.length < 2) continue;
+      bucket.sort((left, right) => {
+        const direct = headToHeadDelta(tours, left.playerId, right.playerId);
+        if (direct !== 0) return direct > 0 ? -1 : 1;
+        return left.place - right.place;
+      });
+    }
+
+    const emittedBuckets = new Set<string>();
+    const nextRows = rows
+      .flatMap((row) => {
+        const key = `${row.wins}:${row.pointsP}`;
+        if (emittedBuckets.has(key)) return [];
+        emittedBuckets.add(key);
+        return byWinsAndPoints.get(key) ?? [row];
+      })
+      .map((row, index) => ({ ...row, place: index + 1 }));
+
+    return { ...group, rows: nextRows };
+  });
 }
 
 async function buildCourtAggregateViewTx(
@@ -1178,25 +1261,28 @@ async function buildCourtAggregateViewTx(
   const tours = await loadToursByCourtTx(client, input.court.courtId);
   const progress = resolveCourtProgress(tours, input.round.roundStatus);
 
-  const playerNamesById = new Map<string, string>();
+  const playersById = new Map<string, LoadedMatchPlayer>();
   const rows = new Map<string, ThaiStandingsRow>();
 
   for (const tour of tours) {
     for (const match of tour.matches) {
       for (const player of match.players) {
-        if (!playerNamesById.has(player.playerId)) {
-          playerNamesById.set(player.playerId, player.playerName);
+        if (!playersById.has(player.playerId)) {
+          playersById.set(player.playerId, player);
         }
       }
       appendMatchStats(rows, match, Math.max(0, tour.tourNo - 1), input.variant, input.round.tourCount);
     }
   }
 
-  const standingsGroups = buildThaiStandingsGroups({
-    variant: input.variant,
-    rows: [...rows.values()],
-    thaiRulesPreset: normalizeThaiRulesPreset(input.round.settings),
-  });
+  const standingsGroups = applyThaiHeadToHeadTieBreakers(
+    buildThaiStandingsGroups({
+      variant: input.variant,
+      rows: [...rows.values()],
+      thaiRulesPreset: normalizeThaiRulesPreset(input.round.settings),
+    }),
+    tours,
+  );
 
   return {
     courtId: input.court.courtId,
@@ -1206,7 +1292,14 @@ async function buildCourtAggregateViewTx(
     judgeUrl: judgeUrlForPin(input.court.pin),
     currentTourNo: progress.currentTourNo,
     currentTourStatus: progress.currentTourStatus,
-    playerNames: [...playerNamesById.values()],
+    playerNames: orderThaiCourtPlayersForSpectator(
+      input.variant,
+      [...playersById.values()].map((player) => ({
+        playerId: player.playerId,
+        playerName: player.playerName,
+        role: player.playerRole,
+      })),
+    ),
     tours: tours.map((tour) => ({
       tourId: tour.tourId,
       tourNo: tour.tourNo,
@@ -2763,6 +2856,11 @@ export interface ThaiAdminTourCorrectionAudit {
   afterMatches: Array<{ matchId: string; team1Score: number | null; team2Score: number | null }>;
 }
 
+export interface ThaiAdminTourConfirmAudit extends ThaiAdminTourCorrectionAudit {
+  nextTourNumber?: number;
+  courtFinished: boolean;
+}
+
 export interface ThaiPlayerReplacementAudit {
   tournamentId: string;
   oldPlayerId: string;
@@ -2900,6 +2998,192 @@ export async function adminCorrectThaiTourScores(
       roundType,
       beforeMatches,
       afterMatches,
+    };
+  });
+}
+
+/**
+ * Операторское закрытие текущего pending-тура без входа на судейский корт.
+ * История розыгрышей намеренно пустая: главный судья вводит только финальный счет.
+ */
+export async function adminConfirmThaiTourScores(
+  tournamentId: string,
+  input: {
+    tourId: string;
+    matches: Array<{ matchId: string; team1Score: number; team2Score: number }>;
+  },
+): Promise<ThaiAdminTourConfirmAudit> {
+  const tid = String(tournamentId || '').trim();
+  const tourId = String(input.tourId || '').trim();
+  if (!tid) throw new ThaiJudgeError(400, 'tournamentId is required');
+  if (!tourId) throw new ThaiJudgeError(400, 'tourId is required');
+  if (!Array.isArray(input.matches) || input.matches.length !== 2) {
+    throw new ThaiJudgeError(400, 'Ожидается ровно два матча в туре');
+  }
+  const seen = new Set<string>();
+  for (const m of input.matches) {
+    const mid = String(m.matchId || '').trim();
+    if (!mid || seen.has(mid)) {
+      throw new ThaiJudgeError(400, 'matchId должны быть уникальными');
+    }
+    seen.add(mid);
+  }
+
+  return withTransaction(async (client) => {
+    const tourMeta = await client.query(
+      `
+      SELECT
+        tt.id AS tour_id,
+        tt.tour_no,
+        tt.status AS tour_status,
+        c.id AS court_id,
+        c.round_id,
+        c.label AS court_label,
+        r.tournament_id,
+        r.round_type,
+        r.status AS round_status,
+        t.settings
+      FROM thai_tour tt
+      JOIN thai_court c ON c.id = tt.court_id
+      JOIN thai_round r ON r.id = c.round_id
+      JOIN tournaments t ON t.id = r.tournament_id
+      WHERE tt.id = $1 AND r.tournament_id = $2
+      LIMIT 1
+      FOR UPDATE OF tt, c, r
+      `,
+      [tourId, tid],
+    );
+    const row = tourMeta.rows[0];
+    if (!row) {
+      throw new ThaiJudgeError(404, 'Тур не найден для этого турнира');
+    }
+    if (tourStatusFromValue(row.tour_status) !== 'pending') {
+      throw new ThaiJudgeError(409, 'Можно проставить результат только для ожидающего тура');
+    }
+
+    const courtId = String(row.court_id);
+    const roundId = String(row.round_id);
+    const roundType = roundTypeFromValue(row.round_type);
+    const roundStatus = roundStatusFromValue(row.round_status);
+    const tourNo = asNum(row.tour_no, 1);
+    const courtLabel = String(row.court_label || '');
+    const settings =
+      row.settings && typeof row.settings === 'object' && !Array.isArray(row.settings)
+        ? (row.settings as Record<string, unknown>)
+        : {};
+
+    const progress = resolveCourtProgress(await loadToursByCourtTx(client, courtId), roundStatus);
+    if (progress.isCourtFinished || progress.currentTourNo !== tourNo || progress.currentTour?.tourId !== tourId) {
+      throw new ThaiJudgeError(409, 'Можно проставить результат только для текущего тура корта');
+    }
+
+    const loaded = await loadMatchRowsByTourTx(client, tourId, { forUpdate: true });
+    if (loaded.length !== 2) {
+      throw new ThaiJudgeError(409, 'Неверная структура тура');
+    }
+
+    const pointLimit = getThaiPointLimitForRound(settings, roundType);
+    const payloadById = new Map(input.matches.map((m) => [String(m.matchId).trim(), m] as const));
+    const beforeMatches = loaded.map((m) => ({
+      matchId: m.matchId,
+      team1Score: m.team1Score,
+      team2Score: m.team2Score,
+    }));
+
+    for (const match of loaded) {
+      const scores = payloadById.get(match.matchId);
+      if (!scores) {
+        throw new ThaiJudgeError(400, 'В теле запроса нет счёта для всех матчей тура');
+      }
+      const scoreError = validateThaiMatchScore(scores.team1Score, scores.team2Score, pointLimit);
+      if (scoreError) {
+        throw new ThaiJudgeError(422, scoreError);
+      }
+    }
+
+    for (const match of loaded) {
+      const scores = payloadById.get(match.matchId)!;
+      await client.query(
+        `
+          UPDATE thai_match
+          SET team1_score = $2,
+              team2_score = $3,
+              point_history = '[]'::jsonb,
+              status = 'confirmed',
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [match.matchId, scores.team1Score, scores.team2Score],
+      );
+    }
+
+    await client.query(
+      `
+        UPDATE thai_tour
+        SET status = 'confirmed',
+            confirmed_at = now(),
+            updated_at = now()
+        WHERE id = $1
+      `,
+      [tourId],
+    );
+
+    await recomputeRoundStatsTx(client, roundId);
+
+    const nextTourRes = await client.query(
+      `
+        SELECT 1
+        FROM thai_tour
+        WHERE court_id = $1
+          AND tour_no = $2
+        LIMIT 1
+      `,
+      [courtId, tourNo + 1],
+    );
+
+    let nextTourNumber: number | undefined;
+    let courtFinished = false;
+    if (nextTourRes.rows[0]) {
+      nextTourNumber = tourNo + 1;
+      await client.query(
+        `
+          UPDATE thai_court
+          SET status = 'live',
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [courtId],
+      );
+    } else {
+      courtFinished = true;
+      await client.query(
+        `
+          UPDATE thai_court
+          SET status = 'finished',
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [courtId],
+      );
+    }
+
+    const afterLoaded = await loadMatchRowsByTourTx(client, tourId);
+    const afterMatches = afterLoaded.map((m) => ({
+      matchId: m.matchId,
+      team1Score: m.team1Score,
+      team2Score: m.team2Score,
+    }));
+
+    return {
+      tourId,
+      tourNo,
+      courtLabel,
+      roundId,
+      roundType,
+      beforeMatches,
+      afterMatches,
+      nextTourNumber,
+      courtFinished,
     };
   });
 }

@@ -24,8 +24,23 @@ import {
 } from './rating-points';
 import { sanitizeServerImageUrl } from './server-image-url';
 import { augmentArchiveTournamentWithThaiBoard } from './thai-archive-meta';
+import { isKotcNextDemoTournament } from './kotc-next-demo-config';
 
 type JsonObject = Record<string, unknown>;
+
+export function requireCompleteTournamentResultPublish(
+  response: JsonObject,
+  expected: number,
+): number {
+  const hasSavedCount = Object.prototype.hasOwnProperty.call(response, 'results_saved');
+  const saved = hasSavedCount ? Number(response.results_saved) : Number.NaN;
+  if (response.ok !== true || !Number.isFinite(saved) || saved !== expected) {
+    throw new Error(
+      `BadRequest: Tournament result publish was incomplete: expected ${expected}, saved ${saved}`,
+    );
+  }
+  return saved;
+}
 
 type TournamentCapabilities = {
   photoUrl: boolean;
@@ -1410,12 +1425,14 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
     byTournament.set(tournamentId, current);
   }
 
-  return visible.map((row) =>
-    augmentArchiveTournamentWithThaiBoard({
-      ...mapTournament(row, Number(counts.get(String(row.id ?? '')) ?? 0)),
-      results: byTournament.get(String(row.id ?? '')) ?? [],
-    }),
-  );
+  return visible
+    .filter((row) => !isKotcNextDemoTournament({ format: row.format, settings: row.settings }))
+    .map((row) =>
+      augmentArchiveTournamentWithThaiBoard({
+        ...mapTournament(row, Number(counts.get(String(row.id ?? '')) ?? 0)),
+        results: byTournament.get(String(row.id ?? '')) ?? [],
+      }),
+    );
 }
 
 export async function setTournamentPhotoUrl(
@@ -1440,10 +1457,14 @@ export async function setTournamentPhotoUrl(
 export async function upsertTournamentResults(
   tournamentId: string,
   results: Array<{
+    playerId?: string;
     playerName: string;
     gender: 'M' | 'W';
     placement: number;
     points: number;
+    wins?: number;
+    diff?: number;
+    balls?: number;
     ratingPts?: number;
     ratingPool?: RatingPool;
   }>,
@@ -1453,15 +1474,56 @@ export async function upsertTournamentResults(
     throw new Error('BadRequest: Tournament not found');
   }
 
+  const explicitResults = results.filter((item) => String(item.playerId ?? '').trim());
+  if (explicitResults.length) {
+    const playerIds = [...new Set(explicitResults.map((item) => String(item.playerId).trim()))];
+    if (playerIds.length !== explicitResults.length) {
+      throw new Error('BadRequest: Tournament results contain duplicate player ids');
+    }
+    const playerRows = await requestJson<JsonObject[]>(
+      `/players?select=id,name,gender&id=in.${encodeInFilter(playerIds)}&limit=${playerIds.length}`,
+    );
+    const playersById = new Map(
+      playerRows.map((row) => [String(row.id ?? '').trim(), row] as const),
+    );
+    const identityKeys = new Set<string>();
+    for (const item of explicitResults) {
+      const playerId = String(item.playerId).trim();
+      const player = playersById.get(playerId);
+      const requestedName = String(item.playerName || '').trim();
+      const requestedGender = item.gender === 'W' ? 'W' : 'M';
+      const storedName = String(player?.name ?? '').trim();
+      const storedGender = String(player?.gender ?? '').trim().toUpperCase();
+      if (
+        !player ||
+        storedName.localeCompare(requestedName, 'ru', { sensitivity: 'accent' }) !== 0 ||
+        storedGender !== requestedGender
+      ) {
+        throw new Error(`BadRequest: Tournament result player identity mismatch: ${playerId}`);
+      }
+      const identityKey = `${storedName.toLocaleLowerCase('ru-RU')}\u0000${storedGender}`;
+      if (identityKeys.has(identityKey)) {
+        throw new Error('BadRequest: Tournament results contain ambiguous player identities');
+      }
+      identityKeys.add(identityKey);
+    }
+  }
+
   const payload = results.map((item) => {
     const parsedPlace = Number(item.placement || 0);
     const place = Number.isFinite(parsedPlace) ? Math.max(0, Math.trunc(parsedPlace)) : 0;
+    if (place <= 0) {
+      throw new Error(`BadRequest: Invalid tournament result place for ${item.playerName}`);
+    }
     const pool: RatingPool = item.ratingPool === 'novice' ? 'novice' : 'pro';
     return {
       name: String(item.playerName || '').trim(),
       gender: item.gender === 'W' ? 'W' : 'M',
       place,
       game_pts: Number(item.points || 0),
+      result_wins: Number(item.wins ?? 0),
+      diff: Number(item.diff ?? 0),
+      balls: Number(item.balls ?? 0),
       rating_pts: effectiveRatingPtsFromStored(
         place,
         pool,
@@ -1484,5 +1546,5 @@ export async function upsertTournamentResults(
     }),
   });
 
-  return Number(response.results_saved ?? payload.length ?? 0);
+  return requireCompleteTournamentResultPublish(response, payload.length);
 }

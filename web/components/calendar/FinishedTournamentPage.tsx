@@ -4,6 +4,11 @@ import type { TournamentResultRow } from '@/lib/queries';
 import { isThaiAdminFormat } from '@/lib/admin-legacy-sync';
 import type { ThaiSpectatorBoardPayload } from '@/lib/thai-spectator';
 import FinishedTournamentGallery from '@/components/calendar/FinishedTournamentGallery';
+import { ThaiSpectatorFunStats } from '@/components/thai-live/ThaiSpectatorFunStats';
+import { ThaiUnifiedResultsTable } from '@/components/thai-live/ThaiUnifiedResultsTable';
+import { buildThaiUnifiedResults } from '@/lib/thai-live/unified-results';
+import MetrikaExternalLink from '@/components/analytics/MetrikaExternalLink';
+import { METRIKA_GOALS } from '@/lib/metrika-goals';
 
 interface Props {
   tournament: Tournament;
@@ -276,8 +281,9 @@ function Avatar({ photoUrl, name, size }: { photoUrl: string; name: string; size
 
 export default function FinishedTournamentPage({
   tournament,
-  results,
+  results: storedResults,
   related,
+  thaiBoard = null,
   heroPhotoUrl = null,
 }: Props) {
   const { id, name, date, time, location, format, division, level, participantCount, photoUrl } =
@@ -288,15 +294,22 @@ export default function FinishedTournamentPage({
   const galleryImages = FINISHED_TOURNAMENT_GALLERIES[id] ?? [];
   const photoActionLabel =
     photoUrl && heroPhotoUrl && photoUrl !== heroPhotoUrl ? 'Открыть фотоотчёт' : 'Открыть фото';
-  const primaryAnchor = editorial ? '#editorial' : '#results';
+  const hasThaiHighlights = Boolean(thaiBoard?.funStats);
+  const primaryAnchor = editorial ? '#editorial' : hasThaiHighlights ? '#thai-highlights' : '#results';
   const resultsActionLabel = editorial
     ? 'Места и рейтинг'
-    : '🏆 Результаты турнира';
+    : hasThaiHighlights
+      ? '🏆 Герои и результаты турнира'
+      : '🏆 Результаты турнира';
   const resultsSectionTitle = editorial
     ? 'Таблица начисления рейтинга'
     : 'Таблица результатов';
 
   const isThai = isThaiAdminFormat(format);
+  const results = storedResults;
+  const thaiUnifiedResults = isThai && thaiBoard ? buildThaiUnifiedResults(thaiBoard, storedResults) : null;
+  const isKotc = (format || '').toLowerCase().includes('king') || (format || '').toLowerCase().includes('kotc');
+  const isMixedDivision = (division || '').toLowerCase().includes('икст') || (division || '').toLowerCase().includes('mix');
   const pageUrl = `https://lpvolley.ru/calendar/${id}`;
   const vkUrl = `https://vk.com/share.php?url=${encodeURIComponent(pageUrl)}`;
   const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(pageUrl)}&text=${encodeURIComponent(`Результаты: ${name}`)}`;
@@ -319,7 +332,14 @@ export default function FinishedTournamentPage({
 
   const totalWins = results.reduce((sum, row) => sum + (row.wins ?? 0), 0);
   const totalBalls = results.reduce((sum, row) => sum + (row.balls ?? 0), 0);
-  const topRating = results.length > 0 ? Math.max(...results.map((row) => row.ratingPts)) : 0;
+  const matchesPlayed = thaiUnifiedResults?.summary.confirmedMatches ?? (isThai ? Math.round(totalWins / 2) : totalWins);
+  const ballsPlayed = thaiUnifiedResults?.summary.totalScore ?? (isThai ? Math.round(totalBalls / 2) : totalBalls);
+  const topRating = thaiUnifiedResults
+    ? Math.max(0, ...thaiUnifiedResults.players.map((row) => row.ratingPts ?? 0))
+    : results.length > 0
+      ? Math.max(...results.map((row) => row.ratingPts))
+      : 0;
+  const resultCount = thaiUnifiedResults?.players.length ?? results.length;
   const editorialPlayerIds = buildEditorialPlayerIdMap(results);
 
   const nextTournament = related.find((item) => item.status === 'open' || item.status === 'full') ?? null;
@@ -432,25 +452,29 @@ export default function FinishedTournamentPage({
               </a>
             ) : null}
 
-            <a
+            <MetrikaExternalLink
               href={vkUrl}
               target="_blank"
               rel="noopener noreferrer"
+              goalId={METRIKA_GOALS.shareClick}
+              goalParams={{ shareType: 'tournament_results', shareChannel: 'vk', tournamentId: id }}
               className="btn-action-outline flex items-center justify-center gap-2"
               aria-label="Поделиться во ВКонтакте"
             >
               <VkIcon /> VK
-            </a>
+            </MetrikaExternalLink>
 
-            <a
+            <MetrikaExternalLink
               href={tgUrl}
               target="_blank"
               rel="noopener noreferrer"
+              goalId={METRIKA_GOALS.shareClick}
+              goalParams={{ shareType: 'tournament_results', shareChannel: 'telegram', tournamentId: id }}
               className="btn-action-outline flex items-center justify-center gap-2"
               aria-label="Поделиться в Telegram"
             >
               <TelegramIcon /> Telegram
-            </a>
+            </MetrikaExternalLink>
           </div>
         </div>
       </div>
@@ -616,7 +640,7 @@ export default function FinishedTournamentPage({
         </section>
       ) : null}
 
-      {!editorial && podium.length >= 1 ? (
+      {!editorial && !thaiUnifiedResults && podium.length >= 1 ? (
         <section aria-label="Победители" className="mt-10 anim-fade-up anim-delay-2">
           <h2 className="font-heading text-3xl md:text-4xl tracking-wide text-text-primary mb-6">
             Победители
@@ -646,13 +670,42 @@ export default function FinishedTournamentPage({
         </section>
       ) : null}
 
-      {!editorial && results.length > 0 ? (
+      {!editorial && isThai && thaiBoard?.funStats ? (
+        <section
+          id="thai-highlights"
+          aria-label="Герои Thai-турнира"
+          className="mt-10 scroll-mt-6 anim-fade-up anim-delay-3"
+        >
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="text-[11px] font-body uppercase tracking-[0.24em] text-teal-300">
+                История турнира
+              </div>
+              <h2 className="mt-1 font-heading text-3xl uppercase tracking-wide text-text-primary md:text-4xl">
+                Герои дня
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm font-body text-text-secondary">
+                Номинации рассчитаны автоматически по всем подтверждённым матчам R1 и R2.
+              </p>
+            </div>
+            <Link
+              href={`/live/thai/${id}`}
+              className="btn-action-outline inline-flex items-center justify-center gap-2 whitespace-nowrap border-teal-400/45 bg-teal-400/10 text-teal-200 hover:bg-teal-400/20"
+            >
+              Все туры и матчи →
+            </Link>
+          </div>
+          <ThaiSpectatorFunStats stats={thaiBoard.funStats} />
+        </section>
+      ) : null}
+
+      {!editorial && resultCount > 0 ? (
         <div className="mt-8 anim-fade-up anim-delay-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard icon="👥" label="Участников" value={String(results.length)} />
-            <StatCard icon="🔥" label="Матчей сыграно" value={String(totalWins)} />
-            {totalBalls > 0 ? (
-              <StatCard icon="🏐" label="Мячей в игре" value={String(totalBalls)} />
+            <StatCard icon="👥" label="Участников" value={String(resultCount)} />
+            <StatCard icon="🔥" label={isKotc ? 'Очков в финале' : 'Матчей сыграно'} value={String(matchesPlayed)} />
+            {ballsPlayed > 0 ? (
+              <StatCard icon="🏐" label="Мячей в игре" value={String(ballsPlayed)} />
             ) : null}
             {topRating > 0 ? (
               <StatCard icon="⚡" label="Топ рейтинг" value={`${topRating} pts`} />
@@ -664,17 +717,31 @@ export default function FinishedTournamentPage({
         </div>
       ) : null}
 
-      {!editorial && results.length > 0 ? (
+      {!editorial && resultCount > 0 ? (
         <div id="results" className="mt-10 anim-fade-up anim-delay-4">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="font-heading text-3xl md:text-4xl tracking-wide text-text-primary">
               {resultsSectionTitle}
             </h2>
             <span className="text-xs font-body text-text-secondary border border-white/10 rounded-full px-3 py-1">
-              {results.length} игроков
+              {resultCount} игроков
             </span>
           </div>
-          <ResultsTable results={results} />
+          {thaiUnifiedResults ? (
+            <ThaiUnifiedResultsTable model={thaiUnifiedResults} surface="calendar" />
+          ) : isThai ? (
+            <LegacyThaiResultsByZones results={results} />
+          ) : isKotc && isMixedDivision ? (
+            <div className="space-y-5">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-body text-text-primary/85">
+                Места в mixed KOTC считаются отдельно для мужчин и женщин, поэтому итоговая таблица разделена на две сетки.
+              </div>
+              <ResultsTable title="Мужчины" results={results.filter((row) => row.gender === 'M')} isKotc={isKotc} />
+              <ResultsTable title="Женщины" results={results.filter((row) => row.gender === 'W')} isKotc={isKotc} />
+            </div>
+          ) : (
+            <ResultsTable results={results} isKotc={isKotc} />
+          )}
         </div>
       ) : null}
 
@@ -820,7 +887,7 @@ function EditorialRatingInfoGrid() {
       <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
         <div className="text-[11px] uppercase tracking-[0.18em] text-brand/90">1. За что очки</div>
         <p className="mt-2 text-sm font-body text-text-primary/90">
-          Рейтинг здесь начисляется за итоговое место игрока в своей группе, а не за промежуточные победы, diff или мячи.
+          Рейтинг здесь начисляется за итоговое место игрока в своей группе, а не за промежуточные победы, разницу или мячи.
         </p>
       </div>
       <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
@@ -833,7 +900,7 @@ function EditorialRatingInfoGrid() {
       <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
         <div className="text-[11px] uppercase tracking-[0.18em] text-brand/90">3. Почему нули в статах</div>
         <p className="mt-2 text-sm font-body text-text-primary/90">
-          Колонки «Победы / Diff / Мячи» в этой архивной выгрузке не определяют итоговый рейтинг. Ключевые поля здесь: место и
+          Колонки «Победы / Разница / Мячи» в этой архивной выгрузке не определяют итоговый рейтинг. Ключевые поля здесь: место и
           начисленные очки.
         </p>
       </div>
@@ -841,17 +908,86 @@ function EditorialRatingInfoGrid() {
   );
 }
 
-function ResultsTable({ results }: { results: TournamentResultRow[] }) {
+const LEGACY_THAI_ZONES = [
+  { key: 'hard', label: 'HARD', from: 1, to: 4 },
+  { key: 'advance', label: 'ADVANCE', from: 5, to: 8 },
+  { key: 'medium', label: 'MEDIUM', from: 9, to: 12 },
+  { key: 'light', label: 'LIGHT', from: 13, to: Number.MAX_SAFE_INTEGER },
+] as const;
+
+function LegacyThaiResultsByZones({ results }: { results: TournamentResultRow[] }) {
+  const divisions = [
+    { gender: 'M', label: 'Мужчины' },
+    { gender: 'W', label: 'Женщины' },
+  ] as const;
+
+  return (
+    <div className="space-y-7">
+      {divisions.map((division) => {
+        const divisionRows = results.filter(
+          (row) => String(row.gender || '').trim().toUpperCase() === division.gender,
+        );
+        if (!divisionRows.length) return null;
+
+        return (
+          <section key={division.gender} aria-label={division.label}>
+            <h3 className="mb-3 font-heading text-xl uppercase tracking-[0.12em] text-text-primary">
+              {division.label}
+            </h3>
+            <div className="grid gap-4 xl:grid-cols-2">
+              {LEGACY_THAI_ZONES.map((zone) => {
+                const zoneRows = divisionRows
+                  .filter((row) => row.place >= zone.from && row.place <= zone.to)
+                  .map((row) => ({
+                    ...row,
+                    place: ((Math.max(1, row.place) - 1) % 4) + 1,
+                    zoneLabel: null,
+                  }));
+                return zoneRows.length ? (
+                  <ResultsTable key={zone.key} title={zone.label} results={zoneRows} />
+                ) : null;
+              })}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function ResultsTable({
+  results,
+  isKotc = false,
+  showGamePts = false,
+  title,
+}: {
+  results: TournamentResultRow[];
+  isKotc?: boolean;
+  showGamePts?: boolean;
+  title?: string;
+}) {
+  const hasZones = results.some((row) => Boolean(row.zoneLabel));
+  const statLabels = isKotc
+    ? { wins: 'Очки R2', diff: 'Смены', balls: 'Игры' }
+    : { wins: 'Победы', diff: 'Разница', balls: 'Мячи' };
+
   return (
     <div className="overflow-x-auto rounded-xl border border-white/10 bg-black/20">
+      {title ? (
+        <div className="border-b border-white/10 px-4 py-3 text-sm font-heading uppercase tracking-[0.14em] text-text-primary">
+          {title}
+        </div>
+      ) : null}
       <table role="table" className="min-w-full text-sm font-body">
         <thead>
           <tr className="sticky top-0 bg-surface/95 border-b border-white/10 text-text-secondary text-xs">
             <th className="px-4 py-3 text-left font-medium w-12">Место</th>
             <th className="px-4 py-3 text-left font-medium">Игрок</th>
-            <th className="px-4 py-3 text-center font-medium">Победы</th>
-            <th className="px-4 py-3 text-center font-medium">Diff</th>
-            <th className="px-4 py-3 text-center font-medium">Мячи</th>
+            {hasZones ? <th className="px-4 py-3 text-left font-medium">Зона</th> : null}
+            {showGamePts ? <th className="px-4 py-3 text-center font-medium">P</th> : null}
+            <th className="px-4 py-3 text-center font-medium">{statLabels.wins}</th>
+            <th className="px-4 py-3 text-center font-medium">{statLabels.diff}</th>
+            <th className="px-4 py-3 text-center font-medium">{statLabels.balls}</th>
             <th className="px-4 py-3 text-right font-medium" title="Очки в рейтинг">
               В рейтинг
             </th>
@@ -871,7 +1007,7 @@ function ResultsTable({ results }: { results: TournamentResultRow[] }) {
 
             return (
               <tr
-                key={`${row.playerId}-${row.place}`}
+                key={`${row.playerId}-${row.place}-${row.zoneLabel || 'no-zone'}`}
                 className={`border-b border-white/5 ${borderClass} ${hasMedal ? 'bg-white/[0.02]' : ''}`}
               >
                 <td className="px-4 py-3 text-text-primary font-semibold">
@@ -893,6 +1029,12 @@ function ResultsTable({ results }: { results: TournamentResultRow[] }) {
                     />
                   </div>
                 </td>
+                {hasZones ? (
+                  <td className="px-4 py-3 text-text-primary/80">{row.zoneLabel || '—'}</td>
+                ) : null}
+                {showGamePts ? (
+                  <td className="px-4 py-3 text-center text-text-primary/80">{row.gamePts}</td>
+                ) : null}
                 <td className="px-4 py-3 text-center text-text-primary/80">{row.wins}</td>
                 <td className="px-4 py-3 text-center text-text-primary/80">{row.diff}</td>
                 <td className="px-4 py-3 text-center text-text-primary/80">{row.balls}</td>
