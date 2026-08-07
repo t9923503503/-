@@ -26,9 +26,13 @@ import {
 import {
   getThaiJudgeStateSummary,
   getThaiOperatorStateSummary,
+  type ThaiCompletionChecklist,
   type ThaiJudgeStateSummary,
+  type ThaiOpsLogAction,
+  type ThaiOpsLogEntry,
   type ThaiOperatorStateSummary,
 } from "./thai-live";
+import { fetchAuditLogForEntity } from "./admin-audit";
 import {
   THAI_JUDGE_MODULE_LEGACY,
   buildThaiJudgeStructuralSignature,
@@ -44,6 +48,7 @@ import {
   normalizeGoAdminSettings,
   normalizeKotcJudgeBootstrapSignature,
   normalizeKotcJudgeModule,
+  normalizeKotcR2SeedingMode,
   normalizeKotcTakeoversMode,
   type KotcJudgeModule,
 } from "./admin-legacy-sync";
@@ -87,10 +92,16 @@ export interface SudyamBootstrapPayload {
   thaiJudgeBlockedReason?: string | null;
   thaiJudgeState?: ThaiJudgeStateSummary;
   thaiOperatorState?: ThaiOperatorStateSummary;
+  thaiOpsLog?: ThaiOpsLogEntry[];
+  thaiCompletionChecklist?: ThaiCompletionChecklist;
+  lastSuccessfulSyncAt?: string | null;
+  lastCalendarFinishAt?: string | null;
   kotcJudgeModule?: KotcJudgeModule;
   kotcJudgeNeedsBootstrap?: boolean;
   kotcJudgeBlockedReason?: string | null;
   kotcOperatorState?: KotcNextOperatorState;
+  canAdminResetKotcNext?: boolean;
+  canAdminForceFinishKotcRound?: boolean;
   goJudgeNeedsBootstrap?: boolean;
   goJudgeBlockedReason?: string | null;
   goOperatorState?: GoOperatorState;
@@ -127,6 +138,162 @@ function getMainParticipants(
   participants: SudyamBootstrapParticipant[],
 ): SudyamBootstrapParticipant[] {
   return participants.filter((participant) => !participant.isWaitlist);
+}
+
+function isThaiAuditAction(value: string): value is ThaiOpsLogAction {
+  return (
+    value === "bootstrap_r1" ||
+    value === "reshuffle_r1" ||
+    value === "finish_r1" ||
+    value === "confirm_r2_seed" ||
+    value === "finish_r2" ||
+    value === "replace_player" ||
+    value === "sync_results" ||
+    value === "mark_calendar_finished"
+  );
+}
+
+function mapThaiAuditAction(action: string): ThaiOpsLogAction | null {
+  switch (String(action || "").trim()) {
+    case "tournament.thaiBootstrapR1":
+      return "bootstrap_r1";
+    case "tournament.thaiReshuffleR1":
+      return "reshuffle_r1";
+    case "tournament.thaiFinishR1":
+      return "finish_r1";
+    case "tournament.thaiConfirmR2Seed":
+      return "confirm_r2_seed";
+    case "tournament.thaiFinishR2":
+      return "finish_r2";
+    case "tournament.thaiReplacePlayer":
+      return "replace_player";
+    case "tournament.thaiSyncResults":
+      return "sync_results";
+    case "tournament.thaiMarkCalendarFinished":
+      return "mark_calendar_finished";
+    default:
+      return null;
+  }
+}
+
+function formatThaiLogTitle(action: ThaiOpsLogAction): string {
+  switch (action) {
+    case "bootstrap_r1":
+      return "Запуск R1";
+    case "reshuffle_r1":
+      return "Перемешивание R1";
+    case "finish_r1":
+      return "Завершение R1";
+    case "confirm_r2_seed":
+      return "Запуск R2";
+    case "finish_r2":
+      return "Завершение R2";
+    case "replace_player":
+      return "Замена игрока";
+    case "sync_results":
+      return "Синхронизация рейтинга";
+    case "mark_calendar_finished":
+      return "Завершение в календаре";
+  }
+}
+
+function formatThaiLogSummary(action: ThaiOpsLogAction, afterState: unknown): string {
+  const state = afterState && typeof afterState === "object" ? (afterState as Record<string, unknown>) : {};
+  switch (action) {
+    case "bootstrap_r1":
+    case "reshuffle_r1":
+      return `Seed: ${String(state.seed ?? state.drawSeed ?? "—")}`;
+    case "finish_r1":
+    case "finish_r2":
+      return `Стадия: ${String(state.stage ?? "closed")}`;
+    case "confirm_r2_seed":
+      return `Зон: ${String(state.zoneCount ?? state.zones ?? "—")}`;
+    case "replace_player":
+      return `${String(state.playerName ?? state.oldPlayerName ?? "Игрок")} -> ${String(state.newPlayerName ?? state.playerId ?? "замена")}`;
+    case "sync_results":
+      return `Раунд: ${String(state.roundUsed ?? "—")} · строк: ${String(state.inserted ?? 0)}`;
+    case "mark_calendar_finished":
+      return `Статус: ${String(state.status ?? "finished")}`;
+  }
+}
+
+function buildThaiOpsLog(
+  rows: Awaited<ReturnType<typeof fetchAuditLogForEntity>>,
+): {
+  entries: ThaiOpsLogEntry[];
+  lastSuccessfulSyncAt: string | null;
+  lastCalendarFinishAt: string | null;
+} {
+  const entries: ThaiOpsLogEntry[] = [];
+  let lastSuccessfulSyncAt: string | null = null;
+  let lastCalendarFinishAt: string | null = null;
+
+  for (const row of rows) {
+    const action = mapThaiAuditAction(row.action);
+    if (!action || !isThaiAuditAction(action)) continue;
+    if (!lastSuccessfulSyncAt && action === "sync_results") {
+      lastSuccessfulSyncAt = row.createdAt || null;
+    }
+    if (!lastCalendarFinishAt && action === "mark_calendar_finished") {
+      lastCalendarFinishAt = row.createdAt || null;
+    }
+    entries.push({
+      id: row.id,
+      createdAt: row.createdAt,
+      actorId: row.actorId,
+      actorRole: row.actorRole,
+      action,
+      title: formatThaiLogTitle(action),
+      summary: formatThaiLogSummary(action, row.afterState),
+    });
+  }
+
+  return { entries, lastSuccessfulSyncAt, lastCalendarFinishAt };
+}
+
+function buildThaiCompletionChecklist(input: {
+  operatorState?: ThaiOperatorStateSummary;
+  tournamentStatus: string;
+  lastSuccessfulSyncAt: string | null;
+  lastCalendarFinishAt: string | null;
+}): ThaiCompletionChecklist {
+  const tournamentFinished = input.tournamentStatus === "finished";
+  const stage = input.operatorState?.stage ?? "setup";
+  const hasR2 = Boolean(input.operatorState?.rounds.some((round) => round.roundType === "r2"));
+  const playClosed =
+    stage === "r2_finished" || (stage === "r1_finished" && !hasR2);
+  const resultsSynced = Boolean(input.lastSuccessfulSyncAt || tournamentFinished);
+
+  return {
+    steps: [
+      {
+        key: "play_closed",
+        label: "Раунды закрыты",
+        status: playClosed ? "done" : input.operatorState ? "pending" : "unavailable",
+        source: playClosed ? `stage=${stage}` : "Ждём завершение R1/R2",
+        timestamp: null,
+      },
+      {
+        key: "results_synced",
+        label: "Рейтинг и архив синхронизированы",
+        status: playClosed ? (resultsSynced ? "done" : "pending") : "unavailable",
+        source: resultsSynced
+          ? (input.lastSuccessfulSyncAt ? "Последняя ручная синхронизация" : "Автосинхронизация при finished")
+          : "Будет синхронизирован автоматически при закрытии турнира",
+        timestamp: input.lastSuccessfulSyncAt,
+      },
+      {
+        key: "calendar_finished",
+        label: "Турнир закрыт в календаре",
+        status: tournamentFinished ? "done" : playClosed ? "pending" : "unavailable",
+        source: tournamentFinished ? "Статус турнира = finished" : "Нужно закрыть карточку турнира",
+        timestamp: input.lastCalendarFinishAt,
+      },
+    ],
+    // Closing a Thai Next tournament already persists the standings before it changes
+    // the calendar status. Do not make the operator repeat that automatic step manually.
+    nextAction: !playClosed || tournamentFinished ? null : "mark_calendar_finished",
+  };
 }
 
 export async function resolveSudyamBootstrap(
@@ -182,6 +349,10 @@ export async function resolveSudyamBootstrap(
   let thaiJudgeState: ThaiJudgeStateSummary | undefined;
   let thaiOperatorState: ThaiOperatorStateSummary | undefined;
   let thaiJudgeNeedsBootstrap = false;
+  let thaiOpsLog: ThaiOpsLogEntry[] | undefined;
+  let thaiCompletionChecklist: ThaiCompletionChecklist | undefined;
+  let lastSuccessfulSyncAt: string | null = null;
+  let lastCalendarFinishAt: string | null = null;
   let kotcJudgeBlockedReason: string | null = null;
   let kotcOperatorState: KotcNextOperatorState | undefined;
   let kotcJudgeNeedsBootstrap = false;
@@ -250,6 +421,18 @@ export async function resolveSudyamBootstrap(
         thaiJudgeBlockedReason = "Thai Next state is not available yet";
       }
     }
+
+    const thaiAuditRows = await fetchAuditLogForEntity("tournament", normalizedTournamentId, 40).catch(() => []);
+    const thaiAudit = buildThaiOpsLog(thaiAuditRows);
+    thaiOpsLog = thaiAudit.entries;
+    lastSuccessfulSyncAt = thaiAudit.lastSuccessfulSyncAt;
+    lastCalendarFinishAt = thaiAudit.lastCalendarFinishAt;
+    thaiCompletionChecklist = buildThaiCompletionChecklist({
+      operatorState: thaiOperatorState,
+      tournamentStatus: tournamentStatusKey,
+      lastSuccessfulSyncAt,
+      lastCalendarFinishAt,
+    });
   }
 
   if (format === "kotc" && kotcJudgeModule !== "legacy") {
@@ -281,6 +464,7 @@ export async function resolveSudyamBootstrap(
       ppc: normalizedPpc,
       raundCount: normalizedRaundCount,
       takeoversMode: normalizeKotcTakeoversMode(settings.kotcTakeoversMode),
+      r2SeedingMode: normalizeKotcR2SeedingMode(settings.kotcR2SeedingMode),
       playerIds: mainParticipants.map((participant) => participant.playerId),
     });
 
@@ -390,6 +574,10 @@ export async function resolveSudyamBootstrap(
     thaiJudgeBlockedReason,
     thaiJudgeState,
     thaiOperatorState,
+    thaiOpsLog,
+    thaiCompletionChecklist,
+    lastSuccessfulSyncAt,
+    lastCalendarFinishAt,
     kotcJudgeModule,
     kotcJudgeNeedsBootstrap,
     kotcJudgeBlockedReason,
