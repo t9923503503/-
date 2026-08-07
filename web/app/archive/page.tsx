@@ -1,18 +1,35 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { BreadcrumbSchema } from '@/components/seo/SchemaOrg';
 import { getArchiveTournaments } from '@/lib/admin-queries';
 import type { ArchiveTournament } from '@/lib/admin-queries';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Архив турниров | Лютые Пляжники',
-  description: 'Результаты прошедших турниров по пляжному волейболу в Луганске.',
+  title: 'Архив турниров по пляжному волейболу в Сургуте | LPVolley',
+  description:
+    'Результаты прошедших турниров по пляжному волейболу в Сургуте: King of the Court, THAI, миксты. Таблицы лидеров, фотоотчёты, статистика.',
+  keywords: [
+    'архив турниров Сургут',
+    'результаты волейбол Сургут',
+    'прошедшие турниры пляжный волейбол',
+  ],
+  alternates: { canonical: 'https://lpvolley.ru/archive' },
   openGraph: {
-    title: 'Архив турниров | Лютые Пляжники',
-    description: 'Результаты прошедших турниров по пляжному волейболу.',
+    title: 'Архив турниров по пляжному волейболу в Сургуте | LPVolley',
+    description: 'Результаты прошедших турниров: King of the Court, THAI, миксты. Таблицы, фото, статистика.',
+    url: 'https://lpvolley.ru/archive',
     type: 'website',
     locale: 'ru_RU',
+    images: [
+      {
+        url: 'https://lpvolley.ru/og-banner.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'Архив турниров по пляжному волейболу в Сургуте',
+      },
+    ],
   },
 };
 
@@ -27,15 +44,14 @@ function formatDate(dateStr: string) {
 
 function TournamentCard({ t }: { t: ArchiveTournament }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
-      {/* Header */}
-      <div className="p-5 flex flex-col gap-1">
+    <div className="archive-card overflow-hidden rounded-[22px] border border-white/10 bg-white/5">
+      <div className="flex flex-col gap-1 p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="font-heading text-xl leading-tight">{t.name}</h2>
             <p className="text-sm text-text-secondary mt-1">📅 {formatDate(t.date)}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 shrink-0 justify-end">
+          <div className="flex shrink-0 flex-wrap items-center justify-start gap-2 sm:justify-end">
             {t.thaiSpectatorBoardUrl ? (
               <Link
                 href={t.thaiSpectatorBoardUrl}
@@ -74,7 +90,6 @@ function TournamentCard({ t }: { t: ArchiveTournament }) {
         </div>
       </div>
 
-      {/* Results table */}
       {t.results.length > 0 && (
         <div className="border-t border-white/10">
           <table className="w-full text-sm">
@@ -130,26 +145,34 @@ export default async function ArchivePage() {
   const tournaments = await getArchiveTournaments().catch(() => [] as ArchiveTournament[]);
 
   return (
-    <main className="max-w-4xl mx-auto px-4 py-10">
-      <h1 className="font-heading text-4xl md:text-5xl text-text-primary mb-2 uppercase tracking-wide">
-        Архив турниров
-      </h1>
-      <p className="text-text-secondary mb-8">
-        Результаты завершённых турниров · {tournaments.length > 0 ? `${tournaments.length} турниров` : 'пока пусто'}
-      </p>
+    <>
+      <BreadcrumbSchema
+        items={[
+          { name: 'Главная', url: 'https://lpvolley.ru/' },
+          { name: 'Архив', url: 'https://lpvolley.ru/archive' },
+        ]}
+      />
+      <main className="archive-page mx-auto min-w-0 max-w-4xl overflow-x-hidden px-3 py-7 sm:px-4 sm:py-10">
+        <h1 className="mb-2 break-words font-heading text-[clamp(2.75rem,12vw,3.75rem)] leading-[0.92] text-text-primary uppercase tracking-[0.015em] md:text-5xl">
+          Архив турниров
+        </h1>
+        <p className="mb-6 text-sm leading-6 text-text-secondary sm:mb-8 sm:text-base">
+          Результаты завершённых турниров · {tournaments.length > 0 ? `${tournaments.length} турниров` : 'пока пусто'}
+        </p>
 
-      {tournaments.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-12 text-center">
-          <div className="text-5xl mb-4">🏆</div>
-          <p className="text-text-secondary">Завершённые турниры появятся здесь</p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-6">
-          {tournaments.map((t) => (
-            <TournamentCard key={t.id} t={t} />
-          ))}
-        </div>
-      )}
-    </main>
+        {tournaments.length === 0 ? (
+          <div className="archive-empty rounded-2xl border border-white/10 bg-white/5 p-12 text-center">
+            <div className="text-5xl mb-4">🏆</div>
+            <p className="text-text-secondary">Завершённые турниры появятся здесь</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-6">
+            {tournaments.map((t) => (
+              <TournamentCard key={t.id} t={t} />
+            ))}
+          </div>
+        )}
+      </main>
+    </>
   );
 }

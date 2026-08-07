@@ -13,7 +13,7 @@ export default async function LandingHeroAccessPanel() {
   const subtitle = active ? getAccessSubtitle(summary) : 'Регистрация';
 
   return (
-    <div className="absolute right-4 top-4 z-10 md:hidden">
+    <div className="landing-hero-access absolute right-4 top-4 z-10 md:hidden">
       <Link
         href="/cabinet"
         className="group flex max-w-[220px] items-center gap-3 rounded-2xl border border-white/10 bg-[#121722]/92 px-3.5 py-3 text-left shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-md transition-all duration-200 hover:border-brand/35 hover:bg-[#171d28]/96"

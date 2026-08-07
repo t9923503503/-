@@ -94,7 +94,7 @@ export default function HeaderAccountEntry({ mobile = false }: { mobile?: boolea
     return (
       <Link
         href="/cabinet"
-        className="mt-2 flex items-center justify-between rounded-2xl border border-white/10 bg-[#121722] px-4 py-3 text-left shadow-[0_14px_34px_rgba(0,0,0,0.22)] transition-colors hover:border-brand/30"
+        className="header-account-entry mt-2 flex items-center justify-between rounded-2xl border border-white/10 bg-[#121722] px-4 py-3 text-left shadow-[0_14px_34px_rgba(0,0,0,0.22)] transition-colors hover:border-brand/30"
       >
         <div>
           <div className="text-[10px] uppercase tracking-[0.24em] text-white/75">
@@ -115,7 +115,7 @@ export default function HeaderAccountEntry({ mobile = false }: { mobile?: boolea
   return (
     <Link
       href="/cabinet"
-      className="group relative flex min-w-[164px] max-w-[190px] items-center gap-3 overflow-hidden rounded-2xl border border-white/10 bg-[#121722] px-3 py-2.5 text-left shadow-[0_10px_26px_rgba(0,0,0,0.22)] transition-all duration-200 hover:border-brand/30 hover:bg-[#171d28] hover:shadow-[0_14px_32px_rgba(0,0,0,0.28)]"
+      className="header-account-entry group relative flex min-w-[164px] max-w-[190px] items-center gap-3 overflow-hidden rounded-2xl border border-white/10 bg-[#121722] px-3 py-2.5 text-left shadow-[0_10px_26px_rgba(0,0,0,0.22)] transition-all duration-200 hover:border-brand/30 hover:bg-[#171d28] hover:shadow-[0_14px_32px_rgba(0,0,0,0.28)]"
     >
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 text-brand">
         <AccountIcon />
