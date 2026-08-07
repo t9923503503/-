@@ -45,6 +45,53 @@ export interface ThaiStandingsSeedRow extends ThaiStandingsRow {
   courtLabel: string;
 }
 
+type ThaiBootstrapTeam = {
+  players: Array<{
+    playerId: string;
+    playerName: string;
+    role: ThaiPlayerRole;
+  }>;
+};
+
+const THAI_MATCH_PAIRING_OPTIONS: Array<Array<[number, number]>> = [
+  [
+    [0, 1],
+    [2, 3],
+  ],
+  [
+    [0, 2],
+    [1, 3],
+  ],
+  [
+    [0, 3],
+    [1, 2],
+  ],
+];
+
+const THAI_DUAL_POOL_4X4_TEMPLATE: Array<
+  Array<{
+    team1: [number, number];
+    team2: [number, number];
+  }>
+> = [
+  [
+    { team1: [0, 0], team2: [1, 1] },
+    { team1: [2, 2], team2: [3, 3] },
+  ],
+  [
+    { team1: [0, 1], team2: [2, 3] },
+    { team1: [1, 0], team2: [3, 2] },
+  ],
+  [
+    { team1: [0, 2], team2: [3, 1] },
+    { team1: [1, 3], team2: [2, 0] },
+  ],
+  [
+    { team1: [0, 3], team2: [1, 2] },
+    { team1: [2, 1], team2: [3, 0] },
+  ],
+];
+
 export const THAI_POINT_LIMIT_MIN = 9;
 export const THAI_POINT_LIMIT_MAX = 21;
 export const THAI_POINT_LIMIT_DEFAULT = 15;
@@ -68,6 +115,163 @@ function clamp(value: number, min: number, max: number): number {
 function normalizeCourtLabel(courtNo: number): string {
   if (courtNo >= 1) return `K${courtNo}`;
   return String(courtNo);
+}
+
+function opponentKey(left: string, right: string): string {
+  return left < right ? `${left}|${right}` : `${right}|${left}`;
+}
+
+function addTeamOpponentCounts(
+  counts: Map<string, number>,
+  teams: ThaiBootstrapTeam[],
+  pairings: Array<[number, number]>,
+): void {
+  for (const [leftIdx, rightIdx] of pairings) {
+    const left = teams[leftIdx];
+    const right = teams[rightIdx];
+    if (!left || !right) continue;
+    for (const leftPlayer of left.players) {
+      for (const rightPlayer of right.players) {
+        const key = opponentKey(leftPlayer.playerId, rightPlayer.playerId);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+  }
+}
+
+function scoreTeamPairings(
+  counts: Map<string, number>,
+  teams: ThaiBootstrapTeam[],
+  pairings: Array<[number, number]>,
+): { maxProjected: number; repeatedPairs: number; repeatLoad: number } {
+  const projected = new Map(counts);
+  addTeamOpponentCounts(projected, teams, pairings);
+
+  let maxProjected = 0;
+  let repeatedPairs = 0;
+  let repeatLoad = 0;
+  for (const count of projected.values()) {
+    maxProjected = Math.max(maxProjected, count);
+    if (count > 1) {
+      repeatedPairs += 1;
+      repeatLoad += count - 1;
+    }
+  }
+  return { maxProjected, repeatedPairs, repeatLoad };
+}
+
+function chooseTeamMatchPairings(
+  teams: ThaiBootstrapTeam[],
+  opponentCounts: Map<string, number>,
+): Array<[number, number]> {
+  const ranked = THAI_MATCH_PAIRING_OPTIONS
+    .map((pairings, optionIndex) => ({
+      pairings,
+      optionIndex,
+      score: scoreTeamPairings(opponentCounts, teams, pairings),
+    }))
+    .sort((left, right) => {
+      if (left.score.maxProjected !== right.score.maxProjected) {
+        return left.score.maxProjected - right.score.maxProjected;
+      }
+      if (left.score.repeatedPairs !== right.score.repeatedPairs) {
+        return left.score.repeatedPairs - right.score.repeatedPairs;
+      }
+      if (left.score.repeatLoad !== right.score.repeatLoad) {
+        return left.score.repeatLoad - right.score.repeatLoad;
+      }
+      return left.optionIndex - right.optionIndex;
+    });
+
+  const best = ranked[0]?.pairings ?? THAI_MATCH_PAIRING_OPTIONS[0];
+  addTeamOpponentCounts(opponentCounts, teams, best);
+  return best;
+}
+
+function collectRequiredSameRoleOpponentKeys(tourTeams: ThaiBootstrapTeam[][], requiredRoles: ThaiPlayerRole[]): Set<string> {
+  const roleFilter = new Set(requiredRoles);
+  const playersByRole = new Map<ThaiPlayerRole, Set<string>>();
+  for (const teams of tourTeams) {
+    for (const team of teams) {
+      for (const player of team.players) {
+        if (!roleFilter.has(player.role)) continue;
+        const bucket = playersByRole.get(player.role) ?? new Set<string>();
+        bucket.add(player.playerId);
+        playersByRole.set(player.role, bucket);
+      }
+    }
+  }
+
+  const required = new Set<string>();
+  for (const ids of playersByRole.values()) {
+    const list = [...ids];
+    for (let left = 0; left < list.length; left += 1) {
+      for (let right = left + 1; right < list.length; right += 1) {
+        required.add(opponentKey(list[left], list[right]));
+      }
+    }
+  }
+  return required;
+}
+
+function scoreOpponentCounts(
+  counts: Map<string, number>,
+  requiredOpponentKeys: Set<string>,
+): { missingRequired: number; maxCount: number; pairsOverTwo: number; repeatLoad: number } {
+  let maxCount = 0;
+  let pairsOverTwo = 0;
+  let repeatLoad = 0;
+  for (const count of counts.values()) {
+    maxCount = Math.max(maxCount, count);
+    if (count > 2) pairsOverTwo += 1;
+    if (count > 1) repeatLoad += count - 1;
+  }
+  let missingRequired = 0;
+  for (const key of requiredOpponentKeys) {
+    if (!counts.has(key)) missingRequired += 1;
+  }
+  return { missingRequired, maxCount, pairsOverTwo, repeatLoad };
+}
+
+function compareOpponentScores(
+  left: { missingRequired: number; maxCount: number; pairsOverTwo: number; repeatLoad: number },
+  right: { missingRequired: number; maxCount: number; pairsOverTwo: number; repeatLoad: number },
+): number {
+  if (left.missingRequired !== right.missingRequired) return left.missingRequired - right.missingRequired;
+  if (left.maxCount !== right.maxCount) return left.maxCount - right.maxCount;
+  if (left.pairsOverTwo !== right.pairsOverTwo) return left.pairsOverTwo - right.pairsOverTwo;
+  return left.repeatLoad - right.repeatLoad;
+}
+
+function chooseTeamMatchPairingsForTours(
+  tourTeams: ThaiBootstrapTeam[][],
+  options: { requiredSameRoleCoverage?: ThaiPlayerRole[] } = {},
+): Array<Array<[number, number]>> {
+  let bestPairings: Array<Array<[number, number]>> | null = null;
+  let bestScore: { missingRequired: number; maxCount: number; pairsOverTwo: number; repeatLoad: number } | null = null;
+  const requiredOpponentKeys = options.requiredSameRoleCoverage?.length
+    ? collectRequiredSameRoleOpponentKeys(tourTeams, options.requiredSameRoleCoverage)
+    : new Set<string>();
+
+  function walk(tourIndex: number, counts: Map<string, number>, chosen: Array<Array<[number, number]>>): void {
+    if (tourIndex >= tourTeams.length) {
+      const score = scoreOpponentCounts(counts, requiredOpponentKeys);
+      if (!bestScore || compareOpponentScores(score, bestScore) < 0) {
+        bestScore = score;
+        bestPairings = chosen.slice();
+      }
+      return;
+    }
+
+    for (const option of THAI_MATCH_PAIRING_OPTIONS) {
+      const nextCounts = new Map(counts);
+      addTeamOpponentCounts(nextCounts, tourTeams[tourIndex], option);
+      walk(tourIndex + 1, nextCounts, [...chosen, option]);
+    }
+  }
+
+  walk(0, new Map(), []);
+  return bestPairings ?? tourTeams.map((teams) => chooseTeamMatchPairings(teams, new Map()));
 }
 
 function poolLabel(variant: string, pool: ThaiStandingsPoolKey): string {
@@ -194,8 +398,8 @@ function buildSinglePoolTours(
     seed,
   }) as unknown as ThaiScheduleRound[];
 
-  return schedule.map((round, index) => {
-    const teams = round.pairs.map(([firstIdx, secondIdx]) => ({
+  const tourTeams = schedule.map((round) =>
+    round.pairs.map(([firstIdx, secondIdx]) => ({
       players: [
         {
           playerId: players[firstIdx].playerId,
@@ -208,16 +412,12 @@ function buildSinglePoolTours(
           role: 'secondary' as ThaiPlayerRole,
         },
       ],
-    }));
-    const rotations = [
-      [[0, 1], [2, 3]],
-      [[0, 2], [1, 3]],
-      [[0, 3], [1, 2]],
-      [[0, 1], [2, 3]],
-      [[0, 2], [1, 3]],
-    ];
-    const matchPairings = rotations[index % 5];
+    })),
+  );
+  const tourPairings = chooseTeamMatchPairingsForTours(tourTeams);
 
+  return tourTeams.map((teams, index) => {
+    const matchPairings = tourPairings[index] ?? THAI_MATCH_PAIRING_OPTIONS[index % THAI_MATCH_PAIRING_OPTIONS.length];
     return {
       tourNo: index + 1,
       matches: [
@@ -254,6 +454,32 @@ function buildDualPoolTours(
   seed: number,
 ): ThaiBootstrapTour[] {
   const pools = splitDualPoolPlayers(players, variant);
+  if (tourCount === THAI_DUAL_POOL_4X4_TEMPLATE.length && pools.primary.length === 4 && pools.secondary.length === 4) {
+    const buildTeam = ([primaryIdx, secondaryIdx]: [number, number]): ThaiBootstrapTeam => ({
+      players: [
+        {
+          playerId: pools.primary[primaryIdx].playerId,
+          playerName: pools.primary[primaryIdx].playerName,
+          role: 'primary',
+        },
+        {
+          playerId: pools.secondary[secondaryIdx].playerId,
+          playerName: pools.secondary[secondaryIdx].playerName,
+          role: 'secondary',
+        },
+      ],
+    });
+
+    return THAI_DUAL_POOL_4X4_TEMPLATE.map((tour, tourIndex) => ({
+      tourNo: tourIndex + 1,
+      matches: tour.map((match, matchIndex) => ({
+        matchNo: matchIndex + 1,
+        team1: buildTeam(match.team1),
+        team2: buildTeam(match.team2),
+      })),
+    }));
+  }
+
   const schedule = thaiGenerateSchedule({
     mode: variant,
     men: pools.primary.length,
@@ -262,9 +488,8 @@ function buildDualPoolTours(
     tours: tourCount,
     seed,
   }) as unknown as ThaiScheduleRound[];
-
-  return schedule.map((round, index) => {
-    const teams = round.pairs.map(([primaryIdx, secondaryIdx]) => ({
+  const tourTeams = schedule.map((round) =>
+    round.pairs.map(([primaryIdx, secondaryIdx]) => ({
       players: [
         {
           playerId: pools.primary[primaryIdx].playerId,
@@ -277,16 +502,12 @@ function buildDualPoolTours(
           role: 'secondary' as ThaiPlayerRole,
         },
       ],
-    }));
-    const rotations = [
-      [[0, 1], [2, 3]],
-      [[0, 2], [1, 3]],
-      [[0, 3], [1, 2]],
-      [[0, 1], [2, 3]],
-      [[0, 2], [1, 3]],
-    ];
-    const matchPairings = rotations[index % 5];
+    })),
+  );
+  const tourPairings = chooseTeamMatchPairingsForTours(tourTeams, { requiredSameRoleCoverage: ['primary'] });
 
+  return tourTeams.map((teams, index) => {
+    const matchPairings = tourPairings[index] ?? THAI_MATCH_PAIRING_OPTIONS[index % THAI_MATCH_PAIRING_OPTIONS.length];
     return {
       tourNo: index + 1,
       matches: [
@@ -365,9 +586,33 @@ export function buildThaiCourtLabel(courtNo: number): string {
   return normalizeCourtLabel(courtNo);
 }
 
+export function orderThaiCourtPlayersForSpectator(
+  variant: string,
+  players: Array<{ playerId: string; playerName: string; role: ThaiPlayerRole }>,
+): string[] {
+  const normalizedVariant = String(variant || '').trim().toUpperCase();
+  const withIndex = players.map((player, index) => ({ ...player, index }));
+  if (normalizedVariant === 'MF' || normalizedVariant === 'MN') {
+    return withIndex
+      .sort((left, right) => {
+        const leftRank = left.role === 'primary' ? 0 : 1;
+        const rightRank = right.role === 'primary' ? 0 : 1;
+        if (leftRank !== rightRank) return leftRank - rightRank;
+        return left.index - right.index;
+      })
+      .map((player) => player.playerName);
+  }
+  return withIndex
+    .sort((left, right) => left.index - right.index)
+    .map((player) => player.playerName);
+}
+
 export function sortThaiStandingsRows(rows: ThaiStandingsRow[], preset: ThaiRulesPreset = 'legacy'): ThaiStandingsRow[] {
   return [...rows].sort((left, right) => {
-    if (preset === 'balanced_v2' && right.wins !== left.wins) {
+    // Wins are the universal primary criterion for Thai standings. Keep the
+    // preset argument for stored tournament compatibility; it must not let P
+    // or any later tie-breaker outrank a player with more wins.
+    if (right.wins !== left.wins) {
       return right.wins - left.wins;
     }
     if (right.pointsP !== left.pointsP) return right.pointsP - left.pointsP;
