@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { KotcNextTournamentWorkspace } from '@/components/kotc-next/KotcNextTournamentWorkspace';
 import { getAdminSessionFromCookies } from '@/lib/admin-auth';
-import { SudyamBootstrapError, resolveSudyamBootstrap } from '@/lib/sudyam-bootstrap';
+import { SudyamBootstrapError, resolveSudyamBootstrap, type SudyamBootstrapPayload } from '@/lib/sudyam-bootstrap';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,21 +16,14 @@ export default async function AdminKotcNextPage({ params }: { params: Promise<{ 
     if (payload.kotcJudgeModule === 'legacy') {
       redirect(`/sudyam?tournamentId=${encodeURIComponent(id)}&format=kotc&legacy=1`);
     }
+    const initialData: SudyamBootstrapPayload = {
+      ...payload,
+      canAdminResetKotcNext: actor?.role === 'admin',
+      canAdminForceFinishKotcRound: actor?.role === 'admin',
+    };
     return (
       <KotcNextTournamentWorkspace
-        initialData={{
-          ...payload,
-          canAdminResetKotcNext: actor?.role === 'admin',
-          canAdminForceFinishKotcRound: actor?.role === 'admin',
-        } as any}
-      />
-    );
-      <KotcNextTournamentWorkspace
-        initialData={{
-          ...payload,
-          canAdminResetKotcNext: actor?.role === 'admin',
-          canAdminForceFinishKotcRound: actor?.role === 'admin',
-        }}
+        initialData={initialData}
       />
     );
   } catch (error) {
