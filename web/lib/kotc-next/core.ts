@@ -1,4 +1,5 @@
 import { kotcActiveDivKeys } from '../../../formats/kotc/kotc-format.js';
+import type { KotcR2SeedingMode } from '@/lib/admin-legacy-sync';
 import type {
   KotcNextCourtLiveState,
   KotcNextPairLiveState,
@@ -7,6 +8,27 @@ import type {
   KotcNextZoneKey,
 } from './types';
 
+export function getKotcNextTimerSnapshot(input: {
+  status: 'pending' | 'running' | 'paused' | 'finished';
+  startedAt: string | null;
+  pausedAt?: string | null;
+  timerMinutes: number;
+  now?: number;
+}) {
+  const now = Number.isFinite(input.now) ? Number(input.now) : Date.now();
+  const startedAt = input.startedAt ? new Date(input.startedAt).getTime() : Number.NaN;
+  const pausedAt = input.pausedAt ? new Date(input.pausedAt).getTime() : Number.NaN;
+  const effectiveNow = input.status === 'paused' && Number.isFinite(pausedAt) ? pausedAt : now;
+  const durationMs = Math.max(1, Math.trunc(Number(input.timerMinutes) || 10)) * 60_000;
+  const countdownMs = Number.isFinite(startedAt) ? Math.max(0, startedAt - effectiveNow) : 0;
+  const remainingMs = Number.isFinite(startedAt)
+    ? Math.max(0, startedAt + durationMs - effectiveNow)
+    : durationMs;
+  const displayStatus =
+    input.status === 'running' && countdownMs > 0 ? 'countdown' : input.status;
+  return { countdownMs, remainingMs, displayStatus } as const;
+}
+
 export interface KotcNextSeedablePairRef {
   courtNo: number;
   pairIdx: number;
@@ -14,6 +36,8 @@ export interface KotcNextSeedablePairRef {
   kingWins: number;
   takeovers: number;
   gamesPlayed: number;
+  longestKingRun?: number;
+  firstLongestKingRunOrder?: number | null;
 }
 
 export interface KotcNextUndoInput {
@@ -22,7 +46,20 @@ export interface KotcNextUndoInput {
   seed: number;
   timerMinutes: number;
   timerStartedAt?: string | null;
-  events: Array<{ eventType: 'king_point' | 'takeover' }>;
+  takeoversMode?: KotcNextTakeoversMode;
+  events: Array<KotcNextKingRunEvent>;
+}
+
+export interface KotcNextKingRunEvent {
+  eventType: 'king_point' | 'takeover';
+  kingPairIdx?: number;
+  seqNo?: number;
+  order?: number;
+}
+
+export interface KotcNextKingRunTieBreak {
+  longestKingRun: number;
+  firstLongestKingRunOrder: number | null;
 }
 
 export type KotcNextManualPairSlot = 'king' | 'challenger';
@@ -34,9 +71,94 @@ export function compareKotcNextStandings(
   takeoversMode: KotcNextTakeoversMode = 'standard',
 ): number {
   if (b.kingWins !== a.kingWins) return b.kingWins - a.kingWins;
+  const runA = a.longestKingRun ?? 0;
+  const runB = b.longestKingRun ?? 0;
+  if (runB !== runA) return runB - runA;
+  if (runA > 0) {
+    const orderA = a.firstLongestKingRunOrder ?? Number.POSITIVE_INFINITY;
+    const orderB = b.firstLongestKingRunOrder ?? Number.POSITIVE_INFINITY;
+    if (orderA !== orderB) return orderA - orderB;
+  }
   if (takeoversMode !== 'no_takeovers' && b.takeovers !== a.takeovers) return b.takeovers - a.takeovers;
   if (a.gamesPlayed !== b.gamesPlayed) return a.gamesPlayed - b.gamesPlayed;
   return a.pairIdx - b.pairIdx;
+}
+
+function normalizeEventOrder(event: KotcNextKingRunEvent, index: number): number {
+  const explicit = Number(event.order);
+  if (Number.isFinite(explicit)) return explicit;
+  const seqNo = Number(event.seqNo);
+  if (Number.isFinite(seqNo)) return seqNo;
+  return index + 1;
+}
+
+export function calcKotcNextKingRunTieBreaks(
+  pairCount: number,
+  events: KotcNextKingRunEvent[],
+): Map<number, KotcNextKingRunTieBreak> {
+  const result = new Map<number, KotcNextKingRunTieBreak>();
+  for (let pairIdx = 0; pairIdx < Math.max(0, pairCount); pairIdx += 1) {
+    result.set(pairIdx, { longestKingRun: 0, firstLongestKingRunOrder: null });
+  }
+
+  let activePairIdx: number | null = null;
+  let activeRun = 0;
+  let activeRunStartOrder: number | null = null;
+
+  const orderedEvents = events
+    .map((event, index) => ({ ...event, order: normalizeEventOrder(event, index) }))
+    .sort((left, right) => left.order - right.order);
+
+  for (const event of orderedEvents) {
+    if (event.eventType !== 'king_point') {
+      activePairIdx = null;
+      activeRun = 0;
+      activeRunStartOrder = null;
+      continue;
+    }
+
+    const pairIdx = Math.trunc(Number(event.kingPairIdx));
+    if (!Number.isInteger(pairIdx) || pairIdx < 0 || pairIdx >= pairCount) {
+      activePairIdx = null;
+      activeRun = 0;
+      activeRunStartOrder = null;
+      continue;
+    }
+
+    if (activePairIdx === pairIdx) {
+      activeRun += 1;
+    } else {
+      activePairIdx = pairIdx;
+      activeRun = 1;
+      activeRunStartOrder = event.order;
+    }
+
+    const current = result.get(pairIdx);
+    if (!current) continue;
+    if (activeRun > current.longestKingRun) {
+      result.set(pairIdx, {
+        longestKingRun: activeRun,
+        firstLongestKingRunOrder: activeRunStartOrder,
+      });
+    }
+  }
+
+  return result;
+}
+
+export function applyKotcNextKingRunTieBreaks<T extends KotcNextPairLiveState>(
+  pairs: T[],
+  events: KotcNextKingRunEvent[],
+): Array<T & KotcNextKingRunTieBreak> {
+  const tieBreaks = calcKotcNextKingRunTieBreaks(pairs.length, events);
+  return pairs.map((pair) => {
+    const tieBreak = tieBreaks.get(pair.pairIdx) ?? { longestKingRun: 0, firstLongestKingRunOrder: null };
+    return {
+      ...pair,
+      longestKingRun: tieBreak.longestKingRun,
+      firstLongestKingRunOrder: tieBreak.firstLongestKingRunOrder,
+    };
+  });
 }
 
 function compareSeedRefs(
@@ -126,7 +248,7 @@ export function getInitialKotcNextCourtState(
   }
 
   const base = Array.from({ length: pairCount }, (_, index) => index);
-  const shuffled = shuffleDeterministic(base, seed + raundNo * 9973);
+  const shuffled = shuffleDeterministic(base, seed);
   const rotated = rotateQueue(shuffled, Math.max(0, raundNo - 1));
   const [kingPairIdx, challengerPairIdx, ...queueOrder] = rotated;
 
@@ -137,8 +259,15 @@ export function getInitialKotcNextCourtState(
     queueOrder,
     pairs: buildBlankPairStates(pairCount),
     timerStartedAt,
+    timerPausedAt: null,
+    timerAccumulatedPauseMs: 0,
+    pausedPhase: null,
+    lastStatusChangedAt: null,
+    timerControlledBy: null,
+    revision: 0,
     timerMinutes,
     status: timerStartedAt ? 'running' : 'pending',
+    displayStatus: timerStartedAt ? 'running' : 'pending',
   };
 }
 
@@ -173,6 +302,7 @@ export function applyKingPoint(state: KotcNextCourtLiveState): KotcNextCourtLive
     queueOrder: nextQueue,
     pairs,
     status: 'running',
+    displayStatus: 'running',
   };
 }
 
@@ -209,6 +339,34 @@ export function applyTakeover(state: KotcNextCourtLiveState): KotcNextCourtLiveS
     queueOrder: nextQueue,
     pairs,
     status: 'running',
+    displayStatus: 'running',
+  };
+}
+
+export function applyNoTakeoversPairPoint(
+  state: KotcNextCourtLiveState,
+  pairIdx: number,
+): KotcNextCourtLiveState {
+  assertPlayableState(state);
+
+  const normalizedPairIdx = Math.trunc(Number(pairIdx));
+  if (!Number.isInteger(normalizedPairIdx) || !state.pairs.some((pair) => pair.pairIdx === normalizedPairIdx)) {
+    throw new Error('KOTC Next pair index is invalid');
+  }
+
+  return {
+    ...state,
+    pairs: state.pairs.map((pair) =>
+      pair.pairIdx === normalizedPairIdx
+        ? {
+            ...pair,
+            kingWins: pair.kingWins + 1,
+            gamesPlayed: pair.gamesPlayed + 1,
+          }
+        : pair,
+    ),
+    status: 'running',
+    displayStatus: 'running',
   };
 }
 
@@ -221,6 +379,9 @@ export function applyUndo(input: KotcNextUndoInput): KotcNextCourtLiveState {
     input.timerStartedAt ?? null,
   );
   return input.events.reduce((current, event) => {
+    if (input.takeoversMode === 'no_takeovers') {
+      return applyNoTakeoversPairPoint(current, event.kingPairIdx ?? current.kingPairIdx);
+    }
     return event.eventType === 'takeover' ? applyTakeover(current) : applyKingPoint(current);
   }, base);
 }
@@ -273,6 +434,7 @@ function zoneSkeleton(zone: KotcNextZoneKey): KotcNextR2SeedZone {
 export function seedKotcNextR2Courts(
   allStats: KotcNextSeedablePairRef[],
   takeoversMode: KotcNextTakeoversMode = 'standard',
+  r2SeedingMode: KotcR2SeedingMode = 'court_places',
 ): KotcNextR2SeedZone[] {
   const grouped = new Map<number, KotcNextSeedablePairRef[]>();
   for (const row of allStats) {
@@ -293,6 +455,31 @@ export function seedKotcNextR2Courts(
   const rankedByCourt = orderedCourts.map((courtNo) =>
     [...(grouped.get(courtNo) ?? [])].sort((left, right) => compareSeedRefs(left, right, takeoversMode)),
   );
+
+  if (r2SeedingMode === 'overall_points') {
+    const flattened = rankedByCourt.flat().sort((left, right) => compareSeedRefs(left, right, takeoversMode));
+    zones.forEach((zone, index) => {
+      zone.pairRefs = flattened.slice(index * ppc, (index + 1) * ppc);
+    });
+    return zones;
+  }
+
+  if (courtCount === 4 && ppc === 5) {
+    const byPlace = (placeIdx: number) => rankedByCourt.map((rows) => rows[placeIdx]).filter(Boolean);
+    const sortedByPlace = (placeIdx: number) =>
+      byPlace(placeIdx).sort((left, right) => compareSeedRefs(left, right, takeoversMode));
+
+    const seconds = sortedByPlace(1);
+    const thirds = sortedByPlace(2);
+    const fourths = sortedByPlace(3);
+    const fifths = byPlace(4);
+
+    zones[0].pairRefs = [...byPlace(0), ...seconds.slice(0, 1)];
+    if (zones[1]) zones[1].pairRefs = [...seconds.slice(1), ...thirds.slice(0, 2)];
+    if (zones[2]) zones[2].pairRefs = [...thirds.slice(2), ...fourths.slice(0, 3)];
+    if (zones[3]) zones[3].pairRefs = [...fourths.slice(3), ...fifths];
+    return zones;
+  }
 
   if (courtCount === 4 && ppc === 4) {
     const firstThree = rankedByCourt.slice(0, 3);

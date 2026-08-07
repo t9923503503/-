@@ -2,7 +2,14 @@
 // Mirrors web/lib/thai-judge-config.ts pattern
 
 import crypto from 'crypto';
-import { normalizeKotcTakeoversMode, type KotcTakeoversMode } from './admin-legacy-sync';
+import {
+  normalizeKotcR2SeedingMode,
+  normalizeKotcJudgeModule,
+  normalizeKotcJudgeBootstrapSignature,
+  normalizeKotcTakeoversMode,
+  type KotcR2SeedingMode,
+  type KotcTakeoversMode,
+} from './admin-legacy-sync';
 import type { KotcNextVariant } from './kotc-next/types';
 
 export const KOTC_NEXT_FORMAT = 'King of the Court';
@@ -35,6 +42,7 @@ export interface KotcNextStructureInput {
   raundTimerMinutes: number;
   variant: KotcNextVariant;
   takeoversMode: KotcTakeoversMode;
+  r2SeedingMode: KotcR2SeedingMode;
   playerIds: string[]; // primary player ids (one per pair per court)
   storedSignature?: string | null;
 }
@@ -51,10 +59,11 @@ export function buildKotcNextStructuralSignature(input: {
   ppc: number;
   raundCount: number;
   takeoversMode: KotcTakeoversMode;
+  r2SeedingMode: KotcR2SeedingMode;
   playerIds: string[];
 }): string {
   const sortedIds = [...input.playerIds].sort().join(',');
-  return `variant=${input.variant};courts=${input.courts};ppc=${input.ppc};raunds=${input.raundCount};takeoversMode=${input.takeoversMode};players=${sortedIds}`;
+  return `variant=${input.variant};courts=${input.courts};ppc=${input.ppc};raunds=${input.raundCount};takeoversMode=${input.takeoversMode};r2SeedingMode=${input.r2SeedingMode};players=${sortedIds}`;
 }
 
 export function kotcNextSignaturesMatch(a: string, b: string): boolean {
@@ -87,8 +96,9 @@ export function normalizeKotcAdminSettings(settings: Record<string, unknown> | n
   const raundCount = ppc;
   const raundTimerMinutes = clamp(toInt(raw.kotcRaundTimerMinutes ?? raw.raundTimerMinutes, KOTC_NEXT_DEFAULT_TIMER), KOTC_NEXT_MIN_TIMER, KOTC_NEXT_MAX_TIMER);
   const takeoversMode = normalizeKotcTakeoversMode(raw.kotcTakeoversMode);
+  const r2SeedingMode = normalizeKotcR2SeedingMode(raw.kotcR2SeedingMode);
 
-  return { courts, ppc, raundCount, raundTimerMinutes, takeoversMode };
+  return { courts, ppc, raundCount, raundTimerMinutes, takeoversMode, r2SeedingMode };
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -144,6 +154,88 @@ export function validateKotcNextStructuralLock(input: {
   return null;
 }
 
+export function validateKotcNextTournamentStructuralLock(input: {
+  currentTournament?: {
+    format?: unknown;
+    settings?: Record<string, unknown>;
+  } | null;
+  nextTournament: {
+    format: unknown;
+    settings?: Record<string, unknown>;
+    participants: Array<{ playerId: string; position?: number | null; isWaitlist?: boolean | null; gender?: unknown }>;
+    division?: unknown;
+  };
+}): { code: typeof KOTC_STRUCTURAL_DRIFT_LOCKED_CODE; message: string } | null {
+  const storedSignature = normalizeKotcJudgeBootstrapSignature(
+    input.currentTournament?.settings?.kotcJudgeBootstrapSignature,
+  );
+  if (!storedSignature) {
+    return null;
+  }
+
+  if (!isKotcNextFormat(input.nextTournament.format)) {
+    return {
+      code: KOTC_STRUCTURAL_DRIFT_LOCKED_CODE,
+      message: 'Cannot change tournament format. Structural KOTC Next state already initialized.',
+    };
+  }
+
+  const nextModule = normalizeKotcJudgeModule(
+    input.nextTournament.settings?.kotcJudgeModule,
+    KOTC_JUDGE_MODULE_NEXT,
+  );
+  if (nextModule !== KOTC_JUDGE_MODULE_NEXT) {
+    return {
+      code: KOTC_STRUCTURAL_DRIFT_LOCKED_CODE,
+      message: 'Cannot downgrade judge module after KOTC Next state initialization.',
+    };
+  }
+
+  const settings = input.nextTournament.settings ?? {};
+  const mainParticipants = [...input.nextTournament.participants]
+    .filter((participant) => participant.isWaitlist !== true)
+    .sort((left, right) => {
+      const leftPosition = toInt(left.position, Number.MAX_SAFE_INTEGER);
+      const rightPosition = toInt(right.position, Number.MAX_SAFE_INTEGER);
+      return leftPosition - rightPosition;
+    });
+  const playerIds = mainParticipants
+    .map((participant) => String(participant.playerId ?? '').trim())
+    .filter(Boolean);
+  const hasWomen = mainParticipants.some(
+    (participant) => String(participant.gender ?? '').trim().toUpperCase() === 'W',
+  );
+  const hasMen = mainParticipants.some(
+    (participant) => String(participant.gender ?? '').trim().toUpperCase() !== 'W',
+  );
+  const normalizedDivision = String(input.nextTournament.division ?? '').trim().toLowerCase();
+  const variant =
+    normalizedDivision.includes('жен') || (!hasMen && hasWomen)
+      ? 'WW'
+      : normalizedDivision.includes('муж') || (hasMen && !hasWomen)
+        ? 'MM'
+        : 'MF';
+  const normalizedSettings = normalizeKotcAdminSettings(settings);
+  const nextSignature = buildKotcNextStructuralSignature({
+    variant,
+    courts: normalizedSettings.courts,
+    ppc: normalizedSettings.ppc,
+    raundCount: normalizedSettings.raundCount,
+    takeoversMode: normalizedSettings.takeoversMode,
+    r2SeedingMode: normalizedSettings.r2SeedingMode,
+    playerIds,
+  });
+
+  if (!kotcNextSignaturesMatch(storedSignature, nextSignature)) {
+    return {
+      code: KOTC_STRUCTURAL_DRIFT_LOCKED_CODE,
+      message: 'structural KOTC Next state already initialized; reset/recreate flow required',
+    };
+  }
+
+  return null;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function toInt(value: unknown, fallback: number): number {
@@ -161,10 +253,10 @@ export function isKotcNextFormat(format: unknown): boolean {
 
 export function zoneLabel(zone: string): string {
   const map: Record<string, string> = {
-    kin: 'КИН',
-    advance: 'АДАНС',
-    medium: 'МЕДИУМ',
-    lite: 'ЛАЙТ',
+    kin: '\u0425\u0410\u0420\u0414',
+    advance: '\u0410\u0414\u0410\u041d\u0421',
+    medium: '\u041c\u0415\u0414\u0418\u0423\u041c',
+    lite: '\u041b\u0410\u0419\u0422',
   };
   return map[zone] ?? zone.toUpperCase();
 }

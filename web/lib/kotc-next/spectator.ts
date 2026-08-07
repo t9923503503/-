@@ -50,7 +50,13 @@ function sanitizeKotcNextOperatorStateForSpectators(
 }
 
 function pickFunStats(state: KotcNextOperatorState): KotcNextFunStats | null {
-  const pairMap = new Map<string, { pairLabel: string; kingWins: number; takeovers: number }>();
+  const pairMap = new Map<string, {
+    pairLabel: string;
+    kingWins: number;
+    takeovers: number;
+    longestKingRun: number;
+    firstLongestKingRunOrder: number | null;
+  }>();
 
   for (const round of state.rounds) {
     for (const court of round.courts) {
@@ -66,9 +72,18 @@ function pickFunStats(state: KotcNextOperatorState): KotcNextFunStats | null {
           pairLabel: pair.label,
           kingWins: 0,
           takeovers: 0,
+          longestKingRun: 0,
+          firstLongestKingRunOrder: null,
         };
         current.kingWins += row.kingWins;
         current.takeovers += row.takeovers;
+        const rowRun = row.longestKingRun ?? 0;
+        const rowRunOrder = row.firstLongestKingRunOrder ?? Number.POSITIVE_INFINITY;
+        const currentRunOrder = current.firstLongestKingRunOrder ?? Number.POSITIVE_INFINITY;
+        if (rowRun > current.longestKingRun || (rowRun === current.longestKingRun && rowRun > 0 && rowRunOrder < currentRunOrder)) {
+          current.longestKingRun = rowRun;
+          current.firstLongestKingRunOrder = Number.isFinite(rowRunOrder) ? rowRunOrder : null;
+        }
         pairMap.set(key, current);
       }
     }
@@ -83,7 +98,13 @@ function pickFunStats(state: KotcNextOperatorState): KotcNextFunStats | null {
     const ratioB = b.kingWins / Math.max(1, b.takeovers);
     return ratioB - ratioA || b.kingWins - a.kingWins;
   })[0] ?? null;
-  const longestReign = [...rows].sort((a, b) => b.kingWins - a.kingWins || b.takeovers - a.takeovers)[0] ?? null;
+  const longestReign = [...rows].sort((a, b) => {
+    if (b.longestKingRun !== a.longestKingRun) return b.longestKingRun - a.longestKingRun;
+    const orderA = a.firstLongestKingRunOrder ?? Number.POSITIVE_INFINITY;
+    const orderB = b.firstLongestKingRunOrder ?? Number.POSITIVE_INFINITY;
+    if (orderA !== orderB) return orderA - orderB;
+    return b.kingWins - a.kingWins || b.takeovers - a.takeovers;
+  })[0] ?? null;
 
   return {
     kingslayer: kingslayer ? { pairLabel: kingslayer.pairLabel, takeovers: kingslayer.takeovers } : null,
@@ -94,7 +115,7 @@ function pickFunStats(state: KotcNextOperatorState): KotcNextFunStats | null {
         }
       : null,
     longestReign: longestReign
-      ? { pairLabel: longestReign.pairLabel, consecutiveWins: longestReign.kingWins }
+      ? { pairLabel: longestReign.pairLabel, consecutiveWins: longestReign.longestKingRun }
       : null,
   };
 }
