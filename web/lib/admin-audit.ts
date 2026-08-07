@@ -167,3 +167,60 @@ export async function fetchAuditLog(limit = 100): Promise<AuditEntry[]> {
     source: row.source ?? 'admin-panel',
   }));
 }
+
+export async function fetchAuditLogForEntity(
+  entityType: string,
+  entityId: string,
+  limit = 50,
+): Promise<AuditEntry[]> {
+  const normalizedEntityType = String(entityType || '').trim();
+  const normalizedEntityId = String(entityId || '').trim();
+  if (!normalizedEntityType || !normalizedEntityId) return [];
+
+  if (hasAdminPostgrestConfig()) {
+    const max = Math.max(1, Math.min(Number(limit || 50), 200));
+    const res = await auditFetch(
+      `/admin_audit_log?select=id,created_at,actor_id,actor_role,action,entity_type,entity_id,reason,before_state,after_state,source&entity_type=eq.${encodeURIComponent(normalizedEntityType)}&entity_id=eq.${encodeURIComponent(normalizedEntityId)}&order=created_at.desc&limit=${max}`
+    );
+    const rows = (await res.json()) as Array<Record<string, unknown>>;
+    return (rows ?? []).map((row) => ({
+      id: Number(row.id ?? 0),
+      createdAt: row.created_at ? String(row.created_at) : '',
+      actorId: String(row.actor_id ?? ''),
+      actorRole: String(row.actor_role ?? 'viewer') as AdminRole,
+      action: String(row.action ?? ''),
+      entityType: String(row.entity_type ?? ''),
+      entityId: String(row.entity_id ?? ''),
+      reason: String(row.reason ?? ''),
+      beforeState: row.before_state ?? null,
+      afterState: row.after_state ?? null,
+      source: String(row.source ?? 'admin-panel'),
+    }));
+  }
+
+  if (!process.env.DATABASE_URL) return [];
+  const pool = getPool();
+  const max = Math.max(1, Math.min(Number(limit || 50), 200));
+  const { rows } = await pool.query(
+    `SELECT id, created_at, actor_id, actor_role, action, entity_type, entity_id, reason, before_state, after_state, source
+     FROM admin_audit_log
+     WHERE entity_type = $1 AND entity_id = $2
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [normalizedEntityType, normalizedEntityId, max]
+  );
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    createdAt: row.created_at ? String(row.created_at) : '',
+    actorId: row.actor_id ?? '',
+    actorRole: row.actor_role as AdminRole,
+    action: row.action ?? '',
+    entityType: row.entity_type ?? '',
+    entityId: row.entity_id ?? '',
+    reason: row.reason ?? '',
+    beforeState: row.before_state ?? null,
+    afterState: row.after_state ?? null,
+    source: row.source ?? 'admin-panel',
+  }));
+}
