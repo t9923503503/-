@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import type { TournamentResult, RatingHistoryEntry } from '@/lib/types';
 import {
@@ -8,28 +9,47 @@ import {
   fetchPlayerMatches,
   fetchRatingHistory,
   fetchPlayerExtendedStats,
+  fetchPlayerFormatInsights,
   findPlayerIdsByName,
   type PlayerExtendedStats,
 } from '@/lib/queries';
+import { emptyPlayerFormatInsights, type PlayerFormatInsights } from '@/lib/player-format-insights';
+import { getMyPlayAvailability } from '@/lib/play-service';
 import EpicProfile from '@/components/players/EpicProfile';
+import PlayAvailabilityWidget from '@/components/play/PlayAvailabilityWidget';
 import PartnerInbox from '@/components/profile/PartnerInbox';
+import PlayEntries from '@/components/profile/PlayEntries';
 import TelegramLinkForm from '@/components/profile/TelegramLinkForm';
 import PlayerAuthPanel from '@/components/profile/PlayerAuthPanel';
+import { isVkIdAvailable } from '@/lib/vk-id';
 import PlayerPhotoUploadForm from '@/components/profile/PlayerPhotoUploadForm';
 import LogoutButton from '@/components/profile/LogoutButton';
 import MyAccountCard from '@/components/profile/MyAccountCard';
-import ProfileAccordion from '@/components/profile/ProfileAccordion';
 import ProfileLinkPlayerForm from '@/components/profile/ProfileLinkPlayerForm';
-import { verifyPlayerToken } from '@/lib/player-auth';
+import { PLAYER_COOKIE, verifyPlayerToken } from '@/lib/player-auth';
 import { resolvePlayerIdForAccount } from '@/lib/profile-link';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Профиль | Лютые Пляжники',
-  description: 'Личный кабинет игрока: рейтинги, статистика, турнирная история.',
+  description: 'Личный кабинет игрока: игры, рейтинги, статистика и настройки.',
+  robots: { index: false, follow: false },
+  alternates: { canonical: 'https://lpvolley.ru/profile' },
 };
 
+const PROFILE_TABS = [
+  { key: 'overview', label: 'Обзор' },
+  { key: 'games', label: 'Игры' },
+  { key: 'stats', label: 'Статистика' },
+  { key: 'history', label: 'История' },
+  { key: 'settings', label: 'Настройки' },
+] as const;
+
+type ProfileTab = (typeof PROFILE_TABS)[number]['key'];
+
 interface ProfilePageProps {
-  searchParams?: Promise<{ id?: string }>;
+  searchParams?: Promise<{ id?: string; tab?: string }>;
 }
 
 interface LoadedProfileData {
@@ -38,6 +58,7 @@ interface LoadedProfileData {
   matches: TournamentResult[];
   ratingHistory: RatingHistoryEntry[];
   stats: PlayerExtendedStats;
+  formatInsights: PlayerFormatInsights;
 }
 
 function emptyLevelBucket() {
@@ -68,6 +89,9 @@ function emptyPlayerStats(): PlayerExtendedStats {
     rankM: null,
     rankW: null,
     rankMix: null,
+    rankDeltaM: null,
+    rankDeltaW: null,
+    rankDeltaMix: null,
     formLast5: [],
     levelPrizes: {
       hard: emptyLevelBucket(),
@@ -89,401 +113,217 @@ function isUuid(value: string): boolean {
   );
 }
 
+function normalizeTab(value?: string): ProfileTab {
+  return PROFILE_TABS.some((tab) => tab.key === value) ? (value as ProfileTab) : 'overview';
+}
+
+async function redirectLegacyPublicProfile(rawId: string): Promise<never> {
+  if (isUuid(rawId)) redirect(`/players/${encodeURIComponent(rawId)}`);
+  const ids = await findPlayerIdsByName(rawId, 2).catch(() => []);
+  if (ids.length === 1) redirect(`/players/${encodeURIComponent(ids[0])}`);
+  redirect('/rankings');
+}
+
 async function loadProfileData(playerId: string): Promise<LoadedProfileData | null> {
   if (!isUuid(playerId)) return null;
-
-  let player = null;
-  try {
-    player = await fetchPlayer(playerId);
-  } catch {
-    player = null;
-  }
+  const player = await fetchPlayer(playerId).catch(() => null);
   if (!player) return null;
 
   let matches: TournamentResult[] = [];
   let ratingHistory: RatingHistoryEntry[] = [];
-  let stats: PlayerExtendedStats = emptyPlayerStats();
-
+  let stats = emptyPlayerStats();
+  let formatInsights = emptyPlayerFormatInsights();
   try {
     [matches, ratingHistory, stats] = await Promise.all([
       fetchPlayerMatches(playerId, 30),
       fetchRatingHistory(playerId, 30),
       fetchPlayerExtendedStats(playerId),
     ]);
+    formatInsights = await fetchPlayerFormatInsights(playerId, { player, matches, stats });
   } catch {
-    // Keep profile page alive even if one of the analytical queries fails.
+    // The cabinet remains usable when an analytical query is temporarily unavailable.
   }
-
-  return {
-    playerId,
-    player,
-    matches,
-    ratingHistory,
-    stats,
-  };
+  return { playerId, player, matches, ratingHistory, stats, formatInsights };
 }
 
-function SessionActionBar({
-  me,
-  loginHref,
-  logoutRedirect,
-  loginText,
-}: {
-  me: { id: number; email: string } | null;
-  loginHref: string;
-  logoutRedirect: string;
-  loginText: string;
-}) {
-  return (
-    <section className="rounded-xl border border-white/10 bg-surface-light/20 p-3.5 md:p-4">
-      {me?.id ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm font-body text-text-secondary">Вы вошли в личный кабинет.</p>
-          <LogoutButton redirectTo={logoutRedirect} />
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm font-body text-text-secondary">{loginText}</p>
-          <Link href={loginHref} className="btn-action-outline">
-            Войти / Регистрация
-          </Link>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function SettingsSection({
-  title,
-  subtitle,
-  children,
-  first = false,
-}: {
-  title: string;
-  subtitle?: string;
-  children: ReactNode;
-  first?: boolean;
-}) {
-  return (
-    <section className={first ? '' : 'border-t border-white/10 pt-5'}>
-      <div className="mb-3">
-        <h3 className="font-heading text-xl text-text-primary tracking-wide">{title}</h3>
-        {subtitle ? <p className="mt-1 text-sm font-body text-text-secondary">{subtitle}</p> : null}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function SettingsPanel({
-  title,
-  subtitle,
-  sections,
-}: {
-  title: string;
-  subtitle: string;
-  sections: Array<{ title: string; subtitle?: string; content: ReactNode }>;
-}) {
+function Surface({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
     <section className="rounded-2xl border border-white/10 bg-surface-light/20 p-4 md:p-5">
-      <div>
-        <h2 className="font-heading text-2xl text-text-primary tracking-wide">{title}</h2>
-        <p className="mt-1 text-sm font-body text-text-secondary">{subtitle}</p>
-      </div>
-
-      <div className="mt-5 space-y-5">
-        {sections.map((section, index) => (
-          <SettingsSection
-            key={section.title}
-            title={section.title}
-            subtitle={section.subtitle}
-            first={index === 0}
-          >
-            {section.content}
-          </SettingsSection>
-        ))}
-      </div>
+      <h2 className="font-heading text-2xl tracking-wide text-text-primary">{title}</h2>
+      {subtitle ? <p className="mt-1 text-sm text-text-secondary">{subtitle}</p> : null}
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
 
-function ProfileSummarySection({
-  title,
-  subtitle,
-  content,
-}: {
-  title: string;
-  subtitle: string;
-  content: ReactNode;
-}) {
+function MissingPlayerCard() {
   return (
-    <section className="space-y-3">
-      <div>
-        <h2 className="font-heading text-2xl text-text-primary tracking-wide">{title}</h2>
-        <p className="mt-1 text-sm font-body text-text-secondary">{subtitle}</p>
+    <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-5 text-sm text-amber-100">
+      <h2 className="text-lg font-semibold">Привяжите карточку игрока</h2>
+      <p className="mt-2 text-amber-100/80">
+        Игры и настройки уже доступны. После привязки здесь появятся рейтинги, статистика и история турниров.
+      </p>
+      <Link href="/profile?tab=settings" className="mt-4 inline-flex rounded-xl bg-amber-200 px-4 py-2.5 font-semibold text-slate-950">
+        Перейти к привязке
+      </Link>
+    </div>
+  );
+}
+
+function SettingsPanel({ ownProfile }: { ownProfile: LoadedProfileData | null }) {
+  const sections = [
+    {
+      title: 'Аккаунт',
+      subtitle: 'Контакты и данные текущей авторизации.',
+      content: <MyAccountCard embedded />,
+    },
+    {
+      title: 'Привязка игрока',
+      subtitle: ownProfile
+        ? 'Карточка найдена. Здесь можно проверить или изменить привязку.'
+        : 'Закрепите свою турнирную карточку за аккаунтом.',
+      content: <ProfileLinkPlayerForm embedded />,
+    },
+    {
+      title: 'Фото',
+      subtitle: 'Кадрируйте и обновите аватар аккаунта и карточки игрока.',
+      content: <PlayerPhotoUploadForm playerId={ownProfile?.playerId} embedded />,
+    },
+    {
+      title: 'Связи',
+      subtitle: 'Запросы на пару и Telegram-уведомления.',
+      content: (
+        <div className="space-y-4">
+          <PartnerInbox embedded />
+          <TelegramLinkForm embedded />
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <Surface title="Настройки профиля" subtitle="Приватные данные и управление доступны только вам.">
+      <div className="space-y-5">
+        {sections.map((section, index) => (
+          <section key={section.title} className={index ? 'border-t border-white/10 pt-5' : ''}>
+            <h3 className="font-heading text-xl tracking-wide text-text-primary">{section.title}</h3>
+            <p className="mt-1 text-sm text-text-secondary">{section.subtitle}</p>
+            <div className="mt-3">{section.content}</div>
+          </section>
+        ))}
       </div>
-      {content}
-    </section>
+    </Surface>
   );
 }
 
 export default async function ProfilePage({ searchParams }: ProfilePageProps) {
   const params = (await searchParams) ?? {};
-  const rawId = (params.id || '').trim();
+  const legacyId = String(params.id || '').trim();
+  if (legacyId) await redirectLegacyPublicProfile(legacyId);
+
+  const tab = normalizeTab(params.tab);
   const cookieStore = await cookies();
-  const sessionToken = cookieStore.get('player_session')?.value;
+  const sessionToken = cookieStore.get(PLAYER_COOKIE)?.value;
   const me = sessionToken ? verifyPlayerToken(sessionToken) : null;
 
-  if (!rawId) {
-    let ownProfile: LoadedProfileData | null = null;
+  if (!me?.id) {
+    return (
+      <main className="mx-auto max-w-4xl px-4 py-8 md:py-12">
+        <header className="mb-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand">Личный кабинет</p>
+          <h1 className="mt-2 font-heading text-4xl uppercase tracking-wide text-text-primary md:text-5xl">Профиль игрока</h1>
+          <p className="mt-2 text-text-secondary">Войдите, чтобы управлять играми, статистикой и настройками.</p>
+        </header>
+        <PlayerAuthPanel initialMode="login" redirectTo="/profile" vkIdEnabled={isVkIdAvailable()} />
+        <p className="mt-5 text-center text-sm text-text-secondary">
+          Ищете другого игрока? <Link href="/rankings" className="font-semibold text-brand hover:underline">Откройте рейтинги</Link>.
+        </p>
+      </main>
+    );
+  }
 
-    if (me?.id) {
-      const resolvedOwnPlayerId = await resolvePlayerIdForAccount(me.id);
-      if (resolvedOwnPlayerId) {
-        ownProfile = await loadProfileData(resolvedOwnPlayerId);
+  const ownPlayerId = await resolvePlayerIdForAccount(me.id);
+  const [ownProfile, availability] = await Promise.all([
+    ownPlayerId ? loadProfileData(ownPlayerId) : Promise.resolve(null),
+    getMyPlayAvailability(me.id),
+  ]);
+
+  const profileProps = ownProfile
+    ? {
+        player: ownProfile.player,
+        stats: ownProfile.stats,
+        matches: ownProfile.matches,
+        ratingHistory: ownProfile.ratingHistory,
+        formatInsights: ownProfile.formatInsights,
       }
-    }
-
-    return (
-      <main className="mx-auto max-w-5xl space-y-4 px-4 py-6 md:py-8">
-        <div>
-          <h1 className="font-heading text-4xl text-text-primary tracking-wide uppercase md:text-5xl">
-            Профиль
-          </h1>
-          <p className="mt-1 font-body text-text-secondary">Личный кабинет игрока.</p>
-        </div>
-
-        {me?.id ? (
-          <SessionActionBar
-            me={me}
-            loginHref="/login?returnTo=%2Fprofile"
-            logoutRedirect="/profile"
-            loginText="Чтобы управлять профилем, войдите в аккаунт."
-          />
-        ) : null}
-
-        {me?.id ? (
-          <>
-            <SettingsPanel
-              title="Настройки профиля"
-              subtitle="Аккаунт, привязка карточки игрока, фото и связи собраны в одном блоке."
-              sections={[
-                {
-                  title: 'Аккаунт',
-                  subtitle: 'Контакты и данные текущей авторизации',
-                  content: <MyAccountCard embedded />,
-                },
-                {
-                  title: 'Привязка игрока',
-                  subtitle: ownProfile
-                    ? 'Карточка найдена. Здесь можно закрепить её явно или сменить привязку.'
-                    : 'Закрепите свою карточку игрока, чтобы кабинет всегда открывался правильно.',
-                  content: <ProfileLinkPlayerForm embedded />,
-                },
-                {
-                  title: 'Фото',
-                  subtitle: 'Обновите аватар в аккаунте и карточке игрока.',
-                  content: <PlayerPhotoUploadForm playerId={ownProfile?.playerId} embedded />,
-                },
-                {
-                  title: 'Связи',
-                  subtitle: 'Запросы на пару и Telegram-уведомления.',
-                  content: (
-                    <div className="space-y-4">
-                      <PartnerInbox embedded />
-                      <TelegramLinkForm embedded />
-                    </div>
-                  ),
-                },
-              ]}
-            />
-
-            <ProfileSummarySection
-              title="Моя статистика и история"
-              subtitle={
-                ownProfile
-                  ? 'Открыто автоматически по вашей учетной записи.'
-                  : 'Сначала привяжите карточку игрока в блоке выше.'
-              }
-              content={
-                ownProfile ? (
-                  <EpicProfile
-                    player={ownProfile.player}
-                    stats={ownProfile.stats}
-                    matches={ownProfile.matches}
-                    ratingHistory={ownProfile.ratingHistory}
-                    backLink={{ href: '/rankings', label: '← Рейтинги' }}
-                  />
-                ) : (
-                  <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm font-body text-amber-100">
-                    Не удалось автоматически найти ваш профиль игрока. Привяжите карточку в блоке
-                    выше или откройте профиль вручную через поиск ниже либо через страницу{' '}
-                    <Link href="/rankings" className="underline">
-                      рейтингов
-                    </Link>
-                    .
-                  </div>
-                )
-              }
-            />
-          </>
-        ) : (
-          <ProfileAccordion
-            title="Вход и регистрация"
-            subtitle="Создайте аккаунт или войдите, чтобы видеть свой кабинет"
-            defaultOpen
-          >
-            <PlayerAuthPanel initialMode="login" redirectTo="/profile" />
-          </ProfileAccordion>
-        )}
-
-        <section className="rounded-xl border border-white/10 bg-surface-light/20 p-4 md:p-5">
-          <h2 className="font-heading text-2xl text-text-primary tracking-wide">
-            Найти профиль игрока
-          </h2>
-          <p className="mt-1 text-sm font-body text-text-secondary">
-            Перейдите в{' '}
-            <Link href="/rankings" className="text-brand hover:underline">
-              рейтинги
-            </Link>{' '}
-            и нажмите на своё имя, либо введите ID/имя игрока вручную.
-          </p>
-
-          <form method="get" action="/profile" className="mt-4">
-            <label className="block text-xs font-body uppercase tracking-widest text-text-secondary">
-              ID или имя игрока
-            </label>
-            <input
-              name="id"
-              placeholder="Напр. Лебедев или UUID"
-              className="mt-2 w-full rounded-xl border border-white/10 bg-surface px-4 py-3 font-body text-text-primary outline-none transition-colors focus:border-brand"
-            />
-            <button type="submit" className="btn-action-outline mt-4 w-full sm:w-auto">
-              Открыть профиль
-            </button>
-          </form>
-        </section>
-      </main>
-    );
-  }
-
-  let playerId = rawId;
-  let resolvedByName = false;
-  if (!isUuid(rawId)) {
-    const ids = await findPlayerIdsByName(rawId, 2);
-    if (ids.length === 1) {
-      playerId = ids[0];
-      resolvedByName = true;
-    } else if (ids.length > 1) {
-      return (
-        <main className="mx-auto max-w-4xl px-4 py-10">
-          <div className="glass-panel rounded-2xl border border-white/10 p-8 text-center">
-            <div className="mb-3 text-4xl">{'\u{1F50E}'}</div>
-            <h2 className="font-heading text-3xl text-text-primary">Найдено несколько игроков</h2>
-            <p className="mt-2 text-sm font-body text-text-secondary">
-              Уточните запрос: <span className="text-text-primary/90">{rawId}</span>
-            </p>
-            <Link href="/rankings" className="btn-action-outline mt-6 inline-block">
-              Выбрать в рейтингах
-            </Link>
-          </div>
-        </main>
-      );
-    } else {
-      return (
-        <main className="mx-auto max-w-4xl px-4 py-10">
-          <div className="glass-panel rounded-2xl border border-white/10 p-8 text-center">
-            <div className="mb-3 text-4xl">{'\u{1F6AB}'}</div>
-            <h2 className="font-heading text-3xl text-text-primary">Игрок не найден</h2>
-            <p className="mt-2 text-sm font-body text-text-secondary">
-              По запросу <span className="text-text-primary/90">{rawId}</span> нет совпадений.
-            </p>
-            <Link href="/rankings" className="btn-action-outline mt-6 inline-block">
-              К рейтингам
-            </Link>
-          </div>
-        </main>
-      );
-    }
-  }
-
-  const profile = await loadProfileData(playerId);
-  if (!profile) {
-    return (
-      <main className="mx-auto max-w-4xl px-4 py-10">
-        <div className="glass-panel rounded-2xl border border-white/10 p-8 text-center">
-          <div className="mb-3 text-4xl">{'\u{1F6AB}'}</div>
-          <h2 className="font-heading text-3xl text-text-primary">Игрок не найден</h2>
-          <p className="mt-2 text-sm font-body text-text-secondary">
-            Проверьте ID или имя и попробуйте ещё раз.
-          </p>
-          <Link href="/rankings" className="btn-action-outline mt-6 inline-block">
-            К рейтингам
-          </Link>
-        </div>
-      </main>
-    );
-  }
+    : null;
 
   return (
-    <main className="mx-auto max-w-5xl space-y-4 px-4 py-6">
-      <SessionActionBar
-        me={me}
-        loginHref={`/login?returnTo=${encodeURIComponent(`/profile?id=${playerId}`)}`}
-        logoutRedirect={`/profile?id=${encodeURIComponent(playerId)}`}
-        loginText="Нет доступа к личному кабинету? Войдите в аккаунт."
-      />
-
-      {resolvedByName ? (
-        <div className="rounded-xl border border-brand/30 bg-brand/10 px-4 py-3 text-sm font-body text-brand-light">
-          Профиль открыт по поиску имени: <span className="font-semibold">{rawId}</span>
+    <main className="mx-auto max-w-6xl px-4 py-6 md:py-9">
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand">Личный кабинет</p>
+          <h1 className="mt-1 font-heading text-4xl uppercase tracking-wide text-text-primary md:text-5xl">
+            {ownProfile?.player.name || 'Профиль игрока'}
+          </h1>
+          <p className="mt-1 text-sm text-text-secondary">Игры, результаты и настройки в одном месте.</p>
         </div>
-      ) : null}
+        <div className="flex flex-wrap gap-2">
+          {ownProfile ? (
+            <Link href={`/players/${ownProfile.playerId}`} className="btn-action-outline inline-flex items-center">Публичный профиль</Link>
+          ) : null}
+          <LogoutButton redirectTo="/profile" />
+        </div>
+      </header>
 
-      {me?.id ? (
-        <SettingsPanel
-          title="Настройки профиля"
-          subtitle="Для открытого игрока доступны ваши действия по аккаунту, привязке и фото."
-          sections={[
-            {
-              title: 'Аккаунт',
-              subtitle: 'Данные текущей авторизации.',
-              content: <MyAccountCard embedded />,
-            },
-            {
-              title: 'Привязка игрока',
-              subtitle: 'Можно закрепить именно этого игрока за вашим аккаунтом.',
-              content: (
-                <ProfileLinkPlayerForm
-                  embedded
-                  targetPlayerId={playerId}
-                  targetPlayerName={profile.player.name}
-                  loginHref={`/login?returnTo=${encodeURIComponent(`/profile?id=${playerId}`)}`}
-                />
-              ),
-            },
-            {
-              title: 'Фото',
-              subtitle: 'Обновление фото для аккаунта и карточки игрока.',
-              content: <PlayerPhotoUploadForm playerId={playerId} embedded />,
-            },
-          ]}
-        />
-      ) : null}
+      <nav aria-label="Разделы личного кабинета" className="mt-6 overflow-x-auto border-b border-white/10 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex min-w-max gap-1">
+          {PROFILE_TABS.map((item) => {
+            const active = item.key === tab;
+            return (
+              <Link
+                key={item.key}
+                href={item.key === 'overview' ? '/profile' : `/profile?tab=${item.key}`}
+                aria-current={active ? 'page' : undefined}
+                className={`relative min-h-12 px-4 py-3 text-sm font-semibold transition focus-visible:rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand ${active ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+              >
+                {item.label}
+                {active ? <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-brand" /> : null}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
 
-      <ProfileSummarySection
-        title="Статистика и история игрока"
-        subtitle={`Игрок: ${profile.player.name}`}
-        content={
-          <EpicProfile
-            player={profile.player}
-            stats={profile.stats}
-            matches={profile.matches}
-            ratingHistory={profile.ratingHistory}
-            backLink={{ href: '/rankings', label: '← Рейтинги' }}
-          />
-        }
-      />
+      <div className="mt-5 space-y-5">
+        {tab === 'overview' ? (
+          <>
+            {profileProps ? <EpicProfile {...profileProps} initialSection="overview" sectionOnly /> : <MissingPlayerCard />}
+            <Surface title="Готовность играть" subtitle="Отметка используется существующей системой приглашений Play V3.">
+              <PlayAvailabilityWidget current={availability} />
+            </Surface>
+            <Surface title="Ближайшие игры" subtitle="Краткий список активных заявок и резерва.">
+              <PlayEntries mode="summary" />
+            </Surface>
+          </>
+        ) : null}
+
+        {tab === 'games' ? (
+          <Surface title="Мои игры" subtitle="Предстоящие события, резерв и архив заявок.">
+            <PlayEntries />
+          </Surface>
+        ) : null}
+
+        {tab === 'stats' ? (
+          profileProps ? <EpicProfile {...profileProps} initialSection="stats" sectionOnly /> : <MissingPlayerCard />
+        ) : null}
+
+        {tab === 'history' ? (
+          profileProps ? <EpicProfile {...profileProps} initialSection="history" sectionOnly /> : <MissingPlayerCard />
+        ) : null}
+
+        {tab === 'settings' ? <SettingsPanel ownProfile={ownProfile} /> : null}
+      </div>
     </main>
   );
 }

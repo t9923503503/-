@@ -20,6 +20,8 @@ export interface Player {
 
 export interface LeaderboardEntry {
   rank: number;
+  previousRank: number | null;
+  rankDelta: number | null;
   playerId: string;
   name: string;
   gender: 'M' | 'W';
@@ -98,6 +100,18 @@ export interface TournamentResult {
   level?: string | null;
   /** Формат турнира: KOTC, Thai, IPT и т.д. */
   format?: string | null;
+  /** Deep Thai profile metrics for the latest available round in this tournament. */
+  thaiPointsP?: number | null;
+  thaiRoundWins?: number | null;
+  thaiRoundDiff?: number | null;
+  thaiRoundType?: 'r1' | 'r2' | null;
+  thaiZone?: 'hard' | 'advanced' | 'medium' | 'light' | null;
+  /** Deep KOTC profile metrics for the latest available round in this tournament. */
+  kotcKingWins?: number | null;
+  kotcTakeovers?: number | null;
+  kotcGamesPlayed?: number | null;
+  kotcRoundNo?: 1 | 2 | null;
+  kotcZone?: 'kin' | 'advanced' | 'medium' | 'light' | null;
 }
 
 export type RatingType = 'M' | 'W' | 'Mix';
