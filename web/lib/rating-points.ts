@@ -9,10 +9,10 @@ export type RatingPool = 'pro' | 'novice';
 export type TournamentRatingLevel = 'hard' | 'advance' | 'medium' | 'lite';
 
 export const RATING_LEVEL_TABLES: Record<TournamentRatingLevel, readonly number[]> = {
-  hard: [100, 90, 82, 76],
-  advance: [70, 65, 60, 56, 52],
-  medium: [48, 44, 42, 40],
-  lite: [38, 36, 34, 32],
+  hard: [100, 90, 82, 76, 70],
+  advance: [65, 60, 56, 52, 48],
+  medium: [44, 42, 40, 38, 36],
+  lite: [34, 32, 30, 28, 26],
 } as const;
 
 export function normalizeTournamentRatingLevel(level: string | null | undefined): TournamentRatingLevel {
@@ -22,6 +22,14 @@ export function normalizeTournamentRatingLevel(level: string | null | undefined)
   if (normalized === 'lite' || normalized === 'light' || normalized === 'easy' || normalized === 'novice') {
     return 'lite';
   }
+  return 'hard';
+}
+
+export function normalizeTournamentRatingLevelFromZone(zone: string | null | undefined): TournamentRatingLevel {
+  const normalized = String(zone || '').trim().toLowerCase();
+  if (normalized === 'advance' || normalized === 'advanced') return 'advance';
+  if (normalized === 'medium') return 'medium';
+  if (normalized === 'lite' || normalized === 'light') return 'lite';
   return 'hard';
 }
 
