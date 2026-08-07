@@ -5,7 +5,14 @@ import {
 } from '@/lib/admin-legacy-sync';
 import { listRosterParticipants } from '@/lib/admin-queries';
 import { getPool } from '@/lib/db';
-import { buildGoCourtPin, buildGoStructuralSignature, validateGoSetup } from '@/lib/go-next-config';
+import {
+  buildGoCourtPin,
+  buildGoStructuralSignature,
+  describeGoPairRule,
+  normalizeGoGender,
+  resolveGoDivisionRule,
+  validateGoSetup,
+} from '@/lib/go-next-config';
 import { initGoCourtSlots } from './court-slots';
 import { generateBracketSlots } from './bracket-generator';
 import {
@@ -14,6 +21,7 @@ import {
   calculateStandings,
   compareCrossGroupRows,
   generateGroupSchedule,
+  type BucketSeedableTeam,
 } from './core';
 import { syncGoResultsToTournamentResultsOrThrowBadRequest } from './sync-tournament-results';
 import type {
@@ -472,10 +480,18 @@ function validatePairComposition(
   division: string,
   left: RosterSourceRow,
   right: RosterSourceRow | null,
+  pairNumber?: number,
 ): string | null {
   if (!right) return 'GO teams must be formed from complete pairs.';
+  const rule = resolveGoDivisionRule(division);
+  if (rule === 'unknown') return 'GO division must be Мужской, Женский or Микст.';
+  const normalizedGenders = [normalizeGoGender(left.gender), normalizeGoGender(right.gender)].sort().join('');
+  const expectedGenders = rule === 'mixed' ? 'MW' : rule === 'women' ? 'WW' : 'MM';
+  if (normalizedGenders === expectedGenders) return null;
+  const prefix = pairNumber ? `Пара ${pairNumber} (слоты ${pairNumber * 2 - 1}–${pairNumber * 2}): ` : '';
+  return `${prefix}для дивизиона нужна пара ${describeGoPairRule(rule)}, сейчас ${normalizedGenders[0]}/${normalizedGenders[1]}.`;
   const normalizedDivision = String(division || '').trim().toLowerCase();
-  const genders = [left.gender, right.gender].sort().join('');
+  const genders = [left.gender, right?.gender ?? 'M'].sort().join('');
   if (normalizedDivision.includes('mix') || normalizedDivision.includes('микс')) {
     return genders === 'MW' ? null : 'Mixed GO requires M/W pairs in roster order.';
   }
@@ -483,6 +499,50 @@ function validatePairComposition(
     return genders === 'WW' ? null : 'Women GO requires W/W pairs in roster order.';
   }
   return genders === 'MM' ? null : 'Men GO requires M/M pairs in roster order.';
+}
+
+function orderGoPairPlayers(
+  division: string,
+  left: RosterSourceRow,
+  right: RosterSourceRow | null,
+): { player1: RosterSourceRow; player2: RosterSourceRow | null } {
+  // Legacy invariant: left.gender === 'W' && right.gender === 'M' is reordered for mixed pairs.
+  if (!right) return { player1: left, player2: right };
+  if (resolveGoDivisionRule(division) !== 'mixed') return { player1: left, player2: right };
+  if (normalizeGoGender(left.gender) === 'W' && normalizeGoGender(right.gender) === 'M') {
+    return { player1: right, player2: left };
+  }
+  return { player1: left, player2: right };
+  const normalizedDivision = String(division || '').trim().toLowerCase();
+  if (!(normalizedDivision.includes('mix') || normalizedDivision.includes('микс'))) {
+    return { player1: left, player2: right };
+  }
+  if (left.gender === 'W' && right?.gender === 'M') {
+    return { player1: right ?? left, player2: left };
+  }
+  return { player1: left, player2: right };
+}
+
+function buildFixedPairsGroups(
+  teams: BucketSeedableTeam[],
+  groupSize: number,
+): BucketSeedableTeam[][] {
+  const normalizedGroupSize = Math.max(1, Math.floor(groupSize));
+  const groups: BucketSeedableTeam[][] = [];
+  for (let index = 0; index < teams.length; index += normalizedGroupSize) {
+    groups.push(teams.slice(index, index + normalizedGroupSize));
+  }
+  for (const group of groups) {
+    while (group.length < normalizedGroupSize) {
+      group.push({
+        teamId: `bye-${groups.indexOf(group) + 1}-${group.length + 1}`,
+        rating: 0,
+        initialBucket: 'lite',
+        isBye: true,
+      });
+    }
+  }
+  return groups.length ? groups : [[]];
 }
 
 function buildStartDateTime(tournament: TournamentRow, settings: GoAdminSettings): string {
@@ -908,6 +968,12 @@ async function loadGoAdminBundleTx(client: PoolClient, tournamentId: string): Pr
   const seedDraft = buildSeedDraftView(r1?.seedDraft ?? null, teamMap);
   const stage = buildStage({ rounds, matches: matchRows, seedDraft });
   const r2 = rounds.find((round) => round.roundNo === 2) ?? null;
+  const activeParticipantCount = roster.filter((row) => !row.isWaitlist).length;
+  const rosterTeamCount = Math.floor(activeParticipantCount / 2);
+  const declaredTeamCount = Math.floor(Number((settings as GoAdminSettings & { declaredTeamCount?: number }).declaredTeamCount) || rosterTeamCount);
+  const currentSignature = buildGoStructuralSignature(settings, activeParticipantCount);
+  const savedSignature = String(tournament.settings.goJudgeBootstrapSignature ?? '');
+  const structuralDrift = Boolean(r1 && savedSignature && savedSignature !== currentSignature);
 
   return {
     tournament,
@@ -931,6 +997,12 @@ async function loadGoAdminBundleTx(client: PoolClient, tournamentId: string): Pr
         pinCode: row.pinCode,
       })),
       settings,
+      rosterTeamCount,
+      declaredTeamCount,
+      structuralDrift,
+      structureChangeBlockedReason: structuralDrift
+        ? 'Состав или настройки изменились после формирования групп. Пересформируйте группы до старта матчей.'
+        : null,
     },
   };
 }
@@ -1283,12 +1355,13 @@ async function bootstrapGroupsTx(client: PoolClient, tournamentId: string, seed?
   for (let index = 0; index < roster.length; index += 2) {
     const left = roster[index];
     const right = roster[index + 1] ?? null;
-    const pairError = validatePairComposition(tournament.division, left, right);
+    const pairError = validatePairComposition(tournament.division, left, right, index / 2 + 1);
     if (pairError) throw new GoNextError(400, pairError);
+    const orderedPair = orderGoPairPlayers(tournament.division, left, right);
     pairings.push({
       tempId: `seed-${index / 2 + 1}`,
-      player1: left,
-      player2: right,
+      player1: orderedPair.player1,
+      player2: orderedPair.player2,
       initialBucket: deriveGoBucket(left, right),
       order: index / 2,
       ratingSnapshot:
@@ -1296,19 +1369,20 @@ async function bootstrapGroupsTx(client: PoolClient, tournamentId: string, seed?
     });
   }
 
-  const groupedTeams = buildBalancedGoGroups(
-    pairings.map((team) => ({
-      teamId: team.tempId,
-      rating: team.ratingSnapshot,
-      initialBucket: team.initialBucket,
-      order: team.order,
-    })),
-    {
-      groupFormula: settings.groupFormula,
-      seedingMode: settings.seedingMode,
-      seed: normalizedSeed,
-    },
-  );
+  const seedablePairings = pairings.map((team) => ({
+    teamId: team.tempId,
+    rating: team.ratingSnapshot,
+    initialBucket: team.initialBucket,
+    order: team.order,
+  }));
+  const groupedTeams =
+    settings.seedingMode === 'fixedPairs'
+      ? buildFixedPairsGroups(seedablePairings, settings.groupSlotSize)
+      : buildBalancedGoGroups(seedablePairings, {
+          groupFormula: settings.groupFormula,
+          seedingMode: settings.seedingMode,
+          seed: normalizedSeed,
+        });
 
   const pairingByTempId = new Map(pairings.map((team) => [team.tempId, team] as const));
   const startAtIso = buildStartDateTime(tournament, settings);
@@ -1944,6 +2018,7 @@ export async function getGoSpectatorPayload(tournamentId: string): Promise<GoSpe
     stage: bundle.state.stage,
     groups: bundle.groups,
     brackets: bundle.brackets,
+    groupMatches: bundle.matches.filter((match) => Boolean(match.groupLabel)),
     liveMatches: bundle.matches.filter((match) => match.status !== 'finished' && match.courtNo != null),
   };
 }
@@ -2448,8 +2523,8 @@ export async function patchGoMatchByOperator(
          m.court_no AS "courtNo",
          m.team_a_id::text AS "teamAId",
          m.team_b_id::text AS "teamBId",
-         ta.label AS "teamALabel",
-         tb.label AS "teamBLabel",
+         NULLIF(concat_ws(' / ', ta_p1.name, ta_p2.name), '') AS "teamALabel",
+         NULLIF(concat_ws(' / ', tb_p1.name, tb_p2.name), '') AS "teamBLabel",
          COALESCE(m.score_a, '{}') AS "scoreA",
          COALESCE(m.score_b, '{}') AS "scoreB",
          m.sets_a AS "setsA",
@@ -2467,9 +2542,13 @@ export async function patchGoMatchByOperator(
        LEFT JOIN go_bracket_slot bs ON bs.id = m.bracket_slot_id
        LEFT JOIN go_team ta ON ta.id = m.team_a_id
        LEFT JOIN go_team tb ON tb.id = m.team_b_id
+       LEFT JOIN players ta_p1 ON ta_p1.id = ta.player1_id
+       LEFT JOIN players ta_p2 ON ta_p2.id = ta.player2_id
+       LEFT JOIN players tb_p1 ON tb_p1.id = tb.player1_id
+       LEFT JOIN players tb_p2 ON tb_p2.id = tb.player2_id
        WHERE r.tournament_id = $1
          AND m.id = $2
-       FOR UPDATE`,
+       FOR UPDATE OF m`,
       [normalizedTournamentId, matchId],
     );
     const current = currentRes.rows[0];
@@ -2536,11 +2615,17 @@ export async function patchGoMatchByOperator(
         teamALabel: string | null;
         teamBLabel: string | null;
       }>(
-        `SELECT ta.label AS "teamALabel", tb.label AS "teamBLabel"
+        `SELECT
+           NULLIF(concat_ws(' / ', ta_p1.name, ta_p2.name), '') AS "teamALabel",
+           NULLIF(concat_ws(' / ', tb_p1.name, tb_p2.name), '') AS "teamBLabel"
          FROM go_match m
          JOIN go_round r ON r.id = m.round_id
          LEFT JOIN go_team ta ON ta.id = m.team_a_id
          LEFT JOIN go_team tb ON tb.id = m.team_b_id
+         LEFT JOIN players ta_p1 ON ta_p1.id = ta.player1_id
+         LEFT JOIN players ta_p2 ON ta_p2.id = ta.player2_id
+         LEFT JOIN players tb_p1 ON tb_p1.id = tb.player1_id
+         LEFT JOIN players tb_p2 ON tb_p2.id = tb.player2_id
          WHERE r.tournament_id = $1
            AND m.id <> $2
            AND m.scheduled_at = $3::timestamptz
@@ -2803,6 +2888,108 @@ export async function runGoOperatorAction(
   }
 }
 
+export type GoPairMutationInput =
+  | { action: 'remove_pair'; pairIndex: number; promoteWaitlistPlayerIds?: string[] }
+  | { action: 'replace_player'; pairIndex: number; playerSlot: 1 | 2; replacementPlayerId: string }
+  | { action: 'promote_waitlist_pair'; playerIds: string[] };
+
+async function ensureGoRosterEditableTx(client: PoolClient, tournamentId: string): Promise<TournamentRow> {
+  const tournament = await loadTournamentTx(client, tournamentId, { lock: true });
+  const started = await client.query(
+    `SELECT COUNT(*)::int AS count FROM go_match m JOIN go_round r ON r.id = m.round_id
+     WHERE r.tournament_id = $1 AND m.status IN ('live', 'finished')`,
+    [tournamentId],
+  );
+  if (asInt(started.rows[0]?.count, 0) > 0) {
+    throw new GoNextError(409, 'GO roster cannot change after a match has started. Use a replacement or walkover.');
+  }
+  return tournament;
+}
+
+/** Atomic pair-level roster changes for the day-of-tournament GO workspace. */
+export async function mutateGoPairs(tournamentId: string, input: GoPairMutationInput): Promise<void> {
+  requireDatabase();
+  const id = String(tournamentId || '').trim();
+  if (!id) throw new GoNextError(400, 'tournamentId is required');
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const tournament = await ensureGoRosterEditableTx(client, id);
+    const active = await client.query(
+      `SELECT tp.id::text AS id, tp.player_id::text AS "playerId", tp.position, p.gender
+       FROM tournament_participants tp JOIN players p ON p.id = tp.player_id
+       WHERE tp.tournament_id = $1 AND tp.is_waitlist = false ORDER BY tp.position ASC`, [id],
+    );
+    const activeRows = active.rows as Array<{ id: string; playerId: string; position: number; gender: string }>;
+    if (input.action === 'remove_pair') {
+      const offset = (Math.max(1, Math.floor(input.pairIndex)) - 1) * 2;
+      const pair = activeRows.slice(offset, offset + 2);
+      if (pair.length !== 2) throw new GoNextError(404, 'GO pair not found');
+      await client.query(`DELETE FROM tournament_participants WHERE id = ANY($1::uuid[])`, [pair.map((row) => row.id)]);
+      if (input.promoteWaitlistPlayerIds?.length === 2) {
+        const promoted = input.promoteWaitlistPlayerIds.map((value) => String(value).trim()).filter(Boolean);
+        const waitlist = await client.query(
+          `SELECT tp.id::text AS id, tp.player_id::text AS "playerId", p.gender
+           FROM tournament_participants tp JOIN players p ON p.id = tp.player_id
+           WHERE tp.tournament_id = $1 AND tp.is_waitlist = true AND tp.player_id = ANY($2::uuid[])`,
+          [id, promoted],
+        );
+        if (waitlist.rows.length !== 2) throw new GoNextError(400, 'Choose a complete waitlist pair');
+        const pairError = validatePairComposition(tournament.division, waitlist.rows[0] as RosterSourceRow, waitlist.rows[1] as RosterSourceRow);
+        if (pairError) throw new GoNextError(400, pairError);
+        await client.query(
+          `UPDATE tournament_participants SET is_waitlist = false, position = 100000 + array_position($1::uuid[], id)
+           WHERE id = ANY($1::uuid[])`,
+          [waitlist.rows.map((row) => row.id)],
+        );
+      }
+    } else if (input.action === 'replace_player') {
+      const offset = (Math.max(1, Math.floor(input.pairIndex)) - 1) * 2 + (input.playerSlot - 1);
+      const target = activeRows[offset];
+      if (!target) throw new GoNextError(404, 'GO player slot not found');
+      const replacementId = String(input.replacementPlayerId || '').trim();
+      const replacement = await client.query(
+        `SELECT tp.id::text AS id, tp.player_id::text AS "playerId", p.gender
+         FROM tournament_participants tp JOIN players p ON p.id = tp.player_id
+         WHERE tp.tournament_id = $1 AND tp.player_id = $2 AND tp.is_waitlist = true FOR UPDATE`, [id, replacementId],
+      );
+      if (!replacement.rows[0]) throw new GoNextError(404, 'Replacement must be a waitlist player');
+      const partner = activeRows[offset % 2 === 0 ? offset + 1 : offset - 1];
+      const pairError = validatePairComposition(
+        tournament.division,
+        (input.playerSlot === 1 ? replacement.rows[0] : partner) as RosterSourceRow,
+        (input.playerSlot === 2 ? replacement.rows[0] : partner) as RosterSourceRow,
+      );
+      if (pairError) throw new GoNextError(400, pairError);
+      await client.query(`DELETE FROM tournament_participants WHERE id = $1`, [replacement.rows[0].id]);
+      await client.query(`UPDATE tournament_participants SET player_id = $2 WHERE id = $1`, [target.id, replacementId]);
+    } else {
+      const ids = input.playerIds.map((value) => String(value).trim()).filter(Boolean);
+      if (ids.length !== 2) throw new GoNextError(400, 'Choose exactly two waitlist players');
+      const waitlist = await client.query(
+        `SELECT tp.id::text AS id, tp.player_id::text AS "playerId", p.gender
+         FROM tournament_participants tp JOIN players p ON p.id = tp.player_id
+         WHERE tp.tournament_id = $1 AND tp.is_waitlist = true AND tp.player_id = ANY($2::uuid[]) FOR UPDATE`, [id, ids],
+      );
+      if (waitlist.rows.length !== 2) throw new GoNextError(400, 'Choose a complete waitlist pair');
+      const pairError = validatePairComposition(tournament.division, waitlist.rows[0] as RosterSourceRow, waitlist.rows[1] as RosterSourceRow);
+      if (pairError) throw new GoNextError(400, pairError);
+      await client.query(`UPDATE tournament_participants SET is_waitlist = false, position = 100000 + array_position($1::uuid[], id) WHERE id = ANY($1::uuid[])`, [waitlist.rows.map((row) => row.id)]);
+    }
+    const count = await client.query(`SELECT COUNT(*)::int AS count FROM tournament_participants WHERE tournament_id = $1 AND is_waitlist = false`, [id]);
+    const pairCount = asInt(count.rows[0]?.count, 0) / 2;
+    if (!Number.isInteger(pairCount) || pairCount < 4 || pairCount > 16) throw new GoNextError(400, 'GO requires from 4 to 16 complete pairs');
+    await persistTournamentSettingsTx(client, tournament, { goDeclaredTeamCount: pairCount });
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function resetGoState(tournamentId: string): Promise<{ reset: true }> {
   requireDatabase();
   const normalizedTournamentId = String(tournamentId || '').trim();
@@ -2813,6 +3000,16 @@ export async function resetGoState(tournamentId: string): Promise<{ reset: true 
   try {
     await client.query('BEGIN');
     await loadTournamentTx(client, normalizedTournamentId, { lock: true });
+    const started = await client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM go_match m
+       JOIN go_round r ON r.id = m.round_id
+       WHERE r.tournament_id = $1 AND m.status IN ('live', 'finished')`,
+      [normalizedTournamentId],
+    );
+    if (asInt(started.rows[0]?.count, 0) > 0) {
+      throw new GoNextError(409, 'GO reset is blocked after a match has started. Use a replacement or walkover.');
+    }
     await clearGoStateTx(client, normalizedTournamentId);
     await client.query('COMMIT');
     return { reset: true };

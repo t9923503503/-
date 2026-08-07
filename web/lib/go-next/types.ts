@@ -142,6 +142,10 @@ export interface GoOperatorState {
   bracketLevels: string[];
   courts: { courtNo: number; label: string; pinCode: string }[];
   settings: GoAdminSettings;
+  rosterTeamCount?: number;
+  declaredTeamCount?: number;
+  structuralDrift?: boolean;
+  structureChangeBlockedReason?: string | null;
 }
 
 export interface GoJudgeMatchView {
@@ -218,6 +222,7 @@ export interface GoSpectatorPayload {
   stage: GoOperatorStage;
   groups: GoGroupView[];
   brackets: Record<string, GoBracketSlotView[]>;
+  groupMatches: GoMatchView[];
   liveMatches: GoMatchView[];
 }
 

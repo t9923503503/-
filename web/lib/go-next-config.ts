@@ -2,6 +2,28 @@ import { createHash } from 'crypto';
 import type { GoAdminSettings } from './go-next/types';
 import { GO_ADMIN_MAX_GROUPS, GO_ADMIN_PLAYOFF_LEAGUES } from './admin-legacy-sync';
 
+export type GoDivisionRule = 'mixed' | 'men' | 'women' | 'unknown';
+
+/** Keeps preflight, roster editing and the GO bootstrap on one gender contract. */
+export function resolveGoDivisionRule(division: unknown): GoDivisionRule {
+  const normalized = String(division ?? '').trim().toLowerCase();
+  if (normalized.includes('mix') || normalized.includes('микс')) return 'mixed';
+  if (normalized.includes('муж') || normalized.includes('men')) return 'men';
+  if (normalized.includes('жен') || normalized.includes('women')) return 'women';
+  return 'unknown';
+}
+
+export function normalizeGoGender(value: unknown): 'M' | 'W' {
+  return String(value ?? '').trim().toUpperCase() === 'W' ? 'W' : 'M';
+}
+
+export function describeGoPairRule(rule: GoDivisionRule): string {
+  if (rule === 'mixed') return 'M/Ж';
+  if (rule === 'women') return 'Ж/Ж';
+  if (rule === 'men') return 'М/М';
+  return 'выберите Мужской, Женский или Микст';
+}
+
 export function buildGoCourtPin(tournamentId: string, courtNo: number): string {
   return createHash('sha1')
     .update(`go:${tournamentId}:${courtNo}`)
@@ -55,8 +77,8 @@ export function validateGoSetup(settings: GoAdminSettings, teamCount: number): s
   if (groupsAuto > GO_ADMIN_MAX_GROUPS) {
     return `GO supports up to ${GO_ADMIN_MAX_GROUPS} groups (auto).`;
   }
-  if (!settings.enabledPlayoffLeagues.length || settings.enabledPlayoffLeagues.length < 2) {
-    return 'Choose at least 2 playoff leagues for GO.';
+  if (!settings.enabledPlayoffLeagues.length) {
+    return 'Choose at least 1 playoff league for GO.';
   }
   const contiguous = GO_ADMIN_PLAYOFF_LEAGUES.filter((league) => settings.enabledPlayoffLeagues.includes(league));
   if (contiguous.length !== settings.enabledPlayoffLeagues.length) {
