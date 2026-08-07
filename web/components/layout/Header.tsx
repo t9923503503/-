@@ -7,8 +7,9 @@ const navLinks = [
   { href: "/", label: "\u0413\u043b\u0430\u0432\u043d\u0430\u044f" },
   { href: "/rankings", label: "\u0420\u0435\u0439\u0442\u0438\u043d\u0433\u0438" },
   { href: "/calendar", label: "\u041a\u0430\u043b\u0435\u043d\u0434\u0430\u0440\u044c" },
-  { href: "/pravila", label: "\u0412\u0438\u0434\u044b \u0442\u0443\u0440\u043d\u0438\u0440\u043e\u0432" },
-  { href: "/partner", label: "\u041f\u043e\u0438\u0441\u043a \u043f\u0430\u0440\u044b" },
+  { href: "/partner", label: "\u0418\u0433\u0440\u0430\u0442\u044c" },
+  { href: "/about", label: "\u041e \u043d\u0430\u0441" },
+  { href: "/how-it-works", label: "\u041a\u0430\u043a \u0438\u0433\u0440\u0430\u0442\u044c" },
 ];
 
 export default function Header() {
@@ -22,7 +23,7 @@ export default function Header() {
           LPVOLLEY.RU
         </Link>
 
-        <nav className="hidden items-center gap-6 md:flex">
+        <nav className="hidden items-center gap-6 lg:flex">
           {navLinks.map(({ href, label }) => (
             <Link
               key={href}

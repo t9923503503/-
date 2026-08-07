@@ -15,7 +15,7 @@ export default function Footer() {
           </div>
 
           <div className="flex flex-col items-start md:items-end gap-4">
-            <nav className="flex gap-5">
+            <nav className="flex flex-wrap gap-5">
               <Link href="/" className="hover:text-brand transition-colors">
                 {"\u0413\u043b\u0430\u0432\u043d\u0430\u044f"}
               </Link>
@@ -27,6 +27,15 @@ export default function Footer() {
               </Link>
               <Link href="/calendar" className="hover:text-brand transition-colors">
                 {"\u041a\u0430\u043b\u0435\u043d\u0434\u0430\u0440\u044c"}
+              </Link>
+              <Link href="/about" className="hover:text-brand transition-colors">
+                О нас
+              </Link>
+              <Link href="/how-it-works" className="hover:text-brand transition-colors">
+                Как играть
+              </Link>
+              <Link href="/privacy" className="hover:text-brand transition-colors">
+                Политика данных
               </Link>
             </nav>
             <a
