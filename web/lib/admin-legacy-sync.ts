@@ -26,6 +26,8 @@ export const KOTC_JUDGE_MODULES = ['legacy', 'next'] as const;
 export type KotcJudgeModule = (typeof KOTC_JUDGE_MODULES)[number];
 export const KOTC_TAKEOVERS_MODES = ['standard', 'no_takeovers'] as const;
 export type KotcTakeoversMode = (typeof KOTC_TAKEOVERS_MODES)[number];
+export const KOTC_R2_SEEDING_MODES = ['overall_points', 'court_places'] as const;
+export type KotcR2SeedingMode = (typeof KOTC_R2_SEEDING_MODES)[number];
 export const KOTC_ADMIN_MIN_COURTS = 1;
 export const KOTC_ADMIN_MAX_COURTS = 4;
 export const KOTC_ADMIN_DEFAULT_COURTS = 2;
@@ -47,13 +49,13 @@ export const GO_ADMIN_DEFAULT_GROUPS = 4;
 export const GO_ADMIN_MIN_TEAMS_PER_GROUP = 3;
 export const GO_ADMIN_MAX_TEAMS_PER_GROUP = 4;
 export const GO_ADMIN_DEFAULT_TEAMS_PER_GROUP = 4;
-export const GO_ADMIN_MIN_DECLARED_TEAMS = 2;
-export const GO_ADMIN_MAX_DECLARED_TEAMS = GO_ADMIN_MAX_GROUPS * GO_ADMIN_MAX_TEAMS_PER_GROUP;
+export const GO_ADMIN_MIN_DECLARED_TEAMS = 4;
+export const GO_ADMIN_MAX_DECLARED_TEAMS = 16;
 export const GO_ADMIN_DEFAULT_GROUP_FORMULA = { hard: 2, medium: 1, lite: 1 } as const;
 export const GO_ADMIN_DEFAULT_SLOT_MINUTES = 30;
 export const GO_ADMIN_DEFAULT_START_TIME = '08:00';
 export const GO_ADMIN_PLAYOFF_LEAGUES = ['lyutye', 'hard', 'medium', 'lite'] as const;
-export const GO_ADMIN_MIN_BRACKET_LEVELS = 2;
+export const GO_ADMIN_MIN_BRACKET_LEVELS = 1;
 export const GO_ADMIN_MAX_BRACKET_LEVELS = 4;
 export const GO_ADMIN_DEFAULT_BRACKET_LEVELS = 3;
 export const GO_BRACKET_LEVEL_LABELS = GO_ADMIN_PLAYOFF_LEAGUES;
@@ -301,7 +303,7 @@ function sortGoPlayoffLeagues(
       .filter((item): item is (typeof GO_ADMIN_PLAYOFF_LEAGUES)[number] => Boolean(item)),
   );
   const ordered = GO_ADMIN_PLAYOFF_LEAGUES.filter((league) => selected.has(league));
-  if (ordered.length >= 2) return ordered;
+  if (ordered.length >= 1) return ordered;
   return ['hard', 'medium', 'lite'];
 }
 
@@ -383,6 +385,10 @@ export function normalizeKotcTakeoversMode(value: unknown): KotcTakeoversMode {
   return String(value ?? '').trim().toLowerCase() === 'no_takeovers' ? 'no_takeovers' : 'standard';
 }
 
+export function normalizeKotcR2SeedingMode(value: unknown): KotcR2SeedingMode {
+  return String(value ?? '').trim().toLowerCase() === 'overall_points' ? 'overall_points' : 'court_places';
+}
+
 export function normalizeKotcAdminSettings(settings?: Record<string, unknown>, participantCount?: unknown) {
   const source = settings ?? {};
   const ppc = clamp(
@@ -409,6 +415,7 @@ export function normalizeKotcAdminSettings(settings?: Record<string, unknown>, p
     kotcJudgeModule: normalizeKotcJudgeModule(source.kotcJudgeModule),
     kotcJudgeBootstrapSignature: normalizeKotcJudgeBootstrapSignature(source.kotcJudgeBootstrapSignature),
     kotcTakeoversMode: normalizeKotcTakeoversMode(source.kotcTakeoversMode),
+    kotcR2SeedingMode: normalizeKotcR2SeedingMode(source.kotcR2SeedingMode),
   };
 }
 
