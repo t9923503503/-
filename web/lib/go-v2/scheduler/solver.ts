@@ -485,7 +485,7 @@ function readyMatches(compiled: CompiledScheduleInput, state: SearchState): Norm
  * entire wall budget exploring near-equivalent court permutations.
  */
 function effectiveBeamWidth(compiled: CompiledScheduleInput): number {
-  const complexityCap = Math.max(4, Math.floor(960 / Math.max(1, compiled.matches.length)));
+  const complexityCap = Math.max(4, Math.floor(720 / Math.max(1, compiled.matches.length)));
   return Math.min(compiled.options.beamWidth, complexityCap);
 }
 

@@ -1,4 +1,4 @@
-export const SCHEDULE_SOLVER_VERSION = 'lpv_scheduler_v2' as const;
+export const SCHEDULE_SOLVER_VERSION = 'lpv_scheduler_v3' as const;
 export const SCHEDULE_QUANTUM_MINUTES = 5 as const;
 
 export type ScheduleSolverStatus =
