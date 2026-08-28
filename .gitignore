@@ -9,6 +9,11 @@ server_restore.env
 
 # Next.js build output (should never be committed)
 web/.next/
+web/.next-*/
+
+# Runtime player uploads are preserved by the deploy allow-list, never packaged
+# into source control. Demo pages must use initials or dedicated fixture assets.
+web/public/images/users/
 
 # Local one-off standalone tarball for remote deploy (see scripts/push-next-standalone-remote.py)
 deploy-web-standalone.tar.gz
@@ -16,6 +21,10 @@ deploy-web-standalone.tar.gz
 # Environment files with secrets
 web/.env.local
 scripts/deploy-server.env
+telegram-bot/.env
+telegram-bot/.offset
+telegram-bot/*.log
+telegram-bot/*.bak*
 
 # Vite static bundle output
 dist/

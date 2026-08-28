@@ -13,6 +13,13 @@
 
 В репозитории есть готовый server-side сценарий: [`scripts/deploy-server.sh`](../scripts/deploy-server.sh).
 
+Для закрытого пилота Tournament Engine V2 используйте только специализированный
+сценарий и runbook: [`scripts/deploy-go-v2-pilot.sh`](../scripts/deploy-go-v2-pilot.sh)
+и [`docs/GO_V2_PILOT_RELEASE.md`](GO_V2_PILOT_RELEASE.md). Локальный packager
+фиксирует один подписанный commit в source archive с SHA-256, а server wrapper
+использует этот же archive для SQL и сборки, делает полный DB backup и не запускает
+общую папку миграций. Грязный server checkout не является источником релиза.
+
 Что делает скрипт:
 
 - `git fetch/pull` в серверном checkout;
