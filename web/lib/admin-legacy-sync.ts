@@ -22,8 +22,8 @@ export const IPT_MIXED_POINT_LIMIT_MIN = 9;
 export const IPT_MIXED_POINT_LIMIT_DEFAULT = 21;
 export const IPT_MIXED_POINT_LIMIT_MAX = 21;
 
-export const KOTC_JUDGE_MODULES = ['legacy', 'next'] as const;
-export type KotcJudgeModule = (typeof KOTC_JUDGE_MODULES)[number];
+export const KOTC_JUDGE_MODULES = ['next'] as const;
+export type KotcJudgeModule = 'legacy' | (typeof KOTC_JUDGE_MODULES)[number];
 export const KOTC_TAKEOVERS_MODES = ['standard', 'no_takeovers'] as const;
 export type KotcTakeoversMode = (typeof KOTC_TAKEOVERS_MODES)[number];
 export const KOTC_R2_SEEDING_MODES = ['overall_points', 'court_places'] as const;
@@ -49,8 +49,8 @@ export const GO_ADMIN_DEFAULT_GROUPS = 4;
 export const GO_ADMIN_MIN_TEAMS_PER_GROUP = 3;
 export const GO_ADMIN_MAX_TEAMS_PER_GROUP = 4;
 export const GO_ADMIN_DEFAULT_TEAMS_PER_GROUP = 4;
-export const GO_ADMIN_MIN_DECLARED_TEAMS = 4;
-export const GO_ADMIN_MAX_DECLARED_TEAMS = 16;
+export const GO_ADMIN_MIN_DECLARED_TEAMS = 2;
+export const GO_ADMIN_MAX_DECLARED_TEAMS = GO_ADMIN_MAX_GROUPS * GO_ADMIN_MAX_TEAMS_PER_GROUP;
 export const GO_ADMIN_DEFAULT_GROUP_FORMULA = { hard: 2, medium: 1, lite: 1 } as const;
 export const GO_ADMIN_DEFAULT_SLOT_MINUTES = 30;
 export const GO_ADMIN_DEFAULT_START_TIME = '08:00';
@@ -369,11 +369,8 @@ export function normalizeThaiAdminSettings(settings?: Record<string, unknown>, p
   };
 }
 
-export function normalizeKotcJudgeModule(value: unknown, fallback: KotcJudgeModule = 'next'): KotcJudgeModule {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  if (normalized === 'legacy') return 'legacy';
-  if (normalized === 'next') return 'next';
-  return fallback;
+export function normalizeKotcJudgeModule(_value: unknown, _fallback: KotcJudgeModule = 'next'): KotcJudgeModule {
+  return 'next';
 }
 
 export function normalizeKotcJudgeBootstrapSignature(value: unknown): string | null {
@@ -387,6 +384,15 @@ export function normalizeKotcTakeoversMode(value: unknown): KotcTakeoversMode {
 
 export function normalizeKotcR2SeedingMode(value: unknown): KotcR2SeedingMode {
   return String(value ?? '').trim().toLowerCase() === 'overall_points' ? 'overall_points' : 'court_places';
+}
+
+function normalizeKotcToggle(value: unknown, fallback: boolean): boolean {
+  if (value == null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') return true;
+  if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') return false;
+  return fallback;
 }
 
 export function normalizeKotcAdminSettings(settings?: Record<string, unknown>, participantCount?: unknown) {
@@ -416,6 +422,9 @@ export function normalizeKotcAdminSettings(settings?: Record<string, unknown>, p
     kotcJudgeBootstrapSignature: normalizeKotcJudgeBootstrapSignature(source.kotcJudgeBootstrapSignature),
     kotcTakeoversMode: normalizeKotcTakeoversMode(source.kotcTakeoversMode),
     kotcR2SeedingMode: normalizeKotcR2SeedingMode(source.kotcR2SeedingMode),
+    kotcSelfScoringEnabled: normalizeKotcToggle(source.kotcSelfScoringEnabled, false),
+    kotcScoreVoiceEnabled: normalizeKotcToggle(source.kotcScoreVoiceEnabled, true),
+    kotcScoreHistoryVisible: normalizeKotcToggle(source.kotcScoreHistoryVisible, true),
   };
 }
 

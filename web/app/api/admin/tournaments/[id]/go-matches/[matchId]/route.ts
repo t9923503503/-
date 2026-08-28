@@ -36,6 +36,7 @@ export async function PATCH(
       note: body.note == null ? undefined : String(body.note),
       allowLiveReschedule: body.allowLiveReschedule === true,
       allowFinishedReschedule: body.allowFinishedReschedule === true,
+      impactHash: body.impactHash == null ? undefined : String(body.impactHash),
     });
 
     await writeAuditLog({
@@ -52,7 +53,10 @@ export async function PATCH(
     return NextResponse.json(result);
   } catch (error) {
     if (isGoNextError(error)) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      return NextResponse.json(
+        { error: error.message, code: error.code, ...(error.details ?? {}) },
+        { status: error.status },
+      );
     }
     return adminErrorResponse(error, 'tournaments.goMatch.patch');
   }

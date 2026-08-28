@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { PoolClient } from 'pg';
 import {
   isGoAdminFormat,
@@ -14,7 +15,9 @@ import {
   validateGoSetup,
 } from '@/lib/go-next-config';
 import { initGoCourtSlots } from './court-slots';
-import { generateBracketSlots } from './bracket-generator';
+import { generateBracketSlots, planStructuralByeUpdates } from './bracket-generator';
+import { classifySingleElimination } from './bracket-classification';
+import { validateGoSeedDraft } from './seed-validation';
 import {
   buildBalancedGoGroups,
   buildCourtSchedule,
@@ -183,6 +186,22 @@ export interface GoOperatorMatchPatchInput {
   note?: string;
   allowLiveReschedule?: boolean;
   allowFinishedReschedule?: boolean;
+  impactHash?: string;
+}
+
+export interface GoResultCorrectionImpact {
+  impactHash: string;
+  risk: 'amber' | 'red';
+  invalidatesBracket: boolean;
+  affectedMatches: Array<{
+    matchId: string;
+    matchNo: number;
+    status: GoMatchStatus;
+    bracketLevel: string | null;
+    bracketRound: number | null;
+    groupLabel: string | null;
+  }>;
+  blockers: string[];
 }
 
 export interface GoOperatorMatchPatchResult {
@@ -198,11 +217,15 @@ export interface GoOperatorMatchPatchResult {
 
 export class GoNextError extends Error {
   status: number;
+  code: string | null;
+  details: Record<string, unknown> | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, options?: { code?: string; details?: Record<string, unknown> }) {
     super(message);
     this.name = 'GoNextError';
     this.status = status;
+    this.code = options?.code ?? null;
+    this.details = options?.details ?? null;
   }
 }
 
@@ -872,7 +895,7 @@ function buildSeedDraftView(
       .map((item) => {
         const raw = item as SeedDraftInputTeam & Partial<GoTeamView>;
         const teamId = String(raw.teamId ?? '').trim();
-        return teamMap.get(teamId) ?? (teamId && raw.label ? (raw as GoTeamView) : null);
+        return teamMap.get(teamId) ?? null;
       })
       .filter((item): item is GoTeamView => Boolean(item));
   }
@@ -1062,24 +1085,14 @@ function buildGoPlayoffSeedDraft(bundle: Pick<GoAdminBundle, 'groups' | 'setting
 
 function normalizeSeedFromBundle(
   seedDraft: Record<string, GoTeamView[]> | null,
-  teamMap: Map<string, GoTeamView>,
   requestedDraft: unknown,
   settings: GoAdminSettings,
 ): Record<string, string[]> {
   const levels = settings.enabledPlayoffLeagues.map((value) => String(value));
-  const source = buildSeedDraftView(requestedDraft, teamMap) ?? seedDraft;
-  if (!source) throw new GoNextError(400, 'Seed draft is not available');
-
-  const normalized: Record<string, string[]> = {};
-  for (const level of levels) {
-    const teams = source[level] ?? [];
-    if (!teams.length) continue;
-    normalized[level] = teams.map((team) => team.teamId).filter(Boolean);
-  }
-  if (!Object.keys(normalized).length) {
-    throw new GoNextError(400, 'Seed draft is empty');
-  }
-  return normalized;
+  if (!seedDraft) throw new GoNextError(400, 'Seed draft is not available');
+  const validation = validateGoSeedDraft(requestedDraft ?? seedDraft, seedDraft, levels);
+  if (!validation.ok) throw new GoNextError(400, validation.error);
+  return Object.fromEntries(Object.entries(validation.value).filter(([, teamIds]) => teamIds.length > 0));
 }
 
 async function recalcGroupStandingsTx(client: PoolClient, groupId: string, settings: GoAdminSettings): Promise<void> {
@@ -1255,11 +1268,99 @@ async function createBracketMatchIfReadyTx(
   );
 }
 
+async function routeStructuralByesTx(client: PoolClient, roundId: string): Promise<void> {
+  const slotsRes = await client.query<{
+    id: string;
+    bracketLevel: string;
+    bracketRound: number;
+    position: number;
+    teamId: string | null;
+    nextSlotId: string | null;
+    isBye: boolean;
+  }>(
+    `SELECT
+       id::text AS id,
+       bracket_level AS "bracketLevel",
+       bracket_round AS "bracketRound",
+       position,
+       team_id::text AS "teamId",
+       next_slot_id::text AS "nextSlotId",
+       is_bye AS "isBye"
+     FROM go_bracket_slot
+     WHERE round_id = $1
+     ORDER BY bracket_level ASC, bracket_round ASC, position ASC`,
+    [roundId],
+  );
+  const updates = planStructuralByeUpdates(
+    slotsRes.rows.map((slot) => ({
+      slotId: slot.id,
+      bracketLevel: slot.bracketLevel,
+      bracketRound: asInt(slot.bracketRound, 0),
+      position: asInt(slot.position, 0),
+      teamId: slot.teamId,
+      nextSlotId: slot.nextSlotId,
+      isBye: Boolean(slot.isBye),
+    })),
+  );
+  for (const update of updates) {
+    await client.query(
+      `UPDATE go_bracket_slot SET team_id = $2, is_bye = $3 WHERE id = $1`,
+      [update.slotId, update.teamId, update.isBye],
+    );
+  }
+}
+
+async function createAllReadyBracketMatchesTx(
+  client: PoolClient,
+  roundId: string,
+  settings: GoAdminSettings,
+): Promise<void> {
+  const slotsRes = await client.query<{
+    id: string;
+    bracketLevel: string;
+    bracketRound: number;
+    position: number;
+    teamId: string | null;
+  }>(
+    `SELECT
+       id::text AS id,
+       bracket_level AS "bracketLevel",
+       bracket_round AS "bracketRound",
+       position,
+       team_id::text AS "teamId"
+     FROM go_bracket_slot
+     WHERE round_id = $1
+     ORDER BY bracket_level ASC, bracket_round ASC, position ASC`,
+    [roundId],
+  );
+
+  const rows = slotsRes.rows;
+  for (const left of rows) {
+    if (asInt(left.position, 0) % 2 === 0 || !left.teamId) continue;
+    const right = rows.find(
+      (candidate) =>
+        candidate.bracketLevel === left.bracketLevel &&
+        asInt(candidate.bracketRound, 0) === asInt(left.bracketRound, 0) &&
+        asInt(candidate.position, 0) === asInt(left.position, 0) + 1,
+    );
+    if (!right?.teamId) continue;
+    await createBracketMatchIfReadyTx(
+      client,
+      roundId,
+      left.bracketLevel,
+      asInt(left.bracketRound, 0),
+      left.id,
+      settings,
+    );
+  }
+}
+
 async function advanceWinnerTx(client: PoolClient, matchId: string, settings: GoAdminSettings): Promise<void> {
   const res = await client.query(
-    `SELECT
-       m.id::text AS "matchId",
-       m.winner_id::text AS "winnerId",
+     `SELECT
+        m.id::text AS "matchId",
+        m.round_id::text AS "roundId",
+        m.winner_id::text AS "winnerId",
        bs.next_slot_id::text AS "nextSlotId"
      FROM go_match m
      JOIN go_bracket_slot bs ON bs.id = m.bracket_slot_id
@@ -1273,36 +1374,8 @@ async function advanceWinnerTx(client: PoolClient, matchId: string, settings: Go
     String(row.nextSlotId),
     String(row.winnerId),
   ]);
-
-  const nextSlotRes = await client.query(
-    `SELECT id::text AS id, round_id::text AS "roundId", bracket_level AS "bracketLevel", bracket_round AS "bracketRound", position
-     FROM go_bracket_slot
-     WHERE id = $1`,
-    [String(row.nextSlotId)],
-  );
-  const nextSlot = nextSlotRes.rows[0];
-  if (!nextSlot) return;
-  const leftPosition = asInt(nextSlot.position, 0) % 2 === 0 ? asInt(nextSlot.position, 0) - 1 : asInt(nextSlot.position, 0);
-  const leftSlotRes = await client.query(
-    `SELECT id::text AS id
-     FROM go_bracket_slot
-     WHERE round_id = $1
-       AND bracket_level = $2
-       AND bracket_round = $3
-       AND position = $4`,
-    [String(nextSlot.roundId), String(nextSlot.bracketLevel), asInt(nextSlot.bracketRound, 0), leftPosition],
-  );
-  const leftSlotId = String(leftSlotRes.rows[0]?.id ?? '');
-  if (leftSlotId) {
-    await createBracketMatchIfReadyTx(
-      client,
-      String(nextSlot.roundId),
-      String(nextSlot.bracketLevel),
-      asInt(nextSlot.bracketRound, 0),
-      leftSlotId,
-      settings,
-    );
-  }
+  await routeStructuralByesTx(client, String(row.roundId));
+  await createAllReadyBracketMatchesTx(client, String(row.roundId), settings);
 }
 
 async function refreshRoundStatusTx(client: PoolClient, roundId: string): Promise<void> {
@@ -1536,7 +1609,7 @@ async function previewBracketSeedTx(client: PoolClient, tournamentId: string): P
 async function confirmBracketSeedTx(client: PoolClient, tournamentId: string, requestedDraft?: unknown): Promise<void> {
   const bundle = await loadGoAdminBundleTx(client, tournamentId);
   const teamMap = new Map(bundle.groups.flatMap((group) => group.teams.map((team) => [team.teamId, team] as const)));
-  const normalizedDraft = normalizeSeedFromBundle(bundle.seedDraft, teamMap, requestedDraft, bundle.settings);
+  const normalizedDraft = normalizeSeedFromBundle(bundle.seedDraft, requestedDraft, bundle.settings);
   const r1 = bundle.rounds.find((round) => round.roundNo === 1);
   if (!r1) throw new GoNextError(400, 'R1 not found');
 
@@ -1635,80 +1708,64 @@ async function bootstrapBracketTx(client: PoolClient, tournamentId: string): Pro
     throw new GoNextError(400, 'Bracket matches are already created');
   }
 
-  const slotsRes = await client.query(
-    `SELECT id::text AS id, bracket_level AS "bracketLevel", position, team_id::text AS "teamId"
+  await routeStructuralByesTx(client, r2.roundId);
+  await createAllReadyBracketMatchesTx(client, r2.roundId, bundle.settings);
+  await refreshRoundStatusTx(client, r2.roundId);
+}
+
+async function assertCompleteBracketClassificationTx(client: PoolClient, roundId: string): Promise<void> {
+  const entrantsRes = await client.query<{ bracketLevel: string; teamId: string }>(
+    `SELECT bracket_level AS "bracketLevel", team_id::text AS "teamId"
      FROM go_bracket_slot
      WHERE round_id = $1
        AND bracket_round = 1
+       AND team_id IS NOT NULL
      ORDER BY bracket_level ASC, position ASC`,
-    [r2.roundId],
+    [roundId],
+  );
+  const matchesRes = await client.query<{
+    bracketLevel: string;
+    bracketRound: number;
+    teamAId: string | null;
+    teamBId: string | null;
+    winnerId: string | null;
+    status: string;
+  }>(
+    `SELECT
+       m.bracket_level AS "bracketLevel",
+       bs.bracket_round AS "bracketRound",
+       m.team_a_id::text AS "teamAId",
+       m.team_b_id::text AS "teamBId",
+       m.winner_id::text AS "winnerId",
+       m.status
+     FROM go_match m
+     JOIN go_bracket_slot bs ON bs.id = m.bracket_slot_id
+     WHERE m.round_id = $1
+     ORDER BY m.bracket_level ASC, bs.bracket_round ASC, m.match_no ASC`,
+    [roundId],
   );
 
-  let matchNo = 1;
-  const autoAdvanceMatchIds: string[] = [];
-  const byLevel = new Map<string, Array<{ id: string; position: number; teamId: string | null }>>();
-  slotsRes.rows.forEach((row) => {
-    const level = String(row.bracketLevel ?? '');
-    const list = byLevel.get(level) ?? [];
-    list.push({
-      id: String(row.id),
-      position: asInt(row.position, 0),
-      teamId: row.teamId ? String(row.teamId) : null,
-    });
-    byLevel.set(level, list);
-  });
-
-  for (const [level, slots] of byLevel.entries()) {
-    const ordered = [...slots].sort((left, right) => left.position - right.position);
-    for (let index = 0; index < ordered.length; index += 2) {
-      const left = ordered[index];
-      const right = ordered[index + 1];
-      if (!left || !right) continue;
-      const courtNo = ((matchNo - 1) % Math.max(1, bundle.settings.courts)) + 1;
-      if (!left.teamId && !right.teamId) continue;
-
-      if (left.teamId && right.teamId) {
-        await client.query(
-          `INSERT INTO go_match (
-             round_id, bracket_slot_id, bracket_level, match_no, court_no, team_a_id, team_b_id, status
-           )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')`,
-          [r2.roundId, left.id, level, matchNo, courtNo, left.teamId, right.teamId],
-        );
-      } else {
-        const winnerId = left.teamId ?? right.teamId ?? null;
-        const walkover = left.teamId ? 'team_b' : 'team_a';
-        const insertRes = await client.query(
-          `INSERT INTO go_match (
-             round_id, bracket_slot_id, bracket_level, match_no, court_no,
-             team_a_id, team_b_id, sets_a, sets_b, winner_id, walkover, status, finished_at
-           )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'finished', now())
-           RETURNING id::text AS id`,
-          [
-            r2.roundId,
-            left.id,
-            level,
-            matchNo,
-            courtNo,
-            left.teamId,
-            right.teamId,
-            left.teamId ? 2 : 0,
-            right.teamId ? 2 : 0,
-            winnerId,
-            walkover,
-          ],
-        );
-        autoAdvanceMatchIds.push(String(insertRes.rows[0]?.id ?? ''));
-      }
-      matchNo += 1;
+  const levels = [...new Set(entrantsRes.rows.map((row) => row.bracketLevel))];
+  if (!levels.length) throw new GoNextError(409, 'Bracket has no real entrants');
+  for (const level of levels) {
+    try {
+      classifySingleElimination(
+        entrantsRes.rows.filter((row) => row.bracketLevel === level).map((row) => row.teamId),
+        matchesRes.rows
+          .filter((row) => row.bracketLevel === level)
+          .map((row) => ({
+            bracketRound: asInt(row.bracketRound, 0),
+            teamAId: row.teamAId,
+            teamBId: row.teamBId,
+            winnerId: row.winnerId,
+            status: row.status,
+          })),
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new GoNextError(409, `Cannot finish ${level} bracket: ${reason}`);
     }
   }
-
-  for (const matchId of autoAdvanceMatchIds) {
-    await advanceWinnerTx(client, matchId, bundle.settings);
-  }
-  await refreshRoundStatusTx(client, r2.roundId);
 }
 
 async function finishBracketTx(client: PoolClient, tournamentId: string): Promise<void> {
@@ -1724,6 +1781,7 @@ async function finishBracketTx(client: PoolClient, tournamentId: string): Promis
   if (asInt(res.rows[0]?.open_count, 0) > 0) {
     throw new GoNextError(400, 'Finish all bracket matches before completing the bracket stage');
   }
+  await assertCompleteBracketClassificationTx(client, r2.roundId);
   await client.query(`UPDATE go_round SET status = 'finished' WHERE id = $1`, [r2.roundId]);
 }
 
@@ -2475,6 +2533,360 @@ export async function walkoverMatch(
   }
 }
 
+interface GoCorrectionMatchRow {
+  matchId: string;
+  matchNo: number;
+  status: GoMatchStatus;
+  bracketLevel: string | null;
+  bracketRound: number | null;
+  groupLabel: string | null;
+}
+
+function isStartedCorrectionDependency(status: GoMatchStatus): boolean {
+  return status === 'live' || status === 'finished';
+}
+
+function correctionImpactHash(payload: Record<string, unknown>): string {
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
+
+async function buildGoResultCorrectionImpactTx(
+  client: PoolClient,
+  tournamentId: string,
+  current: {
+    matchId: string;
+    matchNo: number;
+    roundId: string;
+    groupId: string | null;
+    bracketSlotId: string | null;
+    winnerId: string | null;
+    status: GoMatchStatus;
+    setsA: number;
+    setsB: number;
+    scoreA: number[];
+    scoreB: number[];
+  },
+  proposed: {
+    status: GoMatchStatus;
+    winnerId: string | null;
+    setsA: number;
+    setsB: number;
+    scoreA: number[];
+    scoreB: number[];
+  },
+): Promise<GoResultCorrectionImpact | null> {
+  const affected = new Map<string, GoCorrectionMatchRow>();
+  let invalidatesBracket = false;
+
+  if (current.groupId) {
+    const roundsRes = await client.query<{ roundId: string; roundNo: number; hasSeedDraft: boolean }>(
+      `SELECT id::text AS "roundId", round_no AS "roundNo", seed_draft IS NOT NULL AS "hasSeedDraft"
+       FROM go_round
+       WHERE tournament_id = $1
+       ORDER BY round_no ASC`,
+      [tournamentId],
+    );
+    const r1 = roundsRes.rows.find((row) => asInt(row.roundNo, 0) === 1);
+    const r2 = roundsRes.rows.find((row) => asInt(row.roundNo, 0) === 2);
+    invalidatesBracket = Boolean(r1?.hasSeedDraft || r2);
+    if (r2) {
+      const r2Matches = await client.query<GoCorrectionMatchRow>(
+        `SELECT
+           m.id::text AS "matchId",
+           m.match_no AS "matchNo",
+           m.status,
+           m.bracket_level AS "bracketLevel",
+           bs.bracket_round AS "bracketRound",
+           NULL::text AS "groupLabel"
+         FROM go_match m
+         LEFT JOIN go_bracket_slot bs ON bs.id = m.bracket_slot_id
+         WHERE m.round_id = $1
+         ORDER BY m.match_no ASC
+         FOR UPDATE OF m`,
+        [r2.roundId],
+      );
+      for (const row of r2Matches.rows) affected.set(row.matchId, row);
+    }
+
+    if (current.winnerId !== proposed.winnerId) {
+      const groupMatches = await client.query<GoCorrectionMatchRow & { winnerId: string | null }>(
+        `SELECT
+           m.id::text AS "matchId",
+           m.match_no AS "matchNo",
+           m.status,
+           NULL::text AS "bracketLevel",
+           NULL::int AS "bracketRound",
+           g.label AS "groupLabel",
+           m.winner_id::text AS "winnerId"
+         FROM go_match m
+         JOIN go_group g ON g.id = m.group_id
+         WHERE m.group_id = $1
+         ORDER BY m.match_no ASC
+         FOR UPDATE OF m`,
+        [current.groupId],
+      );
+      const currentIndex = groupMatches.rows.findIndex((row) => row.matchId === current.matchId);
+      if (currentIndex >= 0 && currentIndex < 2 && groupMatches.rows.length >= 4) {
+        for (const row of groupMatches.rows.slice(2, 4)) affected.set(row.matchId, row);
+      }
+    }
+  } else if (current.bracketSlotId && current.winnerId !== proposed.winnerId) {
+    const successorRes = await client.query<GoCorrectionMatchRow>(
+      `WITH RECURSIVE downstream_slots AS (
+         SELECT target.id, target.round_id, target.bracket_level, target.bracket_round, target.position, target.next_slot_id
+         FROM go_bracket_slot source
+         JOIN go_bracket_slot target ON target.id = source.next_slot_id
+         WHERE source.id = $1
+         UNION ALL
+         SELECT target.id, target.round_id, target.bracket_level, target.bracket_round, target.position, target.next_slot_id
+         FROM go_bracket_slot target
+         JOIN downstream_slots prior ON target.id = prior.next_slot_id
+       ), left_slots AS (
+         SELECT bs.id
+         FROM go_bracket_slot bs
+         JOIN downstream_slots ds
+           ON ds.round_id = bs.round_id
+          AND ds.bracket_level = bs.bracket_level
+          AND ds.bracket_round = bs.bracket_round
+          AND bs.position = CASE WHEN ds.position % 2 = 0 THEN ds.position - 1 ELSE ds.position END
+       )
+       SELECT
+         m.id::text AS "matchId",
+         m.match_no AS "matchNo",
+         m.status,
+         m.bracket_level AS "bracketLevel",
+         bs.bracket_round AS "bracketRound",
+         NULL::text AS "groupLabel"
+       FROM go_match m
+       JOIN left_slots ls ON ls.id = m.bracket_slot_id
+       JOIN go_bracket_slot bs ON bs.id = m.bracket_slot_id
+       FOR UPDATE OF m`,
+      [current.bracketSlotId],
+    );
+    for (const row of successorRes.rows) affected.set(row.matchId, row);
+  }
+
+  const changesBracketRoute = Boolean(
+    current.bracketSlotId && current.winnerId !== proposed.winnerId,
+  );
+  if (!invalidatesBracket && !affected.size && !changesBracketRoute) return null;
+  const affectedMatches = [...affected.values()].sort((left, right) => left.matchNo - right.matchNo);
+  const blockers = affectedMatches
+    .filter((match) => isStartedCorrectionDependency(normalizeMatchStatus(match.status)))
+    .map((match) => `Match #${match.matchNo} is ${match.status}`);
+  const hashPayload = {
+    tournamentId,
+    source: {
+      matchId: current.matchId,
+      status: current.status,
+      winnerId: current.winnerId,
+      setsA: current.setsA,
+      setsB: current.setsB,
+      scoreA: current.scoreA,
+      scoreB: current.scoreB,
+    },
+    proposed,
+    invalidatesBracket,
+    affectedMatches: affectedMatches.map((match) => ({
+      matchId: match.matchId,
+      status: match.status,
+      matchNo: match.matchNo,
+    })),
+  };
+  return {
+    impactHash: correctionImpactHash(hashPayload),
+    risk: blockers.length ? 'red' : 'amber',
+    invalidatesBracket,
+    affectedMatches,
+    blockers,
+  };
+}
+
+async function invalidateUnstartedBracketTx(client: PoolClient, tournamentId: string): Promise<void> {
+  const roundsRes = await client.query<{ roundId: string; roundNo: number }>(
+    `SELECT id::text AS "roundId", round_no AS "roundNo"
+     FROM go_round
+     WHERE tournament_id = $1
+     ORDER BY round_no ASC`,
+    [tournamentId],
+  );
+  const r1 = roundsRes.rows.find((row) => asInt(row.roundNo, 0) === 1);
+  const r2 = roundsRes.rows.find((row) => asInt(row.roundNo, 0) === 2);
+  if (r2) await client.query(`DELETE FROM go_round WHERE id = $1`, [r2.roundId]);
+  if (r1) await client.query(`UPDATE go_round SET seed_draft = NULL WHERE id = $1`, [r1.roundId]);
+}
+
+async function reconcileAffectedBracketMatchesTx(client: PoolClient, matchIds: string[]): Promise<void> {
+  for (const matchId of [...new Set(matchIds.filter(Boolean))]) {
+    const matchRes = await client.query<{
+      id: string;
+      status: GoMatchStatus;
+      teamAId: string | null;
+      teamBId: string | null;
+    }>(
+      `SELECT
+         m.id::text AS id,
+         m.status,
+         left_slot.team_id::text AS "teamAId",
+         right_slot.team_id::text AS "teamBId"
+       FROM go_match m
+       JOIN go_bracket_slot left_slot ON left_slot.id = m.bracket_slot_id
+       JOIN go_bracket_slot right_slot
+         ON right_slot.round_id = left_slot.round_id
+        AND right_slot.bracket_level = left_slot.bracket_level
+        AND right_slot.bracket_round = left_slot.bracket_round
+        AND right_slot.position = left_slot.position + 1
+       WHERE m.id = $1
+       FOR UPDATE OF m`,
+      [matchId],
+    );
+    const match = matchRes.rows[0];
+    if (!match) continue;
+    if (isStartedCorrectionDependency(normalizeMatchStatus(match.status))) {
+      throw new GoNextError(409, 'A downstream bracket match has already started');
+    }
+    if (!match.teamAId || !match.teamBId) {
+      await client.query(`DELETE FROM go_match WHERE id = $1`, [match.id]);
+      continue;
+    }
+    await client.query(
+      `UPDATE go_match
+       SET team_a_id = $2,
+           team_b_id = $3,
+           score_a = '{}',
+           score_b = '{}',
+           sets_a = 0,
+           sets_b = 0,
+           winner_id = NULL,
+           walkover = 'none',
+           status = 'pending',
+           started_at = NULL,
+           finished_at = NULL,
+           judge_state = '{}'::jsonb,
+           judge_history = '[]'::jsonb
+       WHERE id = $1`,
+      [match.id, match.teamAId, match.teamBId],
+    );
+  }
+}
+
+async function reconcileBracketSuccessorTx(
+  client: PoolClient,
+  bracketSlotId: string,
+  previousWinnerId: string | null,
+  winnerId: string | null,
+  settings: GoAdminSettings,
+  affectedMatchIds: string[],
+): Promise<void> {
+  const nextRes = await client.query<{
+    slotId: string;
+    roundId: string;
+    bracketLevel: string;
+    bracketRound: number;
+    position: number;
+  }>(
+    `SELECT
+       target.id::text AS "slotId",
+       target.round_id::text AS "roundId",
+       target.bracket_level AS "bracketLevel",
+       target.bracket_round AS "bracketRound",
+       target.position
+     FROM go_bracket_slot source
+     JOIN go_bracket_slot target ON target.id = source.next_slot_id
+     WHERE source.id = $1`,
+    [bracketSlotId],
+  );
+  const next = nextRes.rows[0];
+  if (!next) return;
+  if (previousWinnerId) {
+    await client.query(
+      `WITH RECURSIVE downstream AS (
+         SELECT target.id, target.next_slot_id
+         FROM go_bracket_slot source
+         JOIN go_bracket_slot target ON target.id = source.next_slot_id
+         WHERE source.id = $1
+         UNION ALL
+         SELECT target.id, target.next_slot_id
+         FROM go_bracket_slot target
+         JOIN downstream prior ON target.id = prior.next_slot_id
+       )
+       UPDATE go_bracket_slot
+       SET team_id = NULL, is_bye = false
+       WHERE id IN (SELECT id FROM downstream)
+         AND team_id = $2`,
+      [bracketSlotId, previousWinnerId],
+    );
+  }
+  await client.query(`UPDATE go_bracket_slot SET team_id = $2 WHERE id = $1`, [next.slotId, winnerId]);
+  await routeStructuralByesTx(client, next.roundId);
+  await reconcileAffectedBracketMatchesTx(client, affectedMatchIds);
+  await createAllReadyBracketMatchesTx(client, next.roundId, settings);
+}
+
+async function reconcileBo3GroupFollowupsAfterCorrectionTx(
+  client: PoolClient,
+  groupId: string,
+  settings: GoAdminSettings,
+): Promise<void> {
+  if (settings.matchFormat !== 'bo3') return;
+  const matchesRes = await client.query<{
+    id: string;
+    teamAId: string | null;
+    teamBId: string | null;
+    winnerId: string | null;
+    status: GoMatchStatus;
+  }>(
+    `SELECT
+       id::text AS id,
+       team_a_id::text AS "teamAId",
+       team_b_id::text AS "teamBId",
+       winner_id::text AS "winnerId",
+       status
+     FROM go_match
+     WHERE group_id = $1
+     ORDER BY match_no ASC
+     FOR UPDATE`,
+    [groupId],
+  );
+  if (matchesRes.rows.length < 4) return;
+  const [fixedA, fixedB] = matchesRes.rows;
+  if (!fixedA.winnerId || !fixedB.winnerId) return;
+  const loserA = fixedA.winnerId === fixedA.teamAId ? fixedA.teamBId : fixedA.teamAId;
+  const loserB = fixedB.winnerId === fixedB.teamAId ? fixedB.teamBId : fixedB.teamAId;
+  const expected = [
+    [fixedA.winnerId, fixedB.winnerId],
+    [loserA, loserB],
+  ];
+  for (let index = 0; index < 2; index += 1) {
+    const match = matchesRes.rows[index + 2];
+    const [teamAId, teamBId] = expected[index];
+    if (isStartedCorrectionDependency(normalizeMatchStatus(match.status))) {
+      if (match.teamAId !== teamAId || match.teamBId !== teamBId) {
+        throw new GoNextError(409, 'A dependent Modified Pool match has already started');
+      }
+      continue;
+    }
+    await client.query(
+      `UPDATE go_match
+       SET team_a_id = $2,
+           team_b_id = $3,
+           score_a = '{}',
+           score_b = '{}',
+           sets_a = 0,
+           sets_b = 0,
+           winner_id = NULL,
+           walkover = 'none',
+           status = 'pending',
+           started_at = NULL,
+           finished_at = NULL,
+           judge_state = '{}'::jsonb,
+           judge_history = '[]'::jsonb
+       WHERE id = $1`,
+      [match.id, teamAId, teamBId],
+    );
+  }
+}
+
 export async function patchGoMatchByOperator(
   tournamentId: string,
   input: GoOperatorMatchPatchInput,
@@ -2497,6 +2909,7 @@ export async function patchGoMatchByOperator(
       matchId: string;
       roundId: string;
       groupId: string | null;
+      bracketSlotId: string | null;
       matchNo: number;
       courtNo: number | null;
       teamAId: string | null;
@@ -2519,6 +2932,7 @@ export async function patchGoMatchByOperator(
          m.id::text AS "matchId",
          m.round_id::text AS "roundId",
          m.group_id::text AS "groupId",
+         m.bracket_slot_id::text AS "bracketSlotId",
          m.match_no AS "matchNo",
          m.court_no AS "courtNo",
          m.team_a_id::text AS "teamAId",
@@ -2661,11 +3075,13 @@ export async function patchGoMatchByOperator(
         nextSetsA = validated.setsA;
         nextSetsB = validated.setsB;
         nextWinnerId = validated.winnerSide === 'A' ? current.teamAId : current.teamBId;
+        nextWalkover = 'none';
       } else if (input.setsA !== undefined || input.setsB !== undefined || input.winnerId !== undefined) {
         if (nextSetsA === nextSetsB) throw new GoNextError(400, 'Для завершённого матча нужен победитель');
         if (!nextWinnerId) {
           nextWinnerId = nextSetsA > nextSetsB ? current.teamAId : current.teamBId;
         }
+        nextWalkover = 'none';
       }
       if (!nextWinnerId) {
         throw new GoNextError(400, 'Для завершённого матча укажите победителя');
@@ -2673,7 +3089,9 @@ export async function patchGoMatchByOperator(
       if (nextWinnerId !== current.teamAId && nextWinnerId !== current.teamBId) {
         throw new GoNextError(400, 'Winner must belong to this match');
       }
-      nextWalkover = normalizeWalkover(current.walkover) === 'mutual' ? 'none' : normalizeWalkover(current.walkover);
+      if (!scoreProvided && input.setsA === undefined && input.setsB === undefined && input.winnerId === undefined) {
+        nextWalkover = normalizeWalkover(current.walkover) === 'mutual' ? 'none' : normalizeWalkover(current.walkover);
+      }
     } else if (nextStatus === 'cancelled') {
       nextScoreA = [];
       nextScoreB = [];
@@ -2690,6 +3108,59 @@ export async function patchGoMatchByOperator(
         nextSetsB = 0;
       }
       nextWalkover = 'none';
+    }
+
+    const sportingChanged =
+      nextStatus !== current.status ||
+      nextSetsA !== asInt(current.setsA, 0) ||
+      nextSetsB !== asInt(current.setsB, 0) ||
+      nextWinnerId !== current.winnerId ||
+      JSON.stringify(nextScoreA) !== JSON.stringify(asIntArray(current.scoreA)) ||
+      JSON.stringify(nextScoreB) !== JSON.stringify(asIntArray(current.scoreB));
+    const currentRouteWinner = current.status === 'finished' ? current.winnerId : null;
+    const nextRouteWinner = nextStatus === 'finished' ? nextWinnerId : null;
+    const routeChanged = currentRouteWinner !== nextRouteWinner;
+    const impact = sportingChanged && current.status === 'finished'
+      ? await buildGoResultCorrectionImpactTx(
+          client,
+          normalizedTournamentId,
+          {
+            matchId: current.matchId,
+            matchNo: current.matchNo,
+            roundId: current.roundId,
+            groupId: current.groupId,
+            bracketSlotId: current.bracketSlotId,
+            winnerId: currentRouteWinner,
+            status: current.status,
+            setsA: asInt(current.setsA, 0),
+            setsB: asInt(current.setsB, 0),
+            scoreA: asIntArray(current.scoreA),
+            scoreB: asIntArray(current.scoreB),
+          },
+          {
+            status: nextStatus,
+            winnerId: nextRouteWinner,
+            setsA: nextSetsA,
+            setsB: nextSetsB,
+            scoreA: nextScoreA,
+            scoreB: nextScoreB,
+          },
+        )
+      : null;
+    if (impact?.blockers.length) {
+      throw new GoNextError(409, 'Result correction is blocked because a dependent match has already started', {
+        code: 'go_downstream_started',
+        details: { impact },
+      });
+    }
+    if (impact && String(input.impactHash || '') !== impact.impactHash) {
+      throw new GoNextError(409, 'Review and confirm the result correction impact before saving', {
+        code: 'go_impact_preview_required',
+        details: { impact },
+      });
+    }
+    if (impact?.invalidatesBracket) {
+      await invalidateUnstartedBracketTx(client, normalizedTournamentId);
     }
 
     const updateRes = await client.query(
@@ -2729,12 +3200,44 @@ export async function patchGoMatchByOperator(
       ],
     );
     if (!updateRes.rowCount) throw new GoNextError(404, 'Match not found');
+    if (sportingChanged) {
+      await client.query(
+        `UPDATE go_match SET judge_state = '{}'::jsonb, judge_history = '[]'::jsonb WHERE id = $1`,
+        [matchId],
+      );
+    }
+
+    if (sportingChanged && current.groupId) {
+      if (routeChanged) {
+        await reconcileBo3GroupFollowupsAfterCorrectionTx(client, current.groupId, settings);
+      } else {
+        await hydrateBo3GroupFollowupsTx(client, current.groupId, settings);
+      }
+      await recalcGroupStandingsTx(client, current.groupId, settings);
+      await updateGroupStatusTx(client, current.groupId);
+      await refreshRoundStatusTx(client, current.roundId);
+    } else if (sportingChanged && current.bracketSlotId) {
+      if (routeChanged) {
+        await reconcileBracketSuccessorTx(
+          client,
+          current.bracketSlotId,
+          currentRouteWinner,
+          nextRouteWinner,
+          settings,
+          impact?.affectedMatches.map((match) => match.matchId) ?? [],
+        );
+      }
+      await refreshRoundStatusTx(client, current.roundId);
+    }
 
     await client.query('COMMIT');
     committed = true;
 
     const bundle = await getGoAdminBundle(normalizedTournamentId);
     const updatedMatch = bundle.matches.find((match) => match.matchId === matchId) ?? null;
+    if (sportingChanged && bundle.state.stage === 'finished') {
+      await syncGoResultsToTournamentResultsOrThrowBadRequest(normalizedTournamentId);
+    }
 
     return {
       success: true,

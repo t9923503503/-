@@ -1,6 +1,7 @@
 import { isGoAdminFormat, normalizeGoAdminSettings } from '@/lib/admin-legacy-sync';
 import { getTournamentById, upsertTournamentResults } from '@/lib/admin-queries';
 import { getPool } from '@/lib/db';
+import { classifySingleElimination } from './bracket-classification';
 import type { GoPlayoffLeague } from './types';
 
 interface TeamPlayerRow {
@@ -11,13 +12,18 @@ interface TeamPlayerRow {
   player2_gender: string | null;
 }
 
-interface BracketFinalRow {
+interface BracketMatchRow {
   bracket_level: string | null;
   bracket_round: number | null;
   team_a_id: string | null;
   team_b_id: string | null;
   winner_id: string | null;
   status: string;
+}
+
+interface BracketEntrantRow {
+  bracket_level: string;
+  team_id: string;
 }
 
 interface StandingFallbackRow {
@@ -126,7 +132,7 @@ export async function syncGoResultsToTournamentResults(tournamentId: string): Pr
   );
   const teamPlayers = new Map(teamPlayersRes.rows.map((row) => [String(row.team_id), row]));
 
-  const bracketRes = await pool.query<BracketFinalRow>(
+  const bracketRes = await pool.query<BracketMatchRow>(
     `SELECT
        m.bracket_level,
        bs.bracket_round,
@@ -142,41 +148,46 @@ export async function syncGoResultsToTournamentResults(tournamentId: string): Pr
      ORDER BY m.bracket_level ASC, bs.bracket_round DESC, m.match_no ASC`,
     [id],
   );
+  const bracketEntrantsRes = await pool.query<BracketEntrantRow>(
+    `SELECT bracket_level, team_id::text
+     FROM go_bracket_slot bs
+     JOIN go_round r ON r.id = bs.round_id
+     WHERE r.tournament_id = $1
+       AND r.round_no = 2
+       AND bs.bracket_round = 1
+       AND bs.team_id IS NOT NULL
+     ORDER BY bracket_level ASC, position ASC`,
+    [id],
+  );
 
   const placements: Array<{ teamId: string; placement: number; league: GoPlayoffLeague; leaguePlace: number }> = [];
-  let placementCursor = 1;
+  let placementOffset = 0;
 
   for (const level of levelOrder) {
+    const entrantIds = bracketEntrantsRes.rows
+      .filter((row) => String(row.bracket_level || '') === level)
+      .map((row) => String(row.team_id));
+    if (!entrantIds.length) continue;
     const levelMatches = bracketRes.rows.filter((row) => String(row.bracket_level || '') === level);
-    if (!levelMatches.length) continue;
-    const maxRound = Math.max(...levelMatches.map((row) => Number(row.bracket_round || 0)));
-    const finalMatch = levelMatches.find(
-      (row) => Number(row.bracket_round || 0) === maxRound && String(row.status || '') === 'finished' && row.winner_id,
+    const classified = classifySingleElimination(
+      entrantIds,
+      levelMatches.map((row) => ({
+        bracketRound: Number(row.bracket_round || 0),
+        teamAId: row.team_a_id,
+        teamBId: row.team_b_id,
+        winnerId: row.winner_id,
+        status: row.status,
+      })),
     );
-    if (!finalMatch?.winner_id) continue;
-
-    const winnerId = String(finalMatch.winner_id);
-    const runnerUpId =
-      winnerId === String(finalMatch.team_a_id || '')
-        ? String(finalMatch.team_b_id || '')
-        : String(finalMatch.team_a_id || '');
-
-    placements.push({
-      teamId: winnerId,
-      placement: placementCursor,
-      league: level as GoPlayoffLeague,
-      leaguePlace: 1,
-    });
-    placementCursor += 1;
-    if (runnerUpId) {
+    for (const row of classified) {
       placements.push({
-        teamId: runnerUpId,
-        placement: placementCursor,
+        teamId: row.teamId,
+        placement: placementOffset + row.place,
         league: level as GoPlayoffLeague,
-        leaguePlace: 2,
+        leaguePlace: row.place,
       });
-      placementCursor += 1;
     }
+    placementOffset += entrantIds.length;
   }
 
   let source = 'bracket';
