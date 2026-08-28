@@ -549,6 +549,10 @@ stage_atomic_source_runtime() {
   log "Staging complete standalone/static/public runtime at ${ATOMIC_RUNTIME_STAGE}"
   sudo -n mkdir -p -- "$ATOMIC_RUNTIME_STAGE"
   sudo -n rsync -a --delete "${source_runtime}/" "${ATOMIC_RUNTIME_STAGE}/"
+  # The deploy process runs with umask 077, while systemd starts the runtime as
+  # www-data. Keep the immutable bytes unchanged, but make directories
+  # traversable and files readable before the stage becomes the stable target.
+  sudo -n chmod -R a+rX -- "$ATOMIC_RUNTIME_STAGE"
   [[ -f "${ATOMIC_RUNTIME_STAGE}/web/server.js" ]] \
     || die "Staged standalone runtime is missing server.js"
   [[ -d "${ATOMIC_RUNTIME_STAGE}/web/.next/server" ]] \

@@ -178,6 +178,7 @@ describe('GO V2 pilot release integration source contract', () => {
     expect(generic).not.toMatch(/sudo\s+-n\s+(?:env\s+)?(?:npm|node|bash\s+-lc)\b/);
     expect(generic).toContain('sudo -n systemctl stop "$SERVICE_NAME"');
     expect(generic).toContain('sudo -n rsync -a --delete "${source_runtime}/"');
+    expect(generic).toContain('sudo -n chmod -R a+rX -- "$ATOMIC_RUNTIME_STAGE"');
     expect(generic).toContain('validate_privileged_deploy_targets');
     expect(generic).toContain('Privileged runtime target must be a concrete directory below /var/www');
     expect(pilot).toContain('safe_remove_release_workspace');
