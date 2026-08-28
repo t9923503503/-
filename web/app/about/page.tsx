@@ -1,19 +1,25 @@
 import Link from 'next/link';
-import TournamentGallery from '@/components/landing/TournamentGallery';
+import { Suspense } from 'react';
+import TournamentGalleryServer from '@/components/landing/TournamentGalleryServer';
+import TournamentGallerySkeleton from '@/components/landing/TournamentGallerySkeleton';
 import { OrganizationSchema } from '@/components/seo/SchemaOrg';
 
 export const metadata = {
   title: 'О нас — Лютые пляжники | LPVOLLEY.RU',
   description:
-    'Сообщество любителей пляжного волейбола в Сургуте. Игры, тренировки, турниры. Площадка «Малибу».',
+    'LPVOLLEY систематизирует игры и турниры по пляжному волейболу в Сургуте: результаты, статистику и историю игроков.',
 };
+
+// The VK token is supplied at runtime on the self-hosted server, so this route
+// must not freeze the local fallback into build-time HTML.
+export const dynamic = 'force-dynamic';
 
 const COMMUNITY_BENEFITS = [
   { icon: '🏐', title: 'Разные уровни', description: 'Турниры для разных уровней подготовки', href: '/pravila' },
   { icon: '🔥', title: 'Форматы', description: 'King of the Court, Thai, миксты и командные игры', href: '/pravila#thai' },
   { icon: '📊', title: 'Рейтинг', description: 'Личный рейтинг и статистика игроков', href: '/rankings' },
-  { icon: '🤝', title: 'Найди пару', description: 'Поиск напарника на турнир или тренировку', href: '/partner' },
-  { icon: '📅', title: 'Календарь', description: 'Удобный календарь ближайших событий', href: '/calendar' },
+  { icon: '📋', title: 'Результаты', description: 'Итоги турниров, история матчей и архив', href: '/archive' },
+  { icon: '📅', title: 'Игры и турниры', description: 'Единое расписание ближайших событий', href: '/calendar' },
   { icon: '📸', title: 'Атмосфера', description: 'Яркие игры, фотографии, призы и крутая атмосфера', href: 'https://vk.ru/albums-231914175' },
 ] as const;
 
@@ -26,7 +32,7 @@ const DIVISIONS = [
 
 export default function AboutPage() {
   return (
-    <div className="bg-surface text-text-primary">
+    <div className="overflow-x-hidden bg-surface text-text-primary">
       <OrganizationSchema />
 
       {/* Hero */}
@@ -49,18 +55,23 @@ export default function AboutPage() {
                 </span>
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/72 md:text-base">
-                Сообщество любителей пляжного волейбола из Сургута. Объединяем новичков, любителей и
-                опытных игроков, проводим регулярные игры, тренировки и турниры разных уровней —
-                от первых матчей на песке до настоящих заруб за чемпионство.
+                «Лютые пляжники» — это больше, чем волейбол. Это уникальный городской бренд и
+                сообщество людей, которые превращают каждую игру в событие, а каждый турнир — в
+                новую историю.
               </p>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-white/72 md:text-base">
-                У нас не нужно быть профессионалом. Главное — желание играть, развиваться, знакомиться
-                с новыми людьми и получать удовольствие от волейбола.
+                «Лютые» собирают игроков разных уровней, задают высокий темп и делают серьёзную
+                борьбу доступной каждому, кто любит песок, команду и азарт.
+              </p>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/72 md:text-base">
+                Здесь можно прийти новичком, сыграть свой первый мини-турнир, вырасти среди сильных
+                соперников и увидеть свой прогресс — в результатах, статистике и рейтинге.
               </p>
               <div className="mt-6 flex flex-wrap gap-2">
                 {[
                   { href: '/calendar', label: 'Календарь' },
-                  { href: '/partner', label: 'Игры и пары' },
+                  { href: '/partner', label: 'Игры' },
+                  { href: '/archive', label: 'Результаты' },
                   { href: '/pravila', label: 'Форматы' },
                 ].map((item) => (
                   <Link
@@ -152,7 +163,9 @@ export default function AboutPage() {
       </section>
 
       {/* Gallery */}
-      <TournamentGallery />
+      <Suspense fallback={<TournamentGallerySkeleton />}>
+        <TournamentGalleryServer />
+      </Suspense>
 
       {/* Location */}
       <section className="px-4 py-6 md:px-6 md:py-8">

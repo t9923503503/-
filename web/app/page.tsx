@@ -1,18 +1,25 @@
 import LandingDesktop from '@/components/landing/LandingDesktop';
-import { fetchHomeStats, fetchLeaderboard, fetchTournaments } from '@/lib/queries';
+import { OrganizationSchema, WebSiteSchema } from '@/components/seo/SchemaOrg';
+import { cookies } from 'next/headers';
+import { PLAYER_COOKIE, verifyPlayerToken } from '@/lib/player-auth';
+import { fetchHomeOverview, fetchHomePersonalSnapshot } from '@/lib/home';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const [stats, topPlayers, tournaments] = await Promise.all([
-    fetchHomeStats(),
-    fetchLeaderboard('M', 3),
-    fetchTournaments(6),
+  const store = await cookies();
+  const token = store.get(PLAYER_COOKIE)?.value;
+  const me = token ? verifyPlayerToken(token) : null;
+  const [overview, personal] = await Promise.all([
+    fetchHomeOverview(me?.id ?? null),
+    me ? fetchHomePersonalSnapshot(me.id) : Promise.resolve(null),
   ]);
 
-  const upcoming = tournaments.filter(
-    (tournament) => tournament.status === 'open' || tournament.status === 'full'
+  return (
+    <>
+      <OrganizationSchema />
+      <WebSiteSchema />
+      <LandingDesktop overview={overview} personal={personal} />
+    </>
   );
-
-  return <LandingDesktop stats={stats} topPlayers={topPlayers} tournaments={upcoming} />;
 }

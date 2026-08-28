@@ -9,6 +9,7 @@ import { ThaiUnifiedResultsTable } from '@/components/thai-live/ThaiUnifiedResul
 import { buildThaiUnifiedResults } from '@/lib/thai-live/unified-results';
 import MetrikaExternalLink from '@/components/analytics/MetrikaExternalLink';
 import { METRIKA_GOALS } from '@/lib/metrika-goals';
+import type { TournamentGalleryImage } from '@/lib/tournament-media';
 
 interface Props {
   tournament: Tournament;
@@ -16,6 +17,8 @@ interface Props {
   related: Tournament[];
   thaiBoard?: ThaiSpectatorBoardPayload | null;
   heroPhotoUrl?: string | null;
+  coverPhotoUrl?: string | null;
+  galleryImages?: TournamentGalleryImage[];
 }
 
 interface FinishedPoolRow {
@@ -285,18 +288,40 @@ export default function FinishedTournamentPage({
   related,
   thaiBoard = null,
   heroPhotoUrl = null,
+  coverPhotoUrl = null,
+  galleryImages: storedGalleryImages = [],
 }: Props) {
   const { id, name, date, time, location, format, division, level, participantCount, photoUrl } =
     tournament;
   const editorial = getFinishedTournamentEditorial(id);
   const previewPhotoUrl = heroPhotoUrl || photoUrl || null;
-  const photoLinkUrl = photoUrl || heroPhotoUrl || null;
-  const galleryImages = FINISHED_TOURNAMENT_GALLERIES[id] ?? [];
-  const photoActionLabel =
-    photoUrl && heroPhotoUrl && photoUrl !== heroPhotoUrl ? 'Открыть фотоотчёт' : 'Открыть фото';
+  const legacyGalleryImages = (FINISHED_TOURNAMENT_GALLERIES[id] ?? []).map((image) => ({
+    ...image,
+    thumbnailSrc: image.src,
+  }));
+  const galleryImages = storedGalleryImages.length > 0
+    ? storedGalleryImages.map((image) => ({
+        src: image.imageUrl,
+        thumbnailSrc: image.thumbnailUrl,
+        caption: image.caption,
+      }))
+    : legacyGalleryImages;
+  const galleryWithCover = coverPhotoUrl
+    ? [
+        {
+          src: coverPhotoUrl,
+          thumbnailSrc: coverPhotoUrl,
+          caption: 'Общее фото турнира',
+        },
+        ...galleryImages.filter((image) => image.src !== coverPhotoUrl),
+      ]
+    : galleryImages;
+  const hasPhotoContent = Boolean(previewPhotoUrl || galleryWithCover.length > 0);
+  const photoActionHref = photoUrl || (hasPhotoContent ? '#photos' : null);
+  const photoActionLabel = photoUrl ? 'Открыть полный фотоальбом' : 'Смотреть фото';
   const hasThaiHighlights = Boolean(thaiBoard?.funStats);
-  const primaryAnchor = editorial ? '#editorial' : hasThaiHighlights ? '#thai-highlights' : '#results';
-  const resultsActionLabel = editorial
+  let primaryAnchor = editorial ? '#editorial' : hasThaiHighlights ? '#thai-highlights' : '#results';
+  let resultsActionLabel = editorial
     ? 'Места и рейтинг'
     : hasThaiHighlights
       ? '🏆 Герои и результаты турнира'
@@ -340,19 +365,32 @@ export default function FinishedTournamentPage({
       ? Math.max(...results.map((row) => row.ratingPts))
       : 0;
   const resultCount = thaiUnifiedResults?.players.length ?? results.length;
+  const hasResultContent = Boolean(editorial || hasThaiHighlights || resultCount > 0);
+  if (!hasResultContent) {
+    primaryAnchor = '#pending-results';
+    resultsActionLabel = 'Результаты готовятся';
+  }
   const editorialPlayerIds = buildEditorialPlayerIdMap(results);
 
   const nextTournament = related.find((item) => item.status === 'open' || item.status === 'full') ?? null;
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <nav aria-label="Навигация" className="anim-fade-up mb-5">
+      <nav aria-label="Навигация" className="anim-fade-up mb-5 flex flex-wrap items-center justify-between gap-3">
         <Link
           href="/calendar"
           className="inline-flex items-center gap-1 text-sm font-body text-text-secondary transition-colors hover:text-brand"
         >
           <span className="text-base leading-none">&lsaquo;</span> Календарь
         </Link>
+        {tournament.goEngineVersion === 2 ? (
+          <Link
+            href={`/calendar/${encodeURIComponent(tournament.id)}/live`}
+            className="inline-flex min-h-10 items-center rounded-xl border border-emerald-400/35 bg-emerald-500/10 px-4 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20"
+          >
+            Архив сеток и матчей →
+          </Link>
+        ) : null}
       </nav>
 
       <div className="hero-poster relative overflow-hidden rounded-2xl px-6 py-14 md:py-20 min-h-[420px] flex flex-col justify-end anim-fade-up anim-delay-1">
@@ -440,11 +478,10 @@ export default function FinishedTournamentPage({
               {resultsActionLabel}
             </a>
 
-            {photoLinkUrl ? (
+            {photoActionHref ? (
               <a
-                href={photoLinkUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={photoActionHref}
+                {...(photoUrl ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
                 className="btn-action-outline flex items-center justify-center gap-2"
                 aria-label="Открыть фото турнира"
               >
@@ -596,8 +633,8 @@ export default function FinishedTournamentPage({
         </section>
       ) : null}
 
-      {previewPhotoUrl || galleryImages.length > 0 ? (
-        <section aria-label="Фото турнира" className="mt-8 anim-fade-up anim-delay-3">
+      {previewPhotoUrl || galleryWithCover.length > 0 ? (
+        <section id="photos" aria-label="Фото турнира" className="mt-8 scroll-mt-24 anim-fade-up anim-delay-3">
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="text-[11px] font-body uppercase tracking-[0.24em] text-brand/90">
@@ -607,9 +644,9 @@ export default function FinishedTournamentPage({
                 Атмосфера площадки
               </h2>
             </div>
-            {photoLinkUrl ? (
+            {photoUrl ? (
               <a
-                href={photoLinkUrl}
+                href={photoUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn-action-outline inline-flex items-center justify-center gap-2"
@@ -619,10 +656,11 @@ export default function FinishedTournamentPage({
             ) : null}
           </div>
 
-          {galleryImages.length > 0 ? (
+          {galleryWithCover.length > 0 ? (
             <FinishedTournamentGallery
-              images={galleryImages.map((image, index) => ({
+              images={galleryWithCover.map((image, index) => ({
                 src: image.src,
+                thumbnailSrc: image.thumbnailSrc,
                 alt: `Атмосфера площадки ${index + 1} · ${name}`,
                 caption: image.caption,
               }))}
@@ -696,6 +734,15 @@ export default function FinishedTournamentPage({
             </Link>
           </div>
           <ThaiSpectatorFunStats stats={thaiBoard.funStats} />
+        </section>
+      ) : null}
+
+      {!hasResultContent ? (
+        <section id="pending-results" className="mt-10 scroll-mt-24 rounded-2xl border border-amber-300/20 bg-amber-300/5 p-6 text-center anim-fade-up anim-delay-3">
+          <h2 className="font-heading text-2xl tracking-wide text-amber-100">Итоги проверяются</h2>
+          <p className="mt-2 text-sm font-body text-text-secondary">
+            Турнир завершён, но организатор ещё не опубликовал подтверждённую итоговую таблицу.
+          </p>
         </section>
       ) : null}
 

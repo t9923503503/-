@@ -1,9 +1,11 @@
 import Link from 'next/link';
+import { TournamentOpenLink } from '@/components/analytics/TournamentMetrikaTracker';
 import type { Tournament } from '@/lib/types';
 import { isThaiAdminFormat } from '@/lib/admin-legacy-sync';
 import {
   fallbackPosterForTournament,
   isLikelyHostedPlayerOrVkPhoto,
+  localPosterForTournamentId,
 } from '@/lib/tournament-poster';
 import { buildThaiSpectatorBoardUrl } from '@/lib/tournament-links';
 
@@ -14,6 +16,8 @@ interface TournamentCardProps {
 const statusLabels: Record<Tournament['status'], string> = {
   open: 'Открыта запись',
   full: 'Заполнен',
+  in_progress: 'Идёт турнир',
+  awaiting_results: 'Результаты готовятся',
   finished: 'Завершён',
   cancelled: 'Отменён',
 };
@@ -21,6 +25,8 @@ const statusLabels: Record<Tournament['status'], string> = {
 const statusStyles: Record<Tournament['status'], string> = {
   open: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
   full: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+  in_progress: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+  awaiting_results: 'bg-amber-500/15 text-amber-200 border-amber-500/35',
   finished: 'bg-white/10 text-text-primary/70 border-white/10',
   cancelled: 'bg-red-500/20 text-red-300 border-red-500/40',
 };
@@ -93,6 +99,7 @@ export default function TournamentCard({ tournament }: TournamentCardProps) {
   const href = `/calendar/${tournament.id}`;
   const isOpen = tournament.status === 'open';
   const isFull = tournament.status === 'full';
+  const isAwaitingResults = tournament.status === 'awaiting_results' || tournament.status === 'in_progress';
   const isFinished = tournament.status === 'finished';
   const fillPercent = tournament.capacity > 0
     ? Math.min(100, Math.round((tournament.participantCount / tournament.capacity) * 100))
@@ -106,9 +113,11 @@ export default function TournamentCard({ tournament }: TournamentCardProps) {
   const division = tournament.division || '';
 
   const albumUrl = String(tournament.photoUrl || '').trim();
-  const posterSrc = isLikelyHostedPlayerOrVkPhoto(albumUrl)
+  const coverPhotoUrl = String(tournament.coverPhotoUrl || '').trim();
+  const localPosterSrc = localPosterForTournamentId(tournament.id);
+  const posterSrc = coverPhotoUrl || localPosterSrc || (isLikelyHostedPlayerOrVkPhoto(albumUrl)
     ? albumUrl
-    : fallbackPosterForTournament(tournament);
+    : fallbackPosterForTournament(tournament));
   const showAlbumLink = Boolean(albumUrl) && !isLikelyHostedPlayerOrVkPhoto(albumUrl);
 
   return (
@@ -272,23 +281,27 @@ export default function TournamentCard({ tournament }: TournamentCardProps) {
           )}
 
           {/* View results for finished */}
-          {isFinished && (
+          {(isFinished || isAwaitingResults) && (
             <div className="mt-5">
               <span className="inline-flex items-center justify-center w-full px-6 py-3 rounded-xl border border-white/15 text-text-primary/80 font-body text-sm group-hover:border-brand/40 group-hover:text-brand transition-colors">
-                Результаты турнира →
+                {isAwaitingResults ? 'Результаты готовятся' : 'Результаты турнира →'}
               </span>
             </div>
           )}
         </div>
 
         {/* Overlay link to make the whole card clickable without nesting anchors */}
-        <Link
+        <TournamentOpenLink
           href={href}
-          aria-label={`Открыть турнир: ${tournament.name}`}
+          ariaLabel={`Открыть турнир: ${tournament.name}`}
           className="absolute inset-0 z-10"
+          tournamentId={tournament.id}
+          format={tournament.format}
+          division={tournament.division}
+          status={tournament.status}
         >
           <span className="sr-only">Открыть турнир</span>
-        </Link>
+        </TournamentOpenLink>
 
         {isFinished && isThaiAdminFormat(tournament.format) ? (
           <div className="relative z-20 border-t border-white/10 bg-surface px-6 py-3">

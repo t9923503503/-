@@ -20,12 +20,12 @@ describe('rating-points', () => {
   });
 
   it('keeps row-level tables for hard/advance/medium/lite', () => {
-    expect(RATING_LEVEL_TABLES.hard).toEqual([100, 90, 82, 76]);
-    expect(RATING_LEVEL_TABLES.advance).toEqual([70, 65, 60, 56, 52]);
-    expect(RATING_LEVEL_TABLES.medium).toEqual([48, 44, 42, 40]);
-    expect(RATING_LEVEL_TABLES.lite).toEqual([38, 36, 34, 32]);
-    expect(pointsForLevelPlace(1, 'medium')).toBe(48);
-    expect(pointsForLevelPlace(2, 'lite')).toBe(36);
+    expect(RATING_LEVEL_TABLES.hard).toEqual([100, 90, 82, 76, 70]);
+    expect(RATING_LEVEL_TABLES.advance).toEqual([65, 60, 56, 52, 48]);
+    expect(RATING_LEVEL_TABLES.medium).toEqual([44, 42, 40, 38, 36]);
+    expect(RATING_LEVEL_TABLES.lite).toEqual([34, 32, 30, 28, 26]);
+    expect(pointsForLevelPlace(1, 'medium')).toBe(44);
+    expect(pointsForLevelPlace(2, 'lite')).toBe(32);
   });
 
   it('novice gets half rounded', () => {
@@ -33,8 +33,8 @@ describe('rating-points', () => {
     expect(ratingPointsForPlace(1, 'novice')).toBe(50);
     expect(ratingPointsForPlace(2, 'novice')).toBe(45);
     expect(ratingPointsForPlace(3, 'novice')).toBe(41);
-    expect(ratingPointsForLevelPlace(1, 'medium', 'novice')).toBe(24);
-    expect(ratingPointsForLevelPlace(1, 'lite', 'novice')).toBe(19);
+    expect(ratingPointsForLevelPlace(1, 'medium', 'novice')).toBe(22);
+    expect(ratingPointsForLevelPlace(1, 'lite', 'novice')).toBe(17);
   });
 
   it('table length is 40', () => {
@@ -50,8 +50,9 @@ describe('rating-points', () => {
     expect(effectiveRatingPtsFromStored(1, 'pro', 0)).toBe(100);
     expect(effectiveRatingPtsFromStored(1, 'pro', null)).toBe(100);
     expect(effectiveRatingPtsFromStored(2, 'novice', undefined)).toBe(45);
-    expect(effectiveRatingPtsFromStored(1, 'pro', undefined, 'medium')).toBe(48);
-    expect(effectiveRatingPtsFromStored(2, 'novice', undefined, 'lite')).toBe(18);
+    expect(effectiveRatingPtsFromStored(1, 'pro', undefined, 'medium')).toBe(44);
+    expect(effectiveRatingPtsFromStored(2, 'novice', undefined, 'lite')).toBe(16);
+    expect(effectiveRatingPtsFromStored(1, 'pro', 77, 'hard', true)).toBe(0);
   });
 
   it('normalizes tournament level aliases', () => {
@@ -64,6 +65,7 @@ describe('rating-points', () => {
     const sql = sqlEffectiveRatingPointsExpr('tr');
 
     expect(sql).toContain("COALESCE(tr.rating_pts, 0) > 0");
+    expect(sql).toContain('COALESCE(tr.rating_excluded, false)');
     expect(sql).toContain('THEN tr.rating_pts');
     expect(sql).toContain("COALESCE(tr.rating_pool, 'pro') = 'novice'");
   });

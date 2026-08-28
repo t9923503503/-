@@ -85,4 +85,22 @@ describe('archive-results helpers', () => {
 
     expect(rows.map((row) => row.placement)).toEqual([1, 2, 3]);
   });
+
+  it('preserves identity, match stats and explicit rating exclusion while sanitizing', () => {
+    expect(sanitizeArchiveRow({
+      playerId: 'player-1',
+      playerName: 'Игрок',
+      placement: 1,
+      wins: '3',
+      diff: '-2',
+      balls: '42',
+      ratingExcluded: true,
+    })).toMatchObject({
+      playerId: 'player-1',
+      wins: 3,
+      diff: -2,
+      balls: 42,
+      ratingExcluded: true,
+    });
+  });
 });

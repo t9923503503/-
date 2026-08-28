@@ -7,13 +7,18 @@ import {
 } from './rating-points';
 
 export type ArchiveResultRow = {
+  playerId?: string;
   playerName: string;
   gender: 'M' | 'W';
   placement: number;
   points: number;
+  wins?: number;
+  diff?: number;
+  balls?: number;
   ratingPool: RatingPool;
   ratingLevel: TournamentRatingLevel;
   ratingPts?: number;
+  ratingExcluded?: boolean;
 };
 
 export type ArchiveValidationResult = {
@@ -102,7 +107,7 @@ export function sanitizeArchiveRow(
   raw: Record<string, unknown>,
   fallbackLevel: TournamentRatingLevel = 'hard',
 ): ArchiveResultRow {
-  return {
+  const row: ArchiveResultRow = {
     playerName: String(raw.playerName ?? raw.player_name ?? '').trim(),
     gender: normalizeArchiveGender(raw.gender),
     placement: normalizeArchivePlacement(raw.placement),
@@ -111,6 +116,15 @@ export function sanitizeArchiveRow(
     ratingLevel: normalizeTournamentRatingLevel(String(raw.ratingLevel ?? raw.rating_level ?? fallbackLevel)),
     ratingPts: normalizeArchiveRatingPts(raw.ratingPts ?? raw.rating_pts),
   };
+  const playerId = String(raw.playerId ?? raw.player_id ?? '').trim();
+  if (playerId) row.playerId = playerId;
+  if ('wins' in raw) row.wins = normalizeArchivePoints(raw.wins);
+  if ('diff' in raw) row.diff = Number.isFinite(Number(raw.diff)) ? Math.trunc(Number(raw.diff)) : 0;
+  if ('balls' in raw) row.balls = normalizeArchivePoints(raw.balls);
+  if ('ratingExcluded' in raw || 'rating_excluded' in raw) {
+    row.ratingExcluded = Boolean(raw.ratingExcluded ?? raw.rating_excluded);
+  }
+  return row;
 }
 
 export function sanitizeArchiveRows(

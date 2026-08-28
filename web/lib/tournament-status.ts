@@ -50,8 +50,12 @@ export function resolveTournamentStatus(
   const baseStatus = String(tournament.status || 'open').toLowerCase();
 
   if (baseStatus === 'cancelled') return 'cancelled';
+  if (baseStatus === 'in_progress') return 'in_progress';
+  if (baseStatus === 'awaiting_results') return 'awaiting_results';
   if (baseStatus === 'finished') return 'finished';
-  if (isTournamentDayInPast(tournament.date, now)) return 'finished';
+  // A past date needs operator confirmation/results sync; it is not proof
+  // that verified results have been published.
+  if (isTournamentDayInPast(tournament.date, now)) return 'awaiting_results';
 
   return hasTournamentAvailableSpots(tournament) ? 'open' : 'full';
 }
@@ -70,7 +74,11 @@ export function enrichTournamentRuntimeState<T extends TournamentStatusLike>(
   return {
     ...tournament,
     status,
-    registrationClosed: status === 'finished' || status === 'cancelled',
+    registrationClosed:
+      status === 'in_progress' ||
+      status === 'awaiting_results' ||
+      status === 'finished' ||
+      status === 'cancelled',
     spotsLeft,
   };
 }

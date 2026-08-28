@@ -40,6 +40,7 @@ describe('Thai judge v2 source contract', () => {
 
   it('keeps court confirm semantics while wrapping them in a tournament shell with round and court tabs', () => {
     const workspace = read('web/components/thai-live/ThaiJudgeWorkspace.tsx');
+    const standingsTable = read('web/components/thai-live/ThaiStandingsTable.tsx');
     const tournamentWorkspace = read('web/components/thai-live/ThaiTournamentJudgeWorkspace.tsx');
     const service = read('web/lib/thai-live/service.ts');
     const types = read('web/lib/thai-live/types.ts');
@@ -77,7 +78,7 @@ describe('Thai judge v2 source contract', () => {
     expect(workspace).toContain('resolveJudgeHeadline(snapshot)');
     expect(workspace).toContain('resolveJudgeSlotPair(snapshot)');
     expect(workspace).toContain('canAutoRefreshToNextStage');
-    expect(workspace).toContain('formatStandingDelta');
+    expect(standingsTable).toContain('formatStandingDelta');
 
     expect(tournamentWorkspace).toContain('/api/thai/judge/tournament/');
     expect(tournamentWorkspace).toContain('ThaiJudgeWorkspace');
@@ -132,7 +133,7 @@ describe('Thai judge v2 source contract', () => {
     const bootstrap = read('web/lib/sudyam-bootstrap.ts');
     const workspace = read('web/components/sudyam/SudyamFormatWorkspace.tsx');
     const operatorPanel = read('web/components/thai-live/ThaiOperatorPanel.tsx');
-    const adminPage = read('web/app/admin/tournaments/page.tsx');
+    const tournamentWizard = read('web/components/admin/tournaments/TournamentWizard.tsx');
     const cabinetPage = read('web/app/cabinet/page.tsx');
     const courtEntry = read('web/app/court/page.tsx');
 
@@ -141,13 +142,13 @@ describe('Thai judge v2 source contract', () => {
     expect(bootstrap).toContain('thaiJudgeBlockedReason');
     expect(workspace).toContain('ThaiOperatorPanel');
     expect(operatorPanel).toContain('buildThaiTournamentJudgeUrl');
-    expect(operatorPanel).toContain('This tournament has no materialized Thai Next state yet.');
+    expect(operatorPanel).toContain('У турнира еще нет подготовленного состояния Thai Next.');
     expect(operatorPanel).toContain("const isManualRosterMode = rosterMode === 'manual';");
     expect(operatorPanel).toContain("onClick={() => bootstrap.onConfirmPreview()}");
     expect(operatorPanel).toContain('Запустить R1');
-    expect(adminPage).toContain('thaiRosterMode');
-    expect(adminPage).toContain('Состав R1:');
-    expect(adminPage).toContain('Вручную');
+    expect(tournamentWizard).toContain('thaiRosterMode');
+    expect(tournamentWizard).toContain('Состав первого раунда');
+    expect(tournamentWizard).toContain('Вручную');
     expect(cabinetPage).toContain('summary.judgeApproved');
     expect(cabinetPage).toContain('href="/court"');
     expect(courtEntry).toContain('fetchActiveThaiJudgeTournaments');

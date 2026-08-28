@@ -1,9 +1,6 @@
 import Link from 'next/link';
 import type { Tournament } from '@/lib/types';
-import {
-  buildTournamentEventKey,
-  sortTournamentGroupsForCalendar,
-} from '@/lib/calendar';
+import { buildTournamentEventKey, sortTournamentGroupsForCalendar } from '@/lib/calendar';
 import {
   fallbackPosterForTournament,
   isLikelyHostedPlayerOrVkPhoto,
@@ -19,12 +16,13 @@ export interface TournamentGroup {
   format: string;
   status: Tournament['status'];
   photoUrl: string;
+  coverPhotoUrl: string;
   prize: string;
   totalCapacity: number;
   totalParticipants: number;
   totalWaitlist: number;
   partnerRequestCount: number;
-  categories: {
+  categories: Array<{
     id: string;
     level: string;
     division: string;
@@ -33,115 +31,83 @@ export interface TournamentGroup {
     waitlistCount: number;
     partnerRequestCount: number;
     name: string;
-  }[];
+  }>;
 }
 
-const levelOrder: Record<string, number> = {
-  hard: 0,
-  advance: 0,
-  medium: 1,
-  easy: 2,
-};
-
-const levelLabels: Record<string, string> = {
-  hard: 'HARD',
-  advance: 'ADVANCE',
-  medium: 'MEDIUM',
-  easy: 'LITE',
-};
-
-const levelColors: Record<string, string> = {
-  hard: 'bg-red-500/20 text-red-300 border-red-500/40',
-  advance: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-  medium: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-  easy: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-};
-
 const statusLabels: Record<Tournament['status'], string> = {
-  open: 'Открыта запись',
-  full: 'Основной состав заполнен',
-  finished: 'Турнир завершен',
-  cancelled: 'Турнир отменен',
+  open: 'Запись открыта',
+  full: 'Лист ожидания',
+  in_progress: 'Идёт турнир',
+  awaiting_results: 'Результаты готовятся',
+  finished: 'Завершён',
+  cancelled: 'Отменён',
 };
 
 const statusStyles: Record<Tournament['status'], string> = {
-  open: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-  full: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-  finished: 'bg-white/10 text-text-primary/70 border-white/10',
-  cancelled: 'bg-red-500/20 text-red-300 border-red-500/40',
+  open: 'border-emerald-400/35 bg-emerald-400/15 text-emerald-300',
+  full: 'border-amber-400/35 bg-amber-400/15 text-amber-200',
+  in_progress: 'border-sky-400/35 bg-sky-400/15 text-sky-200',
+  awaiting_results: 'border-amber-400/35 bg-amber-400/10 text-amber-200',
+  finished: 'border-white/10 bg-black/30 text-white/60',
+  cancelled: 'border-red-400/35 bg-red-400/15 text-red-200',
 };
 
-const formatDescriptions: Record<string, { tagline: string; features: string[] }> = {
-  'King of the Court': {
-    tagline: 'Займи трон или стой в очереди на атаку.',
-    features: [
-      'Сторона короля приносит очки',
-      'Сторона претендента выбивает лидеров',
-      'Динамичные короткие раунды с постоянной ротацией',
-    ],
-  },
-  'Round Robin': {
-    tagline: 'Каждый сам за себя, но партнеры постоянно меняются.',
-    features: [
-      'Много коротких игр без долгих пауз',
-      'Несколько туров с разными напарниками',
-      'Отдельный победитель в каждой категории',
-    ],
-  },
-  'IPT Mixed': {
-    tagline: 'Пара на весь турнир и плотная борьба до конца.',
-    features: [
-      'Фиксированная связка на весь турнир',
-      'Микстовый формат: мужчина + женщина',
-      'Максимум сыгранности и тактики',
-    ],
-  },
+const levelLabels: Record<string, string> = {
+  hard: 'Сильный',
+  advance: 'Продвинутый',
+  medium: 'Средний',
+  easy: 'Лёгкий',
 };
 
-function formatDate(dateStr: string): string {
-  if (!dateStr) return '';
+function cleanFormat(value: string): string {
+  if (/thai/i.test(value)) return 'Тайский формат';
+  return value;
+}
 
-  try {
-    const date = new Date(`${dateStr}T00:00:00`);
-    return new Intl.DateTimeFormat('ru-RU', {
-      day: 'numeric',
-      month: 'long',
-      weekday: 'short',
-    }).format(date);
-  } catch {
-    return dateStr;
-  }
+function cleanLocation(value: string): string {
+  return value
+    .replace(/МАЛИБУ/giu, 'Малибу')
+    .replace(/сити\s*молл/giu, 'Сити Молл')
+    .trim();
+}
+
+function formatDate(dateStr: string) {
+  if (!dateStr) return { day: '—', month: 'Дата уточняется', full: '' };
+  const date = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return { day: dateStr, month: '', full: dateStr };
+  return {
+    day: new Intl.DateTimeFormat('ru-RU', { day: '2-digit' }).format(date),
+    month: new Intl.DateTimeFormat('ru-RU', { month: 'short' }).format(date).replace('.', ''),
+    full: new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).format(date),
+  };
+}
+
+function displayName(group: TournamentGroup): string {
+  const cleaned = group.baseName
+    .replace(/\s*[·|]\s*\d{4}-\d{2}-\d{2}\s*$/u, '')
+    .replace(/^THAI\s*[·|:-]?\s*/iu, '')
+    .trim();
+  if (cleaned && !/^\d+$/u.test(cleaned)) return cleaned;
+  return `${cleanFormat(group.format)}${group.categories[0]?.division ? ` · ${group.categories[0].division}` : ''}`;
 }
 
 export function groupTournaments(tournaments: Tournament[]): TournamentGroup[] {
   const grouped = new Map<string, Tournament[]>();
-
   for (const tournament of tournaments) {
     const key = buildTournamentEventKey(tournament);
-    const list = grouped.get(key) ?? [];
-    list.push(tournament);
-    grouped.set(key, list);
+    grouped.set(key, [...(grouped.get(key) ?? []), tournament]);
   }
 
-  const groups: TournamentGroup[] = [];
-
-  for (const [key, items] of grouped) {
-    items.sort((a, b) => {
-      const aLevel = levelOrder[a.level?.toLowerCase()] ?? 9;
-      const bLevel = levelOrder[b.level?.toLowerCase()] ?? 9;
-      if (aLevel !== bLevel) return aLevel - bLevel;
-      return (a.division ?? '').localeCompare(b.division ?? '', 'ru');
-    });
-
+  const groups = Array.from(grouped, ([key, items]) => {
     const first = items[0];
-    const photo = items.find((item) => item.photoUrl)?.photoUrl ?? '';
-    const prize = items.find((item) => item.prize)?.prize ?? '';
-
     let status: Tournament['status'] = 'finished';
     if (items.some((item) => item.status === 'open')) status = 'open';
     else if (items.some((item) => item.status === 'full')) status = 'full';
+    else if (items.some((item) => item.status === 'in_progress')) status = 'in_progress';
+    else if (items.some((item) => item.status === 'awaiting_results')) status = 'awaiting_results';
+    else if (items.some((item) => item.status === 'cancelled')) status = 'cancelled';
 
-    groups.push({
+    return {
       key,
       baseName: items.length === 1 ? first.name : first.format || first.name,
       date: first.date,
@@ -149,15 +115,13 @@ export function groupTournaments(tournaments: Tournament[]): TournamentGroup[] {
       location: first.location,
       format: first.format,
       status,
-      photoUrl: photo,
-      prize,
+      photoUrl: items.find((item) => item.photoUrl)?.photoUrl ?? '',
+      coverPhotoUrl: items.find((item) => item.coverPhotoUrl)?.coverPhotoUrl ?? '',
+      prize: items.find((item) => item.prize)?.prize ?? '',
       totalCapacity: items.reduce((sum, item) => sum + item.capacity, 0),
       totalParticipants: items.reduce((sum, item) => sum + item.participantCount, 0),
       totalWaitlist: items.reduce((sum, item) => sum + Number(item.waitlistCount ?? 0), 0),
-      partnerRequestCount: items.reduce(
-        (sum, item) => sum + Number(item.partnerRequestCount ?? 0),
-        0
-      ),
+      partnerRequestCount: items.reduce((sum, item) => sum + Number(item.partnerRequestCount ?? 0), 0),
       categories: items.map((item) => ({
         id: item.id,
         level: item.level?.toLowerCase() ?? '',
@@ -168,282 +132,126 @@ export function groupTournaments(tournaments: Tournament[]): TournamentGroup[] {
         partnerRequestCount: Number(item.partnerRequestCount ?? 0),
         name: item.name,
       })),
-    });
-  }
+    } satisfies TournamentGroup;
+  });
 
   return sortTournamentGroupsForCalendar(groups);
 }
 
-export default function EventCard({ group }: { group: TournamentGroup }) {
-  const isOpen = group.status === 'open';
-  const isFull = group.status === 'full';
-  const isFinished = group.status === 'finished';
-  const formatInfo = formatDescriptions[group.format] ?? null;
-
-  const albumUrl = String(group.photoUrl || '').trim();
-  const localPosterSrc =
-    group.categories.map((category) => localPosterForTournamentId(category.id)).find(Boolean) ?? '';
-  const posterSrc = localPosterSrc || (isLikelyHostedPlayerOrVkPhoto(albumUrl)
-    ? albumUrl
+export default function EventCard({ group, compact = false }: { group: TournamentGroup; compact?: boolean }) {
+  const date = formatDate(group.date);
+  const singleHref = group.categories.length === 1 ? `/calendar/${group.categories[0].id}` : null;
+  const localPoster = group.categories.map((item) => localPosterForTournamentId(item.id)).find(Boolean) ?? '';
+  const poster = group.coverPhotoUrl || localPoster || (isLikelyHostedPlayerOrVkPhoto(group.photoUrl)
+    ? group.photoUrl
     : fallbackPosterForTournament({ format: group.format || group.baseName }));
-  const hasEditorialPoster = Boolean(localPosterSrc);
-  const showAlbumLink = Boolean(albumUrl) && !isLikelyHostedPlayerOrVkPhoto(albumUrl);
-  const fillPercent =
-    group.totalCapacity > 0
-      ? Math.min(100, Math.round((group.totalParticipants / group.totalCapacity) * 100))
-      : 0;
-  const spotsLeft =
-    group.totalCapacity > 0
-      ? Math.max(0, group.totalCapacity - group.totalParticipants)
-      : null;
-  const uniqueDivisions = [
-    ...new Set(group.categories.map((category) => category.division).filter(Boolean)),
-  ];
-  const singleLink =
-    group.categories.length === 1 ? `/calendar/${group.categories[0].id}` : null;
+  const spots = Math.max(0, group.totalCapacity - group.totalParticipants);
+  const fill = group.totalCapacity ? Math.min(100, Math.round(group.totalParticipants / group.totalCapacity * 100)) : 0;
+  const divisions = [...new Set(group.categories.map((item) => item.division).filter(Boolean))];
+  const levels = [...new Set(group.categories.map((item) => levelLabels[item.level] || item.level).filter(Boolean))];
+
+  if (compact) {
+    return (
+      <article className="group relative grid grid-cols-[64px_1fr_auto] items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.035] p-3 transition hover:border-white/20 hover:bg-white/[0.06] max-sm:grid-cols-[56px_1fr]">
+        <div className="rounded-xl bg-white/[0.06] py-2 text-center">
+          <div className="font-heading text-2xl leading-none text-white/85">{date.day}</div>
+          <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-white/40">{date.month}</div>
+        </div>
+        <div className="min-w-0">
+          <h3 className="truncate font-heading text-xl tracking-wide text-white/90">{displayName(group)}</h3>
+          <p className="mt-1 truncate text-xs text-white/45">
+            {[cleanFormat(group.format), divisions.join(' · '), cleanLocation(group.location)].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 max-sm:col-span-2 max-sm:pl-[72px]">
+          {group.photoUrl || group.coverPhotoUrl ? <span className="text-xs text-white/45">Фото</span> : null}
+          <span className="text-sm font-semibold text-white/60 transition group-hover:text-brand">
+            {group.status === 'awaiting_results'
+              ? 'Результаты готовятся'
+              : group.status === 'in_progress'
+                ? 'Турнир идёт'
+                : 'Результаты →'}
+          </span>
+        </div>
+        {singleHref ? <Link href={singleHref} className="absolute inset-0" aria-label={`Открыть ${displayName(group)}`} /> : null}
+      </article>
+    );
+  }
 
   return (
-    <div className="group">
-      <article
-        className={[
-          'relative overflow-hidden rounded-2xl border transition-all duration-300',
-          isOpen
-            ? 'border-brand/40 bg-gradient-to-br from-brand/5 to-transparent hover:border-brand/70 hover:shadow-[0_0_30px_rgba(255,90,0,0.15)]'
-            : isFull
-              ? 'border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-transparent hover:border-amber-500/50'
-              : hasEditorialPoster
-                ? 'border-brand/25 bg-gradient-to-br from-brand/10 via-surface-light/40 to-cyan-500/5 hover:border-brand/45 hover:shadow-[0_0_34px_rgba(255,90,0,0.14)]'
-                : 'border-white/10 bg-surface-light/30 hover:border-white/20',
-        ].join(' ')}
-      >
-        <div className="relative aspect-[2.2/1] w-full overflow-hidden">
-          <img
-            src={posterSrc}
-            alt={group.baseName}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-            loading="lazy"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/55 to-transparent" />
-          {hasEditorialPoster ? (
-            <div className="absolute left-4 top-4 rounded-full border border-brand/35 bg-black/45 px-3 py-1.5 text-xs font-body font-semibold text-brand-light backdrop-blur-sm">
-              {'\u0424\u043e\u0442\u043e\u043e\u0442\u0447\u0451\u0442'}
-            </div>
-          ) : null}
-          <span
-            className={[
-              'absolute right-4 top-4 rounded-full border px-3 py-1.5 text-xs font-body font-semibold backdrop-blur-sm',
-              statusStyles[group.status],
-            ].join(' ')}
-          >
-            {statusLabels[group.status]}
-          </span>
-          {showAlbumLink ? (
-            <a
-              href={albumUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="absolute bottom-4 left-4 z-20 rounded-full border border-white/20 bg-black/30 px-3 py-1.5 text-xs font-body font-semibold text-text-primary/90 backdrop-blur-sm transition-colors hover:border-brand/50 hover:text-brand"
-            >
-              Фото
-            </a>
-          ) : null}
+    <article className="calendar-event-card group relative overflow-hidden rounded-[28px] border border-white/10 bg-[#121212] shadow-[0_24px_80px_rgba(0,0,0,.2)] transition hover:-translate-y-0.5 hover:border-brand/35">
+      <div className="grid min-h-[300px] md:grid-cols-[250px_1fr]">
+        <div className="relative min-h-[210px] overflow-hidden">
+          <img src={poster} alt="" className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-105" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-black/5 md:bg-gradient-to-r" />
+          <div className="absolute left-5 top-5 rounded-2xl border border-white/15 bg-black/50 px-4 py-3 text-center backdrop-blur-md">
+            <div className="font-heading text-5xl leading-none text-white">{date.day}</div>
+            <div className="mt-1 text-xs font-bold uppercase tracking-[.2em] text-brand">{date.month}</div>
+          </div>
         </div>
 
-        <div className="relative z-0 p-6">
-          <h3 className="font-heading text-3xl leading-tight tracking-wide text-text-primary transition-colors group-hover:text-brand md:text-4xl">
-            {group.baseName}
-          </h3>
-
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-body">
-            {group.date ? (
-              <span className="inline-flex items-center gap-1.5 font-semibold text-brand">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                {formatDate(group.date)}
+        <div className="flex flex-col p-6 md:p-8">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusStyles[group.status]}`}>
+                {statusLabels[group.status]}
               </span>
-            ) : null}
-            {group.time ? (
-              <span className="inline-flex items-center gap-1.5 text-text-primary/80">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M12 6v6l4 2" />
-                </svg>
-                {group.time.slice(0, 5)}
-              </span>
-            ) : null}
-            {group.location ? (
-              <span className="inline-flex items-center gap-1.5 text-text-primary/80">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                {group.location}
-              </span>
-            ) : null}
-          </div>
-
-          {uniqueDivisions.length > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {uniqueDivisions.map((division) => (
-                <span
-                  key={division}
-                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs font-body text-text-primary/80"
-                >
-                  {division}
-                </span>
-              ))}
-              {group.format ? (
-                <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs font-body text-text-primary/80">
-                  {group.format}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-
-          {spotsLeft != null || group.totalWaitlist > 0 || group.partnerRequestCount > 0 ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {spotsLeft != null && (isOpen || isFull) ? (
-                <span className="rounded-full border border-brand/30 bg-brand/10 px-3 py-1 text-xs font-body font-semibold text-brand-light">
-                  {isOpen ? `Осталось мест: ${spotsLeft}` : 'Доступен лист ожидания'}
-                </span>
-              ) : null}
-              {group.totalWaitlist > 0 ? (
-                <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-body font-semibold text-amber-300">
-                  Лист ожидания: {group.totalWaitlist}
-                </span>
-              ) : null}
-              {group.partnerRequestCount > 0 ? (
-                <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-xs font-body font-semibold text-sky-200">
-                  Ищут пару: {group.partnerRequestCount}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-
-          {formatInfo && (isOpen || isFull) ? (
-            <div className="mt-4 rounded-xl border border-white/5 bg-white/[0.03] p-4">
-              <p className="text-sm font-body font-semibold italic text-brand">
-                {formatInfo.tagline}
+              <h3 className="mt-4 font-heading text-3xl leading-none tracking-wide text-white md:text-4xl">{displayName(group)}</h3>
+              <p className="mt-3 text-sm font-medium capitalize text-white/65">
+                {date.full}{group.time ? ` · ${group.time.slice(0, 5)}` : ''}
               </p>
-              <ul className="mt-2 space-y-1">
-                {formatInfo.features.map((feature) => (
-                  <li
-                    key={feature}
-                    className="flex items-start gap-2 text-xs font-body text-text-primary/70"
-                  >
-                    <span className="mt-0.5 text-brand">&#10003;</span>
-                    {feature}
-                  </li>
-                ))}
-              </ul>
+              {group.location ? <p className="mt-1 text-sm text-white/45">{cleanLocation(group.location)}</p> : null}
             </div>
-          ) : null}
-
-          {group.categories.length > 1 ? (
-            <div className="mt-4">
-              <p className="mb-2 text-xs font-body uppercase tracking-widest text-text-primary/50">
-                Категории
-              </p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {group.categories.map((category) => {
-                  const levelLabel = levelLabels[category.level] ?? category.level;
-                  const levelColor =
-                    levelColors[category.level] ?? 'bg-white/5 text-text-primary/60 border-white/10';
-
-                  return (
-                    <Link
-                      key={category.id}
-                      href={`/calendar/${category.id}`}
-                      className={`flex flex-col items-center rounded-xl border p-3 transition-colors hover:bg-white/5 ${levelColor}`}
-                    >
-                      <span className="font-heading text-sm tracking-wider">
-                        {levelLabel}
-                      </span>
-                      {category.division ? (
-                        <span className="mt-0.5 text-[10px] font-body opacity-70">
-                          {category.division === 'Мужской'
-                            ? '♂ Муж'
-                            : category.division === 'Женский'
-                              ? '♀ Жен'
-                              : category.division}
-                        </span>
-                      ) : null}
-                      <span className="mt-1 text-[10px] font-body opacity-50">
-                        {category.participantCount}/{category.capacity}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
-          {group.prize ? (
-            <div className="mt-3 inline-flex items-center gap-2 text-sm font-body text-amber-300">
-              <span>🏆</span>
-              <span>{group.prize}</span>
-            </div>
-          ) : null}
-
-          <div className="mt-5">
-            <div className="mb-1.5 flex items-center justify-between text-xs font-body text-text-primary/60">
-              <span>
-                Всего участников:{' '}
-                <span className="font-semibold text-text-primary/90">
-                  {group.totalParticipants}
-                </span>
-                /{group.totalCapacity}
-              </span>
-              {spotsLeft != null && (isOpen || isFull) ? (
-                <span>Свободно: {spotsLeft}</span>
-              ) : null}
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-white/10">
-              <div
-                className={[
-                  'h-full rounded-full transition-all duration-500',
-                  fillPercent >= 90
-                    ? 'bg-red-500'
-                    : fillPercent >= 70
-                      ? 'bg-amber-500'
-                      : 'bg-brand',
-                ].join(' ')}
-                style={{ width: `${fillPercent}%` }}
-              />
+            <div className="text-right">
+              <div className="text-xs uppercase tracking-[.16em] text-white/35">Участники</div>
+              <div className="mt-1 font-heading text-3xl text-white">{group.totalParticipants}<span className="text-white/30">/{group.totalCapacity}</span></div>
             </div>
           </div>
 
-          {isOpen || isFull ? (
-            <div className="mt-5">
-              <span className="inline-flex w-full items-center justify-center rounded-xl bg-brand px-6 py-3 text-sm font-body font-semibold text-surface transition-colors group-hover:bg-brand-light">
-                {isOpen
-                  ? 'Открыть турнир и записаться'
-                  : 'Открыть турнир и встать в waitlist'}
-              </span>
-            </div>
-          ) : null}
+          <div className="mt-5 flex flex-wrap gap-2">
+            {[cleanFormat(group.format), ...divisions, ...levels].filter(Boolean).map((tag) => (
+              <span key={tag} className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs text-white/60">{tag}</span>
+            ))}
+          </div>
 
-          {isFinished && group.categories.length <= 1 ? (
-            <div className="mt-5">
-              <span className="inline-flex w-full items-center justify-center rounded-xl border border-white/15 px-6 py-3 text-sm font-body text-text-primary/80 transition-colors group-hover:border-brand/40 group-hover:text-brand">
-                Открыть турнир и результаты
+          <div className="mt-auto pt-6">
+            <div className="mb-2 flex justify-between text-xs">
+              <span className={group.status === 'open' ? 'text-emerald-300' : 'text-amber-200'}>
+                {group.status === 'open'
+                  ? `Свободно ${spots} мест`
+                  : group.status === 'awaiting_results'
+                    ? 'Итоги проверяются организатором'
+                    : group.status === 'in_progress'
+                      ? 'Матчи проходят сейчас'
+                    : 'Основной состав заполнен'}
               </span>
+              {group.totalWaitlist > 0 ? <span className="text-white/45">В ожидании: {group.totalWaitlist}</span> : null}
             </div>
-          ) : null}
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-brand" style={{ width: `${fill}%` }} /></div>
+            <div className="mt-5 flex items-center justify-between gap-4">
+              <span className="text-sm text-white/45">
+                {group.status === 'full'
+                  ? 'Запишем, если освободится место'
+                  : group.status === 'awaiting_results'
+                    ? 'Скоро появится итоговая таблица'
+                    : group.status === 'in_progress'
+                      ? 'Регистрация закрыта до окончания матчей'
+                      : 'Заявка займёт меньше минуты'}
+              </span>
+              {group.status === 'awaiting_results' || group.status === 'in_progress' ? (
+                <span className="shrink-0 rounded-xl border border-white/15 px-5 py-3 text-sm font-bold text-white/70">
+                  {group.status === 'in_progress' ? 'Матчи идут' : 'Ожидаем итоги'}
+                </span>
+              ) : (
+                <span className="shrink-0 rounded-xl bg-brand px-5 py-3 text-sm font-bold text-black transition group-hover:bg-brand-light">
+                  {group.status === 'full' ? 'Встать в лист ожидания' : 'Записаться'}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
-
-        {singleLink ? (
-          <Link
-            href={singleLink}
-            aria-label={`Открыть турнир: ${group.baseName}`}
-            className="absolute inset-0 z-10"
-          >
-            <span className="sr-only">Открыть турнир</span>
-          </Link>
-        ) : null}
-
-      </article>
-    </div>
+      </div>
+      {singleHref ? <Link href={singleHref} className="absolute inset-0" aria-label={`Открыть ${displayName(group)}`} /> : null}
+    </article>
   );
 }

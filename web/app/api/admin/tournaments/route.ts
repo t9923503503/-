@@ -11,8 +11,24 @@ import {
 import { writeAuditLog } from '@/lib/admin-audit';
 import { normalizeTournamentInput, validateTournamentInput } from '@/lib/admin-validators';
 import { adminErrorResponse } from '@/lib/admin-errors';
-import { isGoAdminFormat, normalizeGoAdminSettings } from '@/lib/admin-legacy-sync';
+import { isGoAdminFormat, isKotcAdminFormat, normalizeGoAdminSettings } from '@/lib/admin-legacy-sync';
 import { validateGoSetup } from '@/lib/go-next-config';
+import {
+  canonicalizeGoV2Settings,
+  normalizeGoEngineVersion,
+  parseGoEngineVersion,
+  requestedGoEngineVersion,
+} from '@/lib/go-v2-activation';
+import { validateGoEngineTransition } from '@/lib/go-v2-activation-server';
+import {
+  isIndividualMixFormat,
+  validateIndividualMixTournamentSetup,
+} from '@/lib/individual-mix/admin';
+import {
+  KOTC_JUDGE_MODULE_NEXT,
+  KOTC_STRUCTURAL_DRIFT_LOCKED_CODE,
+  validateKotcNextTournamentStructuralLock,
+} from '@/lib/kotc-next-config';
 import {
   THAI_JUDGE_MODULE_LEGACY,
   THAI_JUDGE_MODULE_NEXT,
@@ -117,6 +133,25 @@ async function validateGoSaveInput(
     return 'GO could not resolve all roster players';
   }
 
+  if (input.goEngineVersion === 2) {
+    if (orderedParticipants.length > 96) return 'Tournament Engine V2 supports at most 48 teams';
+    if (orderedParticipants.length % 2 !== 0) return 'Tournament Engine V2 requires complete pairs';
+    if (String(input.status || '').toLowerCase() === 'draft') return null;
+
+    const normalizedDivision = String(input.division || '').trim().toLowerCase();
+    const isMixedDivision = normalizedDivision.includes('mix') || normalizedDivision.includes('микс');
+    if (isMixedDivision) {
+      for (let index = 0; index < orderedParticipants.length; index += 2) {
+        const left = playersById.get(orderedParticipants[index]?.playerId ?? '');
+        const right = playersById.get(orderedParticipants[index + 1]?.playerId ?? '');
+        if (!left || !right) return 'Tournament Engine V2 teams must be formed from complete pairs';
+        const genders = [String(left.gender ?? 'M').toUpperCase(), String(right.gender ?? 'M').toUpperCase()].sort().join('');
+        if (genders !== 'MW') return 'Mixed Tournament Engine V2 requires M/W pairs in roster order';
+      }
+    }
+    return null;
+  }
+
   const settings = normalizeGoAdminSettings(input.settings, orderedParticipants.length);
   const declaredParticipants = Math.max(2, Math.floor(Number(settings.declaredTeamCount) || 0)) * 2;
   const structuralParticipantCount = Math.max(orderedParticipants.length, declaredParticipants);
@@ -142,11 +177,35 @@ async function validateGoSaveInput(
 
   return null;
 }
-function structuralLockResponse(error: string) {
+
+async function validateIndividualMixSaveInput(
+  input: ReturnType<typeof normalizeTournamentInput>,
+): Promise<string | null> {
+  const orderedParticipants = [...(input.participants ?? [])].sort((left, right) => left.position - right.position);
+  const playerIds = orderedParticipants.map((participant) => participant.playerId).filter(Boolean);
+  const players = await getPlayersByIds(playerIds);
+  const playersById = new Map(players.map((player) => [player.id, player]));
+
+  if (playersById.size !== playerIds.length) {
+    return 'Не удалось найти всех игроков состава личного микста.';
+  }
+
+  return validateIndividualMixTournamentSetup({
+    format: input.format,
+    division: input.division,
+    capacity: input.capacity,
+    settings: input.settings,
+    participants: orderedParticipants.map((participant) => ({
+      ...participant,
+      gender: playersById.get(participant.playerId)?.gender ?? '',
+    })),
+  });
+}
+function structuralLockResponse(error: string, code: string) {
   return NextResponse.json(
     {
       error,
-      code: THAI_STRUCTURAL_DRIFT_LOCKED_CODE,
+      code,
     },
     { status: 409 },
   );
@@ -158,9 +217,25 @@ async function prepareTournamentInput(
 ): Promise<{
   input: ReturnType<typeof normalizeTournamentInput>;
   existingTournament: Awaited<ReturnType<typeof getTournamentById>> | null;
+  engineError: string | null;
 }> {
   const normalized = normalizeTournamentInput(body);
   const existingTournament = !options.isNew && normalized.id ? await getTournamentById(normalized.id) : null;
+  const requestedVersionRaw = requestedGoEngineVersion({
+    goEngineVersion: body.goEngineVersion,
+    settings: typeof body.settings === 'object' && body.settings !== null
+      ? body.settings as Record<string, unknown>
+      : {},
+  });
+  const requestedVersion = requestedVersionRaw == null
+    ? normalizeGoEngineVersion(existingTournament?.goEngineVersion)
+    : parseGoEngineVersion(requestedVersionRaw);
+  const engineError = requestedVersion == null
+    ? 'goEngineVersion must be 1 (Legacy GO) or 2 (Tournament Engine V2).'
+    : requestedVersion === 2 && !isGoAdminFormat(normalized.format)
+      ? 'Tournament Engine V2 is available only for Groups + Olympic tournaments.'
+      : null;
+  const goEngineVersion = requestedVersion ?? 1;
   const normalizedSettings = isExactThaiTournamentFormat(normalized.format)
     ? normalizeThaiJudgeSettings(normalized.settings, {
         isNew: options.isNew,
@@ -171,9 +246,11 @@ async function prepareTournamentInput(
   return {
     input: {
       ...normalized,
-      settings: normalizedSettings,
+      goEngineVersion,
+      settings: canonicalizeGoV2Settings(normalizedSettings, goEngineVersion),
     },
     existingTournament,
+    engineError,
   };
 }
 
@@ -194,14 +271,25 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return auth.response;
   try {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
-    const { input } = await prepareTournamentInput(body, { isNew: true });
+    const { input, engineError } = await prepareTournamentInput(body, { isNew: true });
+    if (engineError) return NextResponse.json({ error: engineError }, { status: 400 });
+    if (input.settings.goV2PublicEnabled === true && auth.actor.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Only a tournament director/admin may publish Tournament Engine V2.', code: 'GO_V2_PUBLICATION_FORBIDDEN' },
+        { status: 403 },
+      );
+    }
     const err = validateTournamentInput(input);
     if (err) return NextResponse.json({ error: err }, { status: 400 });
-    if (isGoAdminFormat(input.format)) {
+    if (input.status !== 'draft' && isGoAdminFormat(input.format)) {
       const goError = await validateGoSaveInput(input);
       if (goError) return NextResponse.json({ error: goError }, { status: 400 });
     }
-    if (isExactThaiTournamentFormat(input.format) && input.settings.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT) {
+    if (input.status !== 'draft' && isIndividualMixFormat(input.format)) {
+      const individualMixError = await validateIndividualMixSaveInput(input);
+      if (individualMixError) return NextResponse.json({ error: individualMixError }, { status: 400 });
+    }
+    if (input.status !== 'draft' && isExactThaiTournamentFormat(input.format) && input.settings.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT) {
       const thaiNextError = await validateThaiNextSaveInput(input);
       if (thaiNextError) return NextResponse.json({ error: thaiNextError }, { status: 400 });
     }
@@ -227,20 +315,50 @@ export async function PUT(req: NextRequest) {
   if (!auth.ok) return auth.response;
   try {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
-    const { input, existingTournament } = await prepareTournamentInput(body, { isNew: false });
+    const { input, existingTournament, engineError } = await prepareTournamentInput(body, { isNew: false });
+    if (engineError) return NextResponse.json({ error: engineError }, { status: 400 });
     const id = input.id;
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
     const err = validateTournamentInput(input);
     if (err) return NextResponse.json({ error: err }, { status: 400 });
-    if (isGoAdminFormat(input.format)) {
+    if (input.status !== 'draft' && isGoAdminFormat(input.format)) {
       const goError = await validateGoSaveInput(input);
       if (goError) return NextResponse.json({ error: goError }, { status: 400 });
     }
+    if (input.status !== 'draft' && isIndividualMixFormat(input.format)) {
+      const individualMixError = await validateIndividualMixSaveInput(input);
+      if (individualMixError) return NextResponse.json({ error: individualMixError }, { status: 400 });
+    }
 
     const before = existingTournament ?? (await getTournamentById(id));
+    if (!before) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    const publicationChanged = Boolean(before.settings?.goV2PublicEnabled)
+      !== Boolean(input.settings.goV2PublicEnabled);
+    if (publicationChanged && auth.actor.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Only a tournament director/admin may change V2 publication.', code: 'GO_V2_PUBLICATION_FORBIDDEN' },
+        { status: 403 },
+      );
+    }
+    const engineTransitionError = await validateGoEngineTransition({
+      tournamentId: id,
+      currentVersion: normalizeGoEngineVersion(before.goEngineVersion),
+      nextVersion: input.goEngineVersion,
+      tournamentStatus: before.status,
+      nextTournamentStatus: input.status,
+    });
+    if (engineTransitionError) {
+      return NextResponse.json(
+        { error: engineTransitionError, code: 'GO_ENGINE_TRANSITION_LOCKED' },
+        { status: 409 },
+      );
+    }
     const beforeStatus = String(before?.status || '').toLowerCase();
     let thaiNextAutoReset: Awaited<
       ReturnType<typeof import('@/lib/thai-live').resetThaiJudgeState>
+    > | null = null;
+    let kotcNextAutoReset: Awaited<
+      ReturnType<typeof import('@/lib/kotc-next').resetKotcNextState>
     > | null = null;
     const thaiNextLockError = validateThaiNextStructuralLock({
       currentTournament: before,
@@ -255,21 +373,51 @@ export async function PUT(req: NextRequest) {
         const { resetThaiJudgeState } = await import('@/lib/thai-live');
         thaiNextAutoReset = await resetThaiJudgeState(id);
       } else {
-        return structuralLockResponse(thaiNextLockError.message);
+        return structuralLockResponse(thaiNextLockError.message, THAI_STRUCTURAL_DRIFT_LOCKED_CODE);
       }
     }
-    const nextInput =
+    const kotcNextLockError = validateKotcNextTournamentStructuralLock({
+      currentTournament: before,
+      nextTournament: {
+        format: input.format,
+        division: input.division,
+        settings: input.settings,
+        participants: input.participants ?? [],
+      },
+    });
+    if (kotcNextLockError) {
+      if (beforeStatus === 'open') {
+        const { resetKotcNextState } = await import('@/lib/kotc-next');
+        kotcNextAutoReset = await resetKotcNextState(id);
+      } else {
+        return structuralLockResponse(kotcNextLockError.message, KOTC_STRUCTURAL_DRIFT_LOCKED_CODE);
+      }
+    }
+    const nextSettings =
       thaiNextAutoReset && isExactThaiTournamentFormat(input.format)
         ? {
-            ...input,
-            settings: {
-              ...input.settings,
-              thaiJudgeBootstrapSignature: null,
-            },
+            ...input.settings,
+            thaiJudgeBootstrapSignature: null,
           }
-        : input;
+        : kotcNextAutoReset && isKotcAdminFormat(input.format)
+          ? {
+              ...input.settings,
+              kotcJudgeBootstrapSignature: null,
+            }
+          : input.settings;
+    const nextInput =
+      nextSettings === input.settings
+        ? input
+        : {
+            ...input,
+            settings: nextSettings,
+          };
 
-    if (isExactThaiTournamentFormat(nextInput.format) && nextInput.settings.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT) {
+    if (kotcNextAutoReset && nextInput.settings.kotcJudgeModule == null) {
+      nextInput.settings.kotcJudgeModule = KOTC_JUDGE_MODULE_NEXT;
+    }
+
+    if (nextInput.status !== 'draft' && isExactThaiTournamentFormat(nextInput.format) && nextInput.settings.thaiJudgeModule === THAI_JUDGE_MODULE_NEXT) {
       const thaiNextError = await validateThaiNextSaveInput(nextInput);
       if (thaiNextError) return NextResponse.json({ error: thaiNextError }, { status: 400 });
     }
@@ -293,10 +441,11 @@ export async function PUT(req: NextRequest) {
       entityType: 'tournament',
       entityId: id,
       beforeState: before,
-      afterState: thaiNextAutoReset
+      afterState: thaiNextAutoReset || kotcNextAutoReset
         ? {
             tournament: updated,
-            thaiNextAutoReset,
+            ...(thaiNextAutoReset ? { thaiNextAutoReset } : {}),
+            ...(kotcNextAutoReset ? { kotcNextAutoReset } : {}),
           }
         : updated,
       reason: nextInput.reason,

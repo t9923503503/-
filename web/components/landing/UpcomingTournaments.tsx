@@ -5,6 +5,8 @@ function StatusBadge({ status }: { status: Tournament['status'] }) {
   const map = {
     open: { label: 'Открыт', cls: 'bg-green-500/20 text-green-400 border-green-500/30' },
     full: { label: 'Заполнен', cls: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
+    in_progress: { label: 'Идёт турнир', cls: 'bg-sky-500/20 text-sky-300 border-sky-500/30' },
+    awaiting_results: { label: 'Результаты готовятся', cls: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30' },
     finished: { label: 'Завершён', cls: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
     cancelled: { label: 'Отменён', cls: 'bg-red-500/20 text-red-400 border-red-500/30' },
   };

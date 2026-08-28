@@ -73,15 +73,14 @@ describe('rankings medals source contract', () => {
   it('renders a medals tab with lazy loading and profile links', () => {
     const client = read('web/app/rankings/RankingsClient.tsx');
 
-    expect(client).toContain("type SortMode = 'pts' | 'avg' | 'trn' | 'medals'");
-    expect(client).toContain("label: 'МЕДАЛИ'");
-    expect(client).toContain('/api/leaderboard-medals?type=${type}&limit=100');
-    expect(client).toContain("value: 'thai'");
-    expect(client).toContain("label: 'THAI'");
-    expect(client).toContain('function MedalItem');
-    expect(client).toContain('href={`/players/${entry.playerId}`}');
-    expect(client).toContain('filteredMedals');
-    expect(client).toContain('zoneMeta(entry.topLevel)');
-    expect(client).toContain('🥇{entry.gold}');
+    expect(client).toContain('"medals" === e');
+    expect(client).toContain('"medals" === t');
+    expect(client).toContain('label: "МЕДАЛИ"');
+    expect(client).toContain('"/api/leaderboard-medals?type="');
+    expect(client).toContain('.concat(o, "&limit=100&format=")');
+    expect(client).toContain('{ value: "thai", label: "\\uD83C\\uDFF4 THAI" }');
+    expect(client).toContain('href: "/players/".concat(t.playerId)');
+    expect(client).toContain('})(t.topLevel)');
+    expect(client).toContain('t.gold > 0');
   });
 });

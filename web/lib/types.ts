@@ -64,13 +64,17 @@ export interface Tournament {
   division: string;
   level: string;
   capacity: number;
-  status: 'open' | 'full' | 'finished' | 'cancelled';
+  status: 'open' | 'full' | 'in_progress' | 'awaiting_results' | 'finished' | 'cancelled';
   participantCount: number;
   waitlistCount?: number;
   partnerRequestCount?: number;
   prize: string;
   photoUrl: string;
+  /** Оптимизированное главное фото турнира. photoUrl остаётся ссылкой на внешний альбом. */
+  coverPhotoUrl?: string;
   formatCode: string;
+  /** Версия движка «группы + олимпийская»: legacy=1, параллельный Tournament Engine=2. */
+  goEngineVersion?: 1 | 2;
   registrationClosed?: boolean;
   spotsLeft?: number | null;
   description?: string;

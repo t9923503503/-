@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "dev:serve": "node serve.mjs 8000",
     "test:unit": "vitest run",
+    "benchmark:go-v2": "vite-node scripts/benchmark-go-v2-scheduler.ts",
     "test:smoke": "playwright test",
     "test:e2e:thai": "playwright test tests/e2e --reporter=list",
     "test:gate": "node scripts/release-gate.mjs",
@@ -18,13 +19,15 @@
     "test:smoke:headed": "playwright test --headed",
     "test:smoke:debug": "playwright test --debug",
     "ops:roster-history:prune": "node scripts/prune-roster-editor-history.mjs",
-    "ops:smoke:go-fixedpairs": "node scripts/smoke-go-fixedpairs-checklist.mjs"
+    "ops:ratings:kotc-backfill": "node scripts/backfill-kotc-rating-results.mjs",
+    "ops:smoke:go-fixedpairs": "node scripts/smoke-go-fixedpairs-checklist.mjs",
+    "ops:metrika": "node scripts/metrika.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",
     "http-server": "^14.1.1",
     "jsdom": "^26.0.0",
-    "vite": "^7.3.1",
-    "vitest": "^3.2.4"
+    "vite": "^7.3.6",
+    "vitest": "^3.2.7"
   }
 }

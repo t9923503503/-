@@ -14,11 +14,17 @@ import {
 } from './admin-legacy-sync';
 import {
   effectiveRatingPtsFromStored,
+  normalizeTournamentRatingLevel,
   type RatingPool,
+  type TournamentRatingLevel,
 } from './rating-points';
-import { sanitizeServerImageUrl } from './server-image-url';
+import { sanitizeServerImageUrl, sanitizeTournamentMediaUrl } from './server-image-url';
 import { augmentArchiveTournamentWithThaiBoard } from './thai-archive-meta';
 import { isKotcNextDemoTournament } from './kotc-next-demo-config';
+import {
+  normalizeGoEngineVersion,
+  type GoEngineVersion,
+} from './go-v2-activation';
 
 export interface AdminTournament {
   id: string;
@@ -32,8 +38,12 @@ export interface AdminTournament {
   capacity: number;
   status: string;
   participantCount: number;
+  waitlistCount?: number;
   photoUrl: string;
+  coverPhotoUrl: string;
+  galleryCount: number;
   settings: Record<string, unknown>;
+  goEngineVersion?: GoEngineVersion;
   kotcJudgeModule?: KotcJudgeModule | null;
   kotcJudgeBootstrapSig?: string | null;
   kotcRaundCount?: number | null;
@@ -56,6 +66,8 @@ export interface ArchiveResult {
   ratingPts: number;
   /** pro — полные очки за место; novice — половина (округление). */
   ratingPool?: RatingPool;
+  ratingLevel?: TournamentRatingLevel;
+  ratingExcluded?: boolean;
 }
 
 export interface ArchiveTournament extends AdminTournament {
@@ -226,8 +238,12 @@ function mapTournament(row: Record<string, unknown>): AdminTournament {
     capacity: Number(row.capacity ?? 0),
     status: String(row.status ?? 'open'),
     participantCount: Number(row.participant_count ?? 0),
+    waitlistCount: Number(row.waitlist_count ?? 0),
     photoUrl: sanitizeServerImageUrl(row.photo_url),
+    coverPhotoUrl: sanitizeTournamentMediaUrl(row.cover_photo_url),
+    galleryCount: Number(row.gallery_count ?? 0),
     settings: kotc.settings,
+    goEngineVersion: normalizeGoEngineVersion(row.go_engine_version),
     kotcJudgeModule: kotc.kotcJudgeModule,
     kotcJudgeBootstrapSig: kotc.kotcJudgeBootstrapSig,
     kotcRaundCount: kotc.kotcRaundCount,
@@ -403,6 +419,7 @@ function buildTournamentReturningSql(columns: Set<string>): string {
     'status',
     ...(columns.has('photo_url') ? ['photo_url'] : []),
     ...(columns.has('settings') ? ['settings'] : []),
+    ...(columns.has('go_engine_version') ? ['go_engine_version'] : []),
     ...(columns.has('kotc_judge_module') ? ['kotc_judge_module'] : []),
     ...(columns.has('kotc_judge_bootstrap_sig') ? ['kotc_judge_bootstrap_sig'] : []),
     ...(columns.has('kotc_raund_count') ? ['kotc_raund_count'] : []),
@@ -434,6 +451,12 @@ function buildTournamentWritePayload(
   }
   if (columns.has('settings')) {
     payload.settings = input.settings ? JSON.stringify(input.settings) : '{}';
+  }
+  if (input.goEngineVersion != null) {
+    if (!columns.has('go_engine_version')) {
+      throw new Error('Tournament Engine V2 requires migration 105 (tournaments.go_engine_version)');
+    }
+    payload.go_engine_version = normalizeGoEngineVersion(input.goEngineVersion);
   }
 
   const kotcColumns = getKotcColumnPayload(input);
@@ -619,12 +642,14 @@ export async function listTournaments(query = ''): Promise<AdminTournament[]> {
     `
       SELECT
         t.*,
-        COALESCE(tp_counts.participant_count, 0)::int AS participant_count
+        COALESCE(tp_counts.participant_count, 0)::int AS participant_count,
+        COALESCE(tp_counts.waitlist_count, 0)::int AS waitlist_count
       FROM tournaments t
       LEFT JOIN (
         SELECT
           tournament_id,
-          COUNT(*) FILTER (WHERE COALESCE(is_waitlist, false) = false)::int AS participant_count
+          COUNT(*) FILTER (WHERE COALESCE(is_waitlist, false) = false)::int AS participant_count,
+          COUNT(*) FILTER (WHERE COALESCE(is_waitlist, false) = true)::int AS waitlist_count
         FROM tournament_participants
         GROUP BY tournament_id
       ) tp_counts ON tp_counts.tournament_id = t.id
@@ -643,35 +668,43 @@ async function replaceTournamentParticipantsTx(
   client: PoolClient,
   tournamentId: string,
   participants?: AdminTournamentParticipantInput[]
-): Promise<number> {
+): Promise<{ participantCount: number; waitlistCount: number }> {
   if (!participants) {
     const countRes = await client.query(
-      `SELECT COUNT(*)::int AS participant_count
+      `SELECT
+         COUNT(*) FILTER (WHERE COALESCE(is_waitlist, false) = false)::int AS participant_count,
+         COUNT(*) FILTER (WHERE COALESCE(is_waitlist, false) = true)::int AS waitlist_count
        FROM tournament_participants
-       WHERE tournament_id = $1 AND is_waitlist = false`,
+       WHERE tournament_id = $1`,
       [tournamentId]
     );
-    return Number(countRes.rows[0]?.participant_count ?? 0);
+    return {
+      participantCount: Number(countRes.rows[0]?.participant_count ?? 0),
+      waitlistCount: Number(countRes.rows[0]?.waitlist_count ?? 0),
+    };
   }
 
   await client.query(`DELETE FROM tournament_participants WHERE tournament_id = $1`, [tournamentId]);
 
-  let inserted = 0;
+  let participantCount = 0;
+  let waitlistCount = 0;
   const normalized = [...participants].sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
   for (const [index, participant] of normalized.entries()) {
+    const isWaitlist = Boolean(participant.isWaitlist);
     await client.query(
       `INSERT INTO tournament_participants (tournament_id, player_id, is_waitlist, position)
        VALUES ($1, $2, $3, $4)`,
       [
         tournamentId,
         participant.playerId,
-        Boolean(participant.isWaitlist),
+        isWaitlist,
         Math.max(1, Number(participant.position || index + 1)),
       ]
     );
-    inserted += 1;
+    if (isWaitlist) waitlistCount += 1;
+    else participantCount += 1;
   }
-  return inserted;
+  return { participantCount, waitlistCount };
 }
 
 async function insertParticipantTx(
@@ -757,8 +790,8 @@ export async function createTournament(
       buildTournamentReturningSql(columns),
     );
     const { rows } = await client.query(insert.sql, insert.values);
-    const participantCount = await replaceTournamentParticipantsTx(client, id, input.participants);
-    const created = { ...mapTournament(rows[0] ?? {}), participantCount };
+    const counts = await replaceTournamentParticipantsTx(client, id, input.participants);
+    const created = { ...mapTournament(rows[0] ?? {}), ...counts };
     await syncLegacyTournamentSnapshotTx(client, created);
     await client.query('COMMIT');
     return created;
@@ -800,8 +833,8 @@ export async function updateTournament(
       return null;
     }
 
-    const participantCount = await replaceTournamentParticipantsTx(client, id, input.participants);
-    const updated = { ...mapTournament(data), participantCount };
+    const counts = await replaceTournamentParticipantsTx(client, id, input.participants);
+    const updated = { ...mapTournament(data), ...counts };
     await syncLegacyTournamentSnapshotTx(client, updated);
     await client.query('COMMIT');
     return updated;
@@ -826,12 +859,14 @@ export async function getTournamentById(id: string): Promise<AdminTournament | n
     `
       SELECT
         t.*,
-        COALESCE(tp_counts.participant_count, 0)::int AS participant_count
+        COALESCE(tp_counts.participant_count, 0)::int AS participant_count,
+        COALESCE(tp_counts.waitlist_count, 0)::int AS waitlist_count
       FROM tournaments t
       LEFT JOIN (
         SELECT
           tournament_id,
-          COUNT(*) FILTER (WHERE COALESCE(is_waitlist, false) = false)::int AS participant_count
+          COUNT(*) FILTER (WHERE COALESCE(is_waitlist, false) = false)::int AS participant_count,
+          COUNT(*) FILTER (WHERE COALESCE(is_waitlist, false) = true)::int AS waitlist_count
         FROM tournament_participants
         GROUP BY tournament_id
       ) tp_counts ON tp_counts.tournament_id = t.id
@@ -1068,6 +1103,7 @@ export async function mergeTournamentSettingsKeys(
     status: current.status,
     photoUrl: current.photoUrl,
     settings,
+    goEngineVersion: current.goEngineVersion,
   });
 }
 
@@ -1421,8 +1457,53 @@ export async function mergeTempPlayer(
   try {
     await client.query('BEGIN');
 
+    // All account-facing flows lock users before players. Keep the same order here,
+    // including users referenced only by claims/requests, to avoid a user↔player deadlock.
+    const lockedAccounts = await client.query(
+      `SELECT id, player_id::text AS player_id
+         FROM users
+        WHERE id IN (
+          SELECT id
+            FROM users
+           WHERE player_id IN ($1, $2)
+          UNION
+          SELECT user_id
+            FROM player_claims
+           WHERE requested_player_id IN ($1, $2)
+          UNION
+          SELECT requester_user_id
+            FROM player_requests
+           WHERE requester_user_id IS NOT NULL
+             AND approved_player_id IN ($3, $4)
+        )
+        ORDER BY id
+        FOR UPDATE`,
+      [tempId, realId, tempId, realId]
+    );
+
+    const lockedClaims = await client.query(
+      `SELECT id::text AS id
+         FROM player_claims
+        WHERE requested_player_id IN ($1, $2)
+        ORDER BY id
+        FOR UPDATE`,
+      [tempId, realId]
+    );
+    const lockedRequests = await client.query(
+      `SELECT id::text AS id
+         FROM player_requests
+        WHERE approved_player_id IN ($1, $2)
+        ORDER BY id
+        FOR UPDATE`,
+      [tempId, realId]
+    );
+
     const bothRes = await client.query(
-      `SELECT id, name, gender, status, tournaments_played, total_pts FROM players WHERE id IN ($1, $2) FOR UPDATE`,
+      `SELECT id, name, gender, status, tournaments_played, total_pts
+         FROM players
+        WHERE id IN ($1, $2)
+        ORDER BY id
+        FOR UPDATE`,
       [tempId, realId]
     );
     const tempRow = bothRes.rows.find((r: Record<string, unknown>) => String(r.id) === tempId);
@@ -1431,6 +1512,68 @@ export async function mergeTempPlayer(
     if (!tempRow) { await client.query('ROLLBACK'); return { ok: false, moved: 0, message: 'Temp player not found' }; }
     if (!realRow) { await client.query('ROLLBACK'); return { ok: false, moved: 0, message: 'Target player not found' }; }
     if (tempRow.status !== 'temporary') { await client.query('ROLLBACK'); return { ok: false, moved: 0, message: 'Source is not temporary' }; }
+
+    // A bind that began before the player locks may have committed after the first
+    // discovery query. Never lock that newly discovered user after locking players:
+    // abort and let the caller retry from the canonical user→player lock order.
+    const accountOwners = await client.query(
+      `SELECT id, player_id::text AS player_id
+         FROM users
+        WHERE player_id IN ($1, $2)
+        ORDER BY id`,
+      [tempId, realId]
+    );
+    const currentClaims = await client.query(
+      `SELECT id::text AS id
+         FROM player_claims
+        WHERE requested_player_id IN ($1, $2)
+        ORDER BY id`,
+      [tempId, realId]
+    );
+    const currentRequests = await client.query(
+      `SELECT id::text AS id
+         FROM player_requests
+        WHERE approved_player_id IN ($1, $2)
+        ORDER BY id`,
+      [tempId, realId]
+    );
+    const lockedAccountIds = new Set(lockedAccounts.rows.map((row) => Number(row.id)));
+    const lockedClaimIds = new Set(lockedClaims.rows.map((row) => String(row.id)));
+    const lockedRequestIds = new Set(lockedRequests.rows.map((row) => String(row.id)));
+    const referencesChanged = accountOwners.rows.some((row) => !lockedAccountIds.has(Number(row.id)))
+      || currentClaims.rows.some((row) => !lockedClaimIds.has(String(row.id)))
+      || currentRequests.rows.some((row) => !lockedRequestIds.has(String(row.id)));
+    if (referencesChanged) {
+      await client.query('ROLLBACK');
+      return {
+        ok: false,
+        moved: 0,
+        message: 'Player links changed while the merge was starting; retry the merge',
+      };
+    }
+    const tempOwner = accountOwners.rows.find(
+      (row: Record<string, unknown>) => String(row.player_id) === tempId
+    );
+    const realOwner = accountOwners.rows.find(
+      (row: Record<string, unknown>) => String(row.player_id) === realId
+    );
+    if (tempOwner && realOwner && Number(tempOwner.id) !== Number(realOwner.id)) {
+      await client.query('ROLLBACK');
+      return {
+        ok: false,
+        moved: 0,
+        message: 'Both player cards belong to different accounts; reconcile account ownership first',
+      };
+    }
+    if (tempOwner && !realOwner) {
+      await client.query('UPDATE users SET player_id = $2 WHERE id = $1', [tempOwner.id, realId]);
+    }
+    await client.query(
+      `UPDATE player_claims
+          SET requested_player_id = $2, updated_at = now()
+        WHERE requested_player_id = $1`,
+      [tempId, realId]
+    );
 
     const tpRes = await client.query(
       `SELECT tournament_id FROM tournament_participants WHERE player_id = $1`,
@@ -1486,9 +1629,28 @@ export async function mergeTempPlayer(
 export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
   if (!process.env.DATABASE_URL) return [];
   const pool = getPool();
+  const schemaClient = await pool.connect();
+  let hasCoverPhoto = false;
+  let hasGalleryTable = false;
+  try {
+    const columns = await getTournamentTableColumnsTx(schemaClient);
+    hasCoverPhoto = columns.has('cover_photo_url');
+    const galleryTable = await schemaClient.query(
+      `SELECT to_regclass('public.tournament_gallery_images') IS NOT NULL AS exists`,
+    );
+    hasGalleryTable = Boolean(galleryTable.rows[0]?.exists);
+  } finally {
+    schemaClient.release();
+  }
+  const coverSelect = hasCoverPhoto ? 't.cover_photo_url' : `''::text AS cover_photo_url`;
+  const coverGroup = hasCoverPhoto ? ', t.cover_photo_url' : '';
+  const galleryCountSelect = hasGalleryTable
+    ? '(SELECT COUNT(*)::int FROM tournament_gallery_images g WHERE g.tournament_id = t.id)'
+    : '0::int';
   const { rows } = await pool.query(`
     SELECT t.id, t.name, t.date, t.time, t.location, t.format, t.division,
-           t.level, t.capacity, t.status, t.photo_url, t.settings,
+           t.level, t.capacity, t.status, t.photo_url, ${coverSelect}, t.settings,
+           ${galleryCountSelect} AS gallery_count,
            0 AS participant_count,
            COALESCE(
              json_agg(
@@ -1498,7 +1660,9 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
                  'placement', tr.place,
                  'points', tr.game_pts,
                  'ratingPts', COALESCE(tr.rating_pts, 0),
-                 'ratingPool', CASE WHEN tr.rating_pool = 'novice' THEN 'novice' ELSE 'pro' END
+                 'ratingExcluded', COALESCE(tr.rating_excluded, false),
+                 'ratingPool', CASE WHEN tr.rating_pool = 'novice' THEN 'novice' ELSE 'pro' END,
+                 'ratingLevel', COALESCE(tr.rating_level, LOWER(COALESCE(t.level, 'hard')))
                ) ORDER BY tr.place ASC
              ) FILTER (WHERE tr.id IS NOT NULL),
              '[]'
@@ -1508,7 +1672,7 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
     LEFT JOIN players p ON p.id = tr.player_id
     WHERE t.status = 'finished' AND t.name != '__playerdb__'
     GROUP BY t.id, t.name, t.date, t.time, t.location, t.format, t.division,
-             t.level, t.capacity, t.status, t.photo_url, t.settings
+             t.level, t.capacity, t.status, t.photo_url${coverGroup}, t.settings
     ORDER BY t.date DESC
   `);
   return rows
@@ -1518,8 +1682,9 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
       const results = raw.map((r) => {
         const pool: RatingPool = r.ratingPool === 'novice' ? 'novice' : 'pro';
         const placement = Number(r.placement) || 0;
-        const ratingPts = effectiveRatingPtsFromStored(placement, pool, r.ratingPts);
-        return { ...r, ratingPts, ratingPool: pool };
+        const ratingLevel = normalizeTournamentRatingLevel(r.ratingLevel ?? row.level);
+        const ratingPts = effectiveRatingPtsFromStored(placement, pool, r.ratingPts, ratingLevel, Boolean(r.ratingExcluded));
+        return { ...r, ratingPts, ratingPool: pool, ratingLevel };
       });
       const base = { ...mapTournament(row), results };
       return augmentArchiveTournamentWithThaiBoard(base);
@@ -1571,6 +1736,8 @@ export async function upsertTournamentResults(
     balls?: number;
     ratingPts?: number;
     ratingPool?: RatingPool;
+    ratingLevel?: TournamentRatingLevel;
+    ratingExcluded?: boolean;
   }>,
 ): Promise<number> {
   const pool = getPool();
@@ -1616,19 +1783,22 @@ export async function upsertTournamentResults(
         continue;
       }
       const poolKind: RatingPool = r.ratingPool === 'novice' ? 'novice' : 'pro';
+      const ratingLevel = normalizeTournamentRatingLevel(r.ratingLevel ?? tournament?.level);
       const ratingPts = effectiveRatingPtsFromStored(
         place,
         poolKind,
         r.ratingPts != null ? Number(r.ratingPts) : undefined,
+        ratingLevel,
+        Boolean(r.ratingExcluded),
       );
       const ratingPoolDb = poolKind === 'novice' ? 'novice' : null;
       const ratingType = ratingTypeFromDivision(division, gender);
       await client.query(
         `INSERT INTO tournament_results (
            tournament_id, player_id, place, game_pts, wins, diff, balls,
-           rating_pts, gender, rating_type, rating_pool
+           rating_pts, gender, rating_type, rating_pool, rating_excluded, rating_level
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           tournamentId,
           playerId,
@@ -1641,6 +1811,8 @@ export async function upsertTournamentResults(
           gender,
           ratingType,
           ratingPoolDb,
+          Boolean(r.ratingExcluded),
+          ratingLevel,
         ],
       );
       inserted++;

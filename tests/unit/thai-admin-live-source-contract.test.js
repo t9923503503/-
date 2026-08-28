@@ -8,12 +8,14 @@ function read(relPath) {
 
 describe('Thai admin live source contract', () => {
   it('links admin tournaments to a dedicated Thai live control page that hosts the shared operator panel', () => {
-    const adminPage = read('web/app/admin/tournaments/page.tsx');
+    const adminUi = read('web/lib/admin-tournaments-ui.ts');
+    const tournamentList = read('web/components/admin/tournaments/TournamentListClient.tsx');
     const thaiLivePage = read('web/app/admin/tournaments/[id]/thai-live/page.tsx');
     const controlClient = read('web/components/thai-live/ThaiTournamentControlClient.tsx');
 
-    expect(adminPage).toContain('/thai-live');
-    expect(adminPage).not.toContain('<ThaiOperatorPanel');
+    expect(adminUi).toContain('/thai-live');
+    expect(tournamentList).toContain('getTournamentLaunchHref');
+    expect(tournamentList).not.toContain('<ThaiOperatorPanel');
     expect(thaiLivePage).toContain('ThaiTournamentControlClient');
     expect(controlClient).toContain('<ThaiOperatorPanel');
     expect(controlClient).toContain('/thai-live');

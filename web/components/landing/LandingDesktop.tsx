@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import LandingHeroAccessPanel from '@/components/landing/LandingHeroAccessPanel';
 import HomeRankingTabs from '@/components/landing/HomeRankingTabs';
 import PlayerPhoto from '@/components/ui/PlayerPhoto';
 import MetrikaExternalLink from '@/components/analytics/MetrikaExternalLink';
@@ -62,9 +61,11 @@ function SectionHeading({ eyebrow, title, href, linkLabel }: { eyebrow: string; 
   );
 }
 
-function ActionLabel({ kind }: { kind: 'enter_result' | 'confirm_result' | 'pending_requests' }) {
+function ActionLabel({ kind }: { kind: HomePersonalSnapshot['actions'][number]['kind'] }) {
+  if (kind === 'confirm_attendance') return 'Подтвердить присутствие';
   if (kind === 'enter_result') return 'Внести результат';
-  if (kind === 'confirm_result') return 'Подтвердить результат';
+  if (kind === 'approve_result') return 'Утвердить результат';
+  if (kind === 'fix_result') return 'Исправить результат';
   return 'Проверить заявки';
 }
 
@@ -137,7 +138,8 @@ function PersonalActivity({ personal }: { personal: HomePersonalSnapshot | null 
 function TournamentCard({ tournament, featured = false }: { tournament: Tournament; featured?: boolean }) {
   const localPoster = localPosterForTournamentId(tournament.id);
   const remotePoster = String(tournament.photoUrl || '').trim();
-  const poster = localPoster || (isLikelyHostedPlayerOrVkPhoto(remotePoster) ? remotePoster : fallbackPosterForTournament(tournament));
+  const coverPhoto = String(tournament.coverPhotoUrl || '').trim();
+  const poster = coverPhoto || localPoster || (isLikelyHostedPlayerOrVkPhoto(remotePoster) ? remotePoster : fallbackPosterForTournament(tournament));
   const places = tournament.capacity > 0 ? `${tournament.participantCount}/${tournament.capacity}` : `${tournament.participantCount}`;
   return (
     <Link href={`/calendar/${tournament.id}`} className={`group relative block overflow-hidden rounded-[24px] border border-black/10 bg-card transition hover:-translate-y-0.5 hover:border-brand/40 dark:border-white/10 ${featured ? 'min-h-[270px]' : ''}`}>
@@ -238,11 +240,10 @@ export default function LandingDesktop({ overview, personal }: LandingDesktopPro
         <div className="landing-hero relative mx-auto max-w-7xl overflow-hidden rounded-[24px] border border-white/10 bg-[#0A0A0F] shadow-[0_24px_70px_rgba(0,0,0,0.3)] sm:rounded-[30px]">
           <img src={HERO_IMAGE} alt="Игроки LPVOLLEY на площадке" className="absolute inset-0 h-full w-full object-cover opacity-55" />
           <div className="landing-hero-overlay absolute inset-0 bg-[linear-gradient(100deg,rgba(4,10,22,0.96)_0%,rgba(4,10,22,0.82)_44%,rgba(4,10,22,0.38)_100%)]" />
-          <LandingHeroAccessPanel />
-          <div className="relative grid min-h-[570px] gap-7 px-4 pb-4 pt-28 sm:px-5 sm:pb-5 md:min-h-[440px] md:grid-cols-[1.1fr_0.9fr] md:items-end md:gap-10 md:px-10 md:pb-8 md:pt-12">
+          <div className="relative grid min-h-[570px] gap-7 px-4 pb-4 pt-8 sm:px-5 sm:pb-5 sm:pt-10 md:min-h-[440px] md:grid-cols-[1.1fr_0.9fr] md:items-end md:gap-10 md:px-10 md:pb-8 md:pt-12">
             <div className="max-w-2xl">
               <div className="inline-flex rounded-full border border-brand/35 bg-brand/15 px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.24em] text-orange-100">LPVOLLEY · Сургут</div>
-              <h1 className="mt-5 max-w-full break-words font-heading text-[clamp(2.9rem,13vw,5.5rem)] uppercase leading-[0.88] tracking-[0.01em] text-white sm:text-7xl md:text-8xl">
+              <h1 className="mt-5 max-w-full break-words font-heading text-[clamp(2.6rem,10.8vw,5.5rem)] uppercase leading-[0.93] tracking-[0.01em] text-white sm:text-7xl sm:leading-[0.9] md:text-8xl md:leading-[0.88]">
                 Играй.<br />Сохраняй результаты.<br /><span className="text-cyan-300">Следи за прогрессом.</span>
               </h1>
               <p className="mt-5 max-w-xl text-sm leading-6 text-white/75 md:text-base">Турниры и обычные игры, история матчей, статистика и рейтинг — в одном месте.</p>

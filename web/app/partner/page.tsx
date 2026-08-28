@@ -44,10 +44,19 @@ interface PartnerPageProps {
 
 const LEVELS = new Set<PlayLevel>(['light', 'medium', 'hard']);
 const ACTION_CARD_TEXT: Record<PlayActionCard['kind'], (count: number) => string> = {
+  confirm_attendance: () => '🙋 Подтвердить присутствие',
   enter_result: () => '📝 Внести результат',
-  confirm_result: () => '✅ Подтвердить результат',
+  approve_result: () => '✅ Утвердить результат',
+  fix_result: (count) => `🛠 Исправить результат${count > 1 ? ` · ${count}` : ''}`,
   pending_requests: (count) => `📥 Заявок ждут ответа: ${count}`,
 };
+
+function actionCardHref(card: PlayActionCard): string {
+  if (card.kind === 'confirm_attendance') return `/partner/${card.postId}#attendance`;
+  if (card.kind === 'enter_result') return `/partner/${card.postId}/live`;
+  if (card.kind === 'approve_result' || card.kind === 'fix_result') return `/partner/${card.postId}#result`;
+  return `/partner/manage?post=${encodeURIComponent(card.postId)}`;
+}
 
 const TAB_DESCRIPTION = {
   games: 'Открытые составы: войдите сразу или отправьте заявку организатору.',
@@ -231,7 +240,7 @@ export default async function PartnerPage({ searchParams }: PartnerPageProps) {
         <p className="mt-2 max-w-3xl text-sm leading-6 text-text-secondary">{TAB_DESCRIPTION[tab]}</p>
 
         {tab === 'games' && me ? <div className="mt-4"><PlayAvailabilityWidget current={availability} /></div> : null}
-        {tab === 'games' && feed?.actionCards.length ? <section className="mt-3 grid gap-2 sm:grid-cols-2">{feed.actionCards.map((card) => <Link key={`${card.kind}:${card.postId}`} href={`/partner/${card.postId}`} className="rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3"><strong className="block text-sm text-amber-200">{ACTION_CARD_TEXT[card.kind](card.count)}</strong><span className="text-xs text-text-secondary">{card.title}</span></Link>)}</section> : null}
+        {tab === 'games' && feed?.actionCards.length ? <section className="mt-3 grid gap-2 sm:grid-cols-2">{feed.actionCards.map((card) => <Link key={`${card.kind}:${card.postId}`} href={actionCardHref(card)} className="rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3"><strong className="block text-sm text-amber-200">{ACTION_CARD_TEXT[card.kind](card.count)}</strong><span className="text-xs text-text-secondary">{card.title}</span></Link>)}</section> : null}
 
         {tab !== 'partners' ? <section className="mt-5">
           {tab === 'games' ? <div className="flex flex-wrap items-center gap-2">

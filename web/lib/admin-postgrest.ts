@@ -20,11 +20,15 @@ import type {
 } from './admin-queries-pg';
 import {
   effectiveRatingPtsFromStored,
+  normalizeTournamentRatingLevel,
   type RatingPool,
+  type TournamentRatingLevel,
 } from './rating-points';
 import { sanitizeServerImageUrl } from './server-image-url';
+import { normalizeGoEngineVersion } from './go-v2-activation';
 import { augmentArchiveTournamentWithThaiBoard } from './thai-archive-meta';
 import { isKotcNextDemoTournament } from './kotc-next-demo-config';
+import { enrichAdminTournamentRuntimeState } from './admin-tournament-status';
 
 type JsonObject = Record<string, unknown>;
 
@@ -54,6 +58,7 @@ type TournamentCapabilities = {
   kotcRaundCount: boolean;
   kotcRaundTimerMinutes: boolean;
   kotcPpc: boolean;
+  goEngineVersion: boolean;
 };
 
 type PlayerCapabilities = {
@@ -276,7 +281,13 @@ function toUiTime(value: unknown): string {
   return /^\d{2}:\d{2}:\d{2}$/.test(raw) ? raw.slice(0, 5) : raw;
 }
 
-function mapTournament(row: JsonObject | null, participantCount = 0): AdminTournament {
+function mapTournament(
+  row: JsonObject | null,
+  counts: { participantCount: number; waitlistCount: number } = {
+    participantCount: 0,
+    waitlistCount: 0,
+  },
+): AdminTournament {
   const source = row ?? {};
   const baseSettings =
     source.settings && typeof source.settings === 'object'
@@ -307,9 +318,13 @@ function mapTournament(row: JsonObject | null, participantCount = 0): AdminTourn
     level: String(source.level ?? ''),
     capacity: Number(source.capacity ?? 0),
     status: String(source.status ?? 'open'),
-    participantCount,
+    participantCount: counts.participantCount,
+    waitlistCount: counts.waitlistCount,
     photoUrl: sanitizeServerImageUrl(source.photo_url),
+    coverPhotoUrl: '',
+    galleryCount: 0,
     settings: kotc ? { ...baseSettings, ...kotc } : baseSettings,
+    goEngineVersion: normalizeGoEngineVersion(source.go_engine_version),
     kotcJudgeModule: (kotc?.kotcJudgeModule ?? null) as KotcJudgeModule | null,
     kotcJudgeBootstrapSig: kotc?.kotcJudgeBootstrapSignature ?? null,
     kotcRaundCount: kotc?.raundCount ?? null,
@@ -444,6 +459,7 @@ async function getTournamentCapabilities(): Promise<TournamentCapabilities> {
     kotcRaundCount: await probeColumn('tournaments', 'kotc_raund_count'),
     kotcRaundTimerMinutes: await probeColumn('tournaments', 'kotc_raund_timer_minutes'),
     kotcPpc: await probeColumn('tournaments', 'kotc_ppc'),
+    goEngineVersion: await probeColumn('tournaments', 'go_engine_version'),
   };
 }
 
@@ -528,16 +544,21 @@ function encodeInFilter(ids: string[]): string {
   return `(${ids.map((id) => encodeURIComponent(id)).join(',')})`;
 }
 
-async function fetchParticipantCounts(tournamentIds: string[]): Promise<Map<string, number>> {
-  const counts = new Map<string, number>();
+type TournamentParticipantCounts = { participantCount: number; waitlistCount: number };
+
+async function fetchParticipantCounts(tournamentIds: string[]): Promise<Map<string, TournamentParticipantCounts>> {
+  const counts = new Map<string, TournamentParticipantCounts>();
   if (tournamentIds.length === 0) return counts;
   const rows = await requestJson<JsonObject[]>(
-    `/tournament_participants?select=tournament_id&tournament_id=in.${encodeInFilter(tournamentIds)}&limit=5000`
+    `/tournament_participants?select=tournament_id,is_waitlist&tournament_id=in.${encodeInFilter(tournamentIds)}&limit=5000`
   );
   for (const row of rows ?? []) {
     const tournamentId = String(row.tournament_id ?? '');
     if (!tournamentId) continue;
-    counts.set(tournamentId, Number(counts.get(tournamentId) ?? 0) + 1);
+    const current = counts.get(tournamentId) ?? { participantCount: 0, waitlistCount: 0 };
+    counts.set(tournamentId, Boolean(row.is_waitlist)
+      ? { ...current, waitlistCount: current.waitlistCount + 1 }
+      : { ...current, participantCount: current.participantCount + 1 });
   }
   return counts;
 }
@@ -705,17 +726,17 @@ async function refreshLegacyTournamentSnapshotById(tournamentId: string) {
 async function replaceTournamentParticipants(
   tournamentId: string,
   participants?: AdminTournamentParticipantInput[]
-): Promise<number> {
+): Promise<TournamentParticipantCounts> {
   if (!participants) {
     const counts = await fetchParticipantCounts([tournamentId]);
-    return Number(counts.get(tournamentId) ?? 0);
+    return counts.get(tournamentId) ?? { participantCount: 0, waitlistCount: 0 };
   }
 
   await requestNoContent(`/tournament_participants?tournament_id=eq.${encodeURIComponent(tournamentId)}`, {
     method: 'DELETE',
   });
 
-  if (participants.length === 0) return 0;
+  if (participants.length === 0) return { participantCount: 0, waitlistCount: 0 };
 
   const rows = [...participants]
     .sort((a, b) => Number(a.position || 0) - Number(b.position || 0))
@@ -734,7 +755,10 @@ async function replaceTournamentParticipants(
     body: JSON.stringify(rows),
   });
 
-  return rows.length;
+  return {
+    participantCount: rows.filter((row) => !row.is_waitlist).length,
+    waitlistCount: rows.filter((row) => row.is_waitlist).length,
+  };
 }
 
 function buildTournamentSelect(caps: TournamentCapabilities): string {
@@ -756,6 +780,7 @@ function buildTournamentSelect(caps: TournamentCapabilities): string {
     ...(caps.kotcRaundCount ? ['kotc_raund_count'] : []),
     ...(caps.kotcRaundTimerMinutes ? ['kotc_raund_timer_minutes'] : []),
     ...(caps.kotcPpc ? ['kotc_ppc'] : []),
+    ...(caps.goEngineVersion ? ['go_engine_version'] : []),
   ].join(',');
 }
 
@@ -818,7 +843,12 @@ export async function listTournaments(query = ''): Promise<AdminTournament[]> {
   const counts = await fetchParticipantCounts(
     visibleRows.map((row) => String(row.id ?? '')).filter(Boolean)
   );
-  return visibleRows.map((row) => mapTournament(row, Number(counts.get(String(row.id ?? '')) ?? 0)));
+  return visibleRows.map((row) => enrichAdminTournamentRuntimeState(
+    mapTournament(
+      row,
+      counts.get(String(row.id ?? '')) ?? { participantCount: 0, waitlistCount: 0 },
+    ),
+  ));
 }
 
 export async function createTournament(
@@ -840,6 +870,12 @@ export async function createTournament(
   };
   if (caps.photoUrl) payload.photo_url = String(input.photoUrl || '').trim() || null;
   if (caps.settings) payload.settings = input.settings ?? {};
+  if (input.goEngineVersion != null) {
+    if (!caps.goEngineVersion) {
+      throw new Error('Tournament Engine V2 requires migration 105 (tournaments.go_engine_version)');
+    }
+    payload.go_engine_version = normalizeGoEngineVersion(input.goEngineVersion);
+  }
   applyKotcTournamentPayload(payload, input, caps);
   if (caps.formatCode) {
     const formatCode = getTournamentFormatCode(String(input.format || ''));
@@ -857,8 +893,8 @@ export async function createTournament(
     }
   );
   const createdRow = firstRow<JsonObject>(createdRows) ?? payload;
-  const participantCount = await replaceTournamentParticipants(id, input.participants);
-  const created = mapTournament(createdRow, participantCount);
+  const counts = await replaceTournamentParticipants(id, input.participants);
+  const created = mapTournament(createdRow, counts);
   await syncLegacyTournamentSnapshot(created);
   return created;
 }
@@ -881,6 +917,12 @@ export async function updateTournament(
   };
   if (caps.photoUrl) payload.photo_url = String(input.photoUrl || '').trim() || null;
   if (caps.settings) payload.settings = input.settings ?? {};
+  if (input.goEngineVersion != null) {
+    if (!caps.goEngineVersion) {
+      throw new Error('Tournament Engine V2 requires migration 105 (tournaments.go_engine_version)');
+    }
+    payload.go_engine_version = normalizeGoEngineVersion(input.goEngineVersion);
+  }
   applyKotcTournamentPayload(payload, input, caps);
   if (caps.formatCode) {
     const formatCode = getTournamentFormatCode(String(input.format || ''));
@@ -900,8 +942,8 @@ export async function updateTournament(
   const row = firstRow<JsonObject>(rows);
   if (!row) return null;
 
-  const participantCount = await replaceTournamentParticipants(id, input.participants);
-  const updated = mapTournament(row, participantCount);
+  const counts = await replaceTournamentParticipants(id, input.participants);
+  const updated = mapTournament(row, counts);
   await syncLegacyTournamentSnapshot(updated);
   return updated;
 }
@@ -919,7 +961,7 @@ export async function getTournamentById(id: string): Promise<AdminTournament | n
   const row = await fetchTournamentRow(id);
   if (!row) return null;
   const counts = await fetchParticipantCounts([id]);
-  return mapTournament(row, Number(counts.get(id) ?? 0));
+  return mapTournament(row, counts.get(id) ?? { participantCount: 0, waitlistCount: 0 });
 }
 
 export async function getTournamentLegacyGameStateById(id: string): Promise<Record<string, unknown> | null> {
@@ -1090,6 +1132,7 @@ export async function mergeTournamentSettingsKeys(
     status: current.status,
     photoUrl: current.photoUrl,
     settings,
+    goEngineVersion: current.goEngineVersion,
   });
 }
 
@@ -1367,14 +1410,12 @@ export async function mergeTempPlayer(
   tempId: string,
   realId: string
 ): Promise<{ ok: boolean; moved: number; message: string }> {
-  const result = await requestJson<JsonObject>('/rpc/merge_players', {
-    method: 'POST',
-    body: JSON.stringify({ p_temp_id: tempId, p_real_id: realId }),
-  });
+  void tempId;
+  void realId;
   return {
-    ok: Boolean(result.ok),
-    moved: Number(result.moved ?? result.records_moved ?? 0),
-    message: String(result.message ?? result.error ?? 'Merge completed'),
+    ok: false,
+    moved: 0,
+    message: 'Player merge is disabled in PostgREST mode until merge_players preserves users.player_id ownership.',
   };
 }
 
@@ -1388,7 +1429,7 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
   if (ids.length === 0) return [];
 
   const results = await requestJson<JsonObject[]>(
-    `/tournament_results?select=tournament_id,place,game_pts,rating_pts,rating_pool,players!inner(name,gender)&tournament_id=in.${encodeInFilter(
+    `/tournament_results?select=tournament_id,place,game_pts,rating_pts,rating_pool,rating_level,rating_excluded,players!inner(name,gender)&tournament_id=in.${encodeInFilter(
       ids
     )}&order=place.asc&limit=5000`
   );
@@ -1400,8 +1441,10 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
       gender: 'M' | 'W';
       placement: number;
       points: number;
-      ratingPts: number;
-      ratingPool: 'pro' | 'novice';
+        ratingPts: number;
+        ratingPool: 'pro' | 'novice';
+        ratingLevel: TournamentRatingLevel;
+        ratingExcluded: boolean;
     }>
   >();
   for (const row of results ?? []) {
@@ -1410,6 +1453,9 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
     const current = byTournament.get(tournamentId) ?? [];
     const place = Number(row.place ?? 0);
     const poolKind = row.rating_pool === 'novice' ? 'novice' : 'pro';
+    const tournament = visible.find((item) => String(item.id ?? '') === tournamentId);
+    const ratingLevel = normalizeTournamentRatingLevel(String(row.rating_level ?? tournament?.level ?? ''));
+    const ratingExcluded = Boolean(row.rating_excluded);
     current.push({
       playerName: String(player.name ?? ''),
       gender: String(player.gender ?? 'M') === 'W' ? 'W' : 'M',
@@ -1419,8 +1465,12 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
         place,
         poolKind,
         row.rating_pts != null ? Number(row.rating_pts) : undefined,
+        ratingLevel,
+        ratingExcluded,
       ),
       ratingPool: poolKind,
+      ratingLevel,
+      ratingExcluded,
     });
     byTournament.set(tournamentId, current);
   }
@@ -1429,7 +1479,10 @@ export async function getArchiveTournaments(): Promise<ArchiveTournament[]> {
     .filter((row) => !isKotcNextDemoTournament({ format: row.format, settings: row.settings }))
     .map((row) =>
       augmentArchiveTournamentWithThaiBoard({
-        ...mapTournament(row, Number(counts.get(String(row.id ?? '')) ?? 0)),
+        ...mapTournament(
+          row,
+          counts.get(String(row.id ?? '')) ?? { participantCount: 0, waitlistCount: 0 },
+        ),
         results: byTournament.get(String(row.id ?? '')) ?? [],
       }),
     );
@@ -1467,6 +1520,8 @@ export async function upsertTournamentResults(
     balls?: number;
     ratingPts?: number;
     ratingPool?: RatingPool;
+    ratingLevel?: TournamentRatingLevel;
+    ratingExcluded?: boolean;
   }>,
 ): Promise<number> {
   const tournament = await getTournamentById(tournamentId);
@@ -1516,6 +1571,7 @@ export async function upsertTournamentResults(
       throw new Error(`BadRequest: Invalid tournament result place for ${item.playerName}`);
     }
     const pool: RatingPool = item.ratingPool === 'novice' ? 'novice' : 'pro';
+    const ratingLevel = normalizeTournamentRatingLevel(item.ratingLevel ?? tournament.level);
     return {
       name: String(item.playerName || '').trim(),
       gender: item.gender === 'W' ? 'W' : 'M',
@@ -1528,9 +1584,13 @@ export async function upsertTournamentResults(
         place,
         pool,
         item.ratingPts != null ? Number(item.ratingPts) : undefined,
+        ratingLevel,
+        Boolean(item.ratingExcluded),
       ),
       rating_type: tournament.division === 'Микст' ? 'Mix' : item.gender === 'W' ? 'W' : 'M',
       rating_pool: pool === 'novice' ? 'novice' : null,
+      rating_level: ratingLevel,
+      rating_excluded: Boolean(item.ratingExcluded),
     };
   });
 

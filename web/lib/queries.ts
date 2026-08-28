@@ -29,7 +29,7 @@ import {
   ratingPointsForLevelPlace,
   sqlEffectiveRatingPointsExpr,
 } from './rating-points';
-import { sanitizeServerImageUrl } from './server-image-url';
+import { sanitizeServerImageUrl, sanitizeTournamentMediaUrl } from './server-image-url';
 import { resolveThaiSpectatorBoardUrlForArchive } from './thai-archive-meta';
 import { isKotcNextDemoTournament } from './kotc-next-demo-config';
 import { getKotcNextOperatorStateSummary } from './kotc-next';
@@ -77,7 +77,9 @@ function resolveResultRatingPts(input: {
   tournamentFormat?: unknown;
   tournamentLevel?: string | null | undefined;
   kotcZone?: string | null | undefined;
+  ratingExcluded?: boolean;
 }): number {
+  if (input.ratingExcluded) return 0;
   if (isKotcFormatValue(input.tournamentFormat) && String(input.kotcZone || '').trim()) {
     return ratingPointsForLevelPlace(
       input.place,
@@ -144,6 +146,7 @@ export function shouldHideTournamentFromPublic(input: {
 }
 
 function mapTournamentRow(row: Record<string, unknown>): Tournament {
+  const settings = normalizeTournamentSettings(row.settings);
   return {
     id: String(row.id ?? ''),
     name: String(row.name ?? ''),
@@ -160,7 +163,11 @@ function mapTournamentRow(row: Record<string, unknown>): Tournament {
     partnerRequestCount: Number(row.partner_request_count ?? 0),
     prize: String(row.prize ?? ''),
     photoUrl: sanitizeServerImageUrl(row.photo_url),
+    coverPhotoUrl: sanitizeTournamentMediaUrl(row.cover_photo_url),
     formatCode: String(row.format_code ?? ''),
+    // The dedicated column is the only engine switch. Legacy settings must
+    // never make a shadow tournament public as V2.
+    goEngineVersion: Number(row.go_engine_version ?? 1) === 2 ? 2 : 1,
     description:
       row.description != null && String(row.description).trim().length > 0
         ? String(row.description)
@@ -418,6 +425,7 @@ export async function fetchPlayer(id: string): Promise<Player | null> {
        tr.place,
        tr.rating_pts,
        tr.rating_pool,
+       tr.rating_excluded,
        COALESCE(tr.wins, 0) AS wins,
        t.date AS tournament_date,
        t.format AS tournament_format,
@@ -459,6 +467,7 @@ export async function fetchPlayer(id: string): Promise<Player | null> {
       tournamentFormat: r.tournament_format,
       tournamentLevel: String(r.tournament_level ?? ''),
       kotcZone: String(r.kotc_zone ?? ''),
+      ratingExcluded: Boolean(r.rating_excluded),
     });
     const wins = Number(r.wins ?? 0);
     const seen = toIsoDate(r.tournament_date);
@@ -862,6 +871,7 @@ export async function fetchPlayerMatches(
         tr.game_pts,
         tr.rating_pts,
         tr.rating_pool,
+        tr.rating_excluded,
         tr.gender,
         tr.rating_type,
         tr.wins,
@@ -943,6 +953,7 @@ export async function fetchPlayerMatches(
       tournamentFormat: r.tournament_format,
       tournamentLevel: r.tournament_level ? String(r.tournament_level) : null,
       kotcZone: String(r.kotc_zone || ''),
+      ratingExcluded: Boolean(r.rating_excluded),
     });
     return {
       playerId: r.player_id,
@@ -1241,7 +1252,7 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
 
   const { rows: results } = await pool.query(
     `SELECT tr.place, tr.game_pts, tr.rating_pts, tr.wins, tr.diff, tr.balls, tr.rating_type,
-            tr.rating_pool,
+            tr.rating_pool, tr.rating_excluded,
             t.id AS tournament_id, t.name AS tournament_name, t.date AS tournament_date, t.format,
             COALESCE(t.level, '') AS tournament_level,
             kotc_deep.zone AS kotc_zone
@@ -1279,6 +1290,7 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
       tournamentFormat: r.format,
       tournamentLevel: String(r.tournament_level ?? ''),
       kotcZone: String(r.kotc_zone ?? ''),
+      ratingExcluded: Boolean(r.rating_excluded),
     });
   }, 0);
   const avgRatingPts = totalTournaments ? +(totalRatingPts / totalTournaments).toFixed(1) : 0;
@@ -1299,6 +1311,7 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
       tournamentFormat: r.format,
       tournamentLevel: String(r.tournament_level ?? ''),
       kotcZone: String(r.kotc_zone ?? ''),
+      ratingExcluded: Boolean(r.rating_excluded),
     });
     if (pts > bestPts) {
       bestPts = pts;
@@ -1437,6 +1450,7 @@ export async function fetchPlayerExtendedStats(playerId: string): Promise<Player
       tournamentFormat: r.format,
       tournamentLevel: String(r.tournament_level ?? ''),
       kotcZone: String(r.kotc_zone ?? ''),
+      ratingExcluded: Boolean(r.rating_excluded),
     });
     if (Number(r.place) === 1) b.gold++;
   }
@@ -1673,7 +1687,7 @@ export async function fetchTournamentResults(tournamentId: string): Promise<Tour
   const { rows } = await pool.query(
     `SELECT tr.player_id, p.name AS player_name, p.photo_url AS player_photo_url,
             tr.place, tr.game_pts, tr.rating_pts, tr.wins, tr.diff, tr.balls,
-            tr.rating_type, tr.gender, tr.rating_pool
+            tr.rating_type, tr.gender, tr.rating_pool, tr.rating_excluded
      FROM tournament_results tr
      JOIN players p ON p.id = tr.player_id
      WHERE tr.tournament_id = $1
@@ -1684,7 +1698,7 @@ export async function fetchTournamentResults(tournamentId: string): Promise<Tour
   const baseResults = rows.map((r) => {
     const place = Number(r.place ?? 0);
     const poolKind: 'pro' | 'novice' = r.rating_pool === 'novice' ? 'novice' : 'pro';
-    const ratingPts = effectiveRatingPtsFromStored(place, poolKind, r.rating_pts);
+    const ratingPts = effectiveRatingPtsFromStored(place, poolKind, r.rating_pts, undefined, Boolean(r.rating_excluded));
 
     return {
       playerId: r.player_id,

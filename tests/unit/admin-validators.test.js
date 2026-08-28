@@ -286,6 +286,36 @@ describe('admin validators', () => {
     expect(validateTournamentInput(badDeclaredTeams)).toBe('GO declared team count must be between 2 and 48.');
   });
 
+  it('validates Tournament Engine V2 independently from legacy GO layout rules', () => {
+    const draft = normalizeTournamentInput({
+      name: 'V2 shadow draft',
+      date: '2026-08-30',
+      time: '09:00',
+      format: 'Groups + Olympic',
+      division: 'mix',
+      capacity: 4,
+      status: 'draft',
+      goEngineVersion: 2,
+      settings: { goDeclaredTeamCount: 2 },
+      participants: [],
+    });
+    expect(draft.goEngineVersion).toBe(2);
+    expect(validateTournamentInput(draft)).toBeNull();
+
+    const incompletePair = normalizeTournamentInput({
+      ...draft,
+      status: 'open',
+      participants: [{ playerId: 'p1', position: 1 }],
+    });
+    expect(validateTournamentInput(incompletePair)).toBe('Tournament Engine V2 requires at least 2 complete teams.');
+
+    const tooMany = normalizeTournamentInput({
+      ...draft,
+      settings: { goDeclaredTeamCount: 49 },
+    });
+    expect(validateTournamentInput(tooMany)).toBe('Tournament Engine V2 team count must be between 2 and 48.');
+  });
+
   it('normalizes player and validates required fields', () => {
     const normalized = normalizePlayerInput({
       name: ' Alex ',

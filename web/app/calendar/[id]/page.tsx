@@ -52,6 +52,8 @@ function resolveFinishedHeroPhoto(id: string, photoUrl?: string | null): string 
 function statusLabel(status: string): string {
   if (status === 'open') return 'Открыта запись';
   if (status === 'full') return 'Основной состав заполнен';
+  if (status === 'in_progress') return 'Турнир идёт';
+  if (status === 'awaiting_results') return 'Ожидаются результаты';
   if (status === 'finished') return 'Турнир завершен';
   if (status === 'cancelled') return 'Турнир отменен';
   return status;
@@ -183,7 +185,9 @@ export default async function TournamentPage({ params }: PageProps) {
   const partnerUrl = `/partner?tournament=${encodeURIComponent(tournament.id)}`;
   const calendarUrl = `/api/calendar/${tournament.id}/ics`;
   const cta =
-    tournament.status === 'cancelled'
+    tournament.status === 'cancelled' ||
+    tournament.status === 'in_progress' ||
+    tournament.status === 'awaiting_results'
       ? null
       : {
           href: `/calendar/${tournament.id}/register`,
@@ -192,6 +196,15 @@ export default async function TournamentPage({ params }: PageProps) {
               ? 'Подать заявку в waitlist'
               : 'Подать заявку',
         };
+
+  const liveCta =
+    tournament.goEngineVersion === 2 &&
+    (tournament.status === 'in_progress' || tournament.status === 'awaiting_results')
+      ? {
+          href: `/calendar/${encodeURIComponent(tournament.id)}/live`,
+          label: 'Открыть live-расписание',
+        }
+      : null;
 
   const metricCards = [
     {
@@ -310,6 +323,14 @@ export default async function TournamentPage({ params }: PageProps) {
         </div>
 
         <div className="mt-8 flex flex-wrap gap-3">
+          {liveCta ? (
+            <Link
+              href={liveCta.href}
+              className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-6 py-3 font-body font-semibold text-white transition-colors hover:bg-emerald-400"
+            >
+              <EntityText text={liveCta.label} />
+            </Link>
+          ) : null}
           {cta ? (
             <Link
               href={cta.href}

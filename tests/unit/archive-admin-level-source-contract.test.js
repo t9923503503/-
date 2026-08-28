@@ -44,6 +44,8 @@ describe('archive admin level source contract', () => {
 
   it('persists tournament level, validates rows and returns structured validation', () => {
     const route = read('web/app/api/admin/tournaments/[id]/results/route.ts');
+    const pg = read('web/lib/admin-queries-pg.ts');
+    const postgrest = read('web/lib/admin-postgrest.ts');
 
     expect(route).toContain('sanitizeArchiveRows');
     expect(route).toContain('validateArchiveRows');
@@ -53,5 +55,9 @@ describe('archive admin level source contract', () => {
     expect(route).toContain('body.level == null ? normalizeTournamentLevel(current.level) : normalizeTournamentLevel(body.level)');
     expect(route).toContain('await updateTournament(id, { ...current, level });');
     expect(route).toContain('afterState: { count: inserted, level, warnings: validation.warnings }');
+    expect(pg).toContain('rating_pool, rating_excluded, rating_level');
+    expect(pg).toContain('ratingLevel = normalizeTournamentRatingLevel');
+    expect(postgrest).toContain('rating_level: ratingLevel');
+    expect(postgrest).toContain('rating_excluded: Boolean(item.ratingExcluded)');
   });
 });

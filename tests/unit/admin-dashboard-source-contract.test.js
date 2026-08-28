@@ -33,6 +33,8 @@ describe('admin dashboard source contract', () => {
     expect(page).not.toContain('{row.action}');
     expect(page).not.toContain('{row.entityType}:{row.entityId}');
     expect(page).toContain('actionLabel: launchTarget ? `Открыть · ${launchTarget.label}` : \'Открыть реестр\'');
+    expect(page).toContain('row.goEngineVersion === 2');
+    expect(page).toContain('/engine-v2`');
   });
 
   it('keeps role-aware homepage behavior and grouped admin shell navigation', () => {

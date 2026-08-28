@@ -4,6 +4,13 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import type { ThaiSchedulePrintPayload } from '@/lib/thai-live/print-schedule';
 
+function buildPdfFilename(payload: ThaiSchedulePrintPayload | null, tournamentId: string): string {
+  const rawName = payload?.tournamentName?.trim() || `thai-schedule-${tournamentId}`;
+  const rawDate = payload?.tournamentDate?.trim() || '';
+  const base = [rawDate, rawName].filter(Boolean).join(' ');
+  return base.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'thai-schedule';
+}
+
 function variantTitle(v: string): string {
   const u = String(v || '').toUpperCase();
   if (u === 'MN') return 'Мужчины: профи / новичок';
@@ -20,11 +27,150 @@ function ScoreCell({ matchKey }: { matchKey: string }) {
       className="hidden w-24 py-2 pl-2 pr-0 align-middle text-right print:table-cell"
     >
       <div className="flex items-center justify-end gap-1">
-        <div className="h-8 w-8 rounded-sm border border-black" />
+        <div className="thai-score-box h-8 w-8 rounded-sm border border-black" />
         <span className="font-bold text-black">:</span>
-        <div className="h-8 w-8 rounded-sm border border-black" />
+        <div className="thai-score-box h-8 w-8 rounded-sm border border-black" />
       </div>
     </td>
+  );
+}
+
+function parseRosterLine(line: string): { code: string; detail: string; name: string } {
+  const [rawLabel, ...rawName] = String(line || '').split(':');
+  const label = rawLabel.trim();
+  const code = label.match(/^[^\s(]+/)?.[0] || label;
+  return {
+    code,
+    detail: label.slice(code.length).trim(),
+    name: rawName.join(':').trim(),
+  };
+}
+
+function isWriteInName(code: string, name: string): boolean {
+  const normalizedCode = code.replace(/\s+/g, '').toUpperCase();
+  const normalizedName = name.replace(/\s+/g, '').toUpperCase();
+  return !normalizedName || normalizedName === normalizedCode;
+}
+
+function compactTeamLabel(value: string): string {
+  return String(value || '').replace(/\s+/g, '').toUpperCase();
+}
+
+function needsMatchWriteInLine(teamNames: string, symbolic: string): boolean {
+  return compactTeamLabel(teamNames) === compactTeamLabel(symbolic);
+}
+
+function WriteInPairLine({ symbolic }: { symbolic: string }) {
+  const players = String(symbolic || '')
+    .split('+')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  const normalized = players.length >= 2 ? players : [symbolic, ''];
+
+  return (
+    <div className="thai-writein-pair grid grid-cols-[auto_minmax(3.5rem,1fr)_auto_auto_minmax(3.5rem,1fr)] items-end gap-1.5">
+      <span className="thai-writein-code font-mono text-[10px] font-bold text-black">{normalized[0]}</span>
+      <span className="thai-writein-line min-h-5 border-b border-black">
+        <span className="sr-only">место для фамилии игрока</span>
+      </span>
+      <span className="thai-writein-plus px-0.5 text-[10px] font-bold text-black">+</span>
+      <span className="thai-writein-code font-mono text-[10px] font-bold text-black">{normalized[1]}</span>
+      <span className="thai-writein-line min-h-5 border-b border-black">
+        <span className="sr-only">место для фамилии игрока</span>
+      </span>
+    </div>
+  );
+}
+
+function MatchPlayersCell({
+  team1Names,
+  team2Names,
+  team1Symbolic,
+  team2Symbolic,
+}: {
+  team1Names: string;
+  team2Names: string;
+  team1Symbolic: string;
+  team2Symbolic: string;
+}) {
+  const showTeam1WriteIn = needsMatchWriteInLine(team1Names, team1Symbolic);
+  const showTeam2WriteIn = needsMatchWriteInLine(team2Names, team2Symbolic);
+  const showWriteIns = showTeam1WriteIn || showTeam2WriteIn;
+
+  return (
+    <td className="thai-match-players-cell py-2 text-zinc-800 print:text-black">
+      <div>
+        {team1Names} <span className="text-zinc-400 print:text-black">—</span> {team2Names}
+      </div>
+      {showWriteIns ? (
+        <div className="thai-match-writeins hidden pt-1 print:block">
+          <div className="thai-match-writeins-stack space-y-1">
+            {showTeam1WriteIn ? <WriteInPairLine symbolic={team1Symbolic} /> : null}
+            {showTeam2WriteIn ? <WriteInPairLine symbolic={team2Symbolic} /> : null}
+          </div>
+        </div>
+      ) : (
+        <div className="hidden pt-0.5 font-mono text-[10px] text-zinc-500 print:block print:text-black">
+          {team1Symbolic} — {team2Symbolic}
+        </div>
+      )}
+    </td>
+  );
+}
+
+function CourtRosterResultsTable({ lines, tourCount }: { lines: string[]; tourCount: number }) {
+  const tours = Array.from({ length: Math.max(1, tourCount) }, (_, i) => i + 1);
+
+  return (
+    <div className="mt-3 print:mt-2">
+      <div className="mb-1 flex items-end justify-between gap-3">
+        <div className="font-semibold text-zinc-800 print:text-[12px] print:text-black">
+          Состав и итоги корта
+        </div>
+        <div className="hidden text-[10px] uppercase tracking-wide text-zinc-500 print:block print:text-black">
+          фамилии, очки по турам, сумма, место
+        </div>
+      </div>
+      <table className="thai-results-table w-full border-collapse text-xs">
+        <thead>
+          <tr>
+            <th>Код</th>
+            <th className="text-left">Фамилия</th>
+            {tours.map((tourNo) => (
+              <th key={tourNo}>Т{tourNo}</th>
+            ))}
+            <th>Сумма</th>
+            <th>Место</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line, i) => {
+            const slot = parseRosterLine(line);
+            const blank = isWriteInName(slot.code, slot.name);
+            return (
+              <tr key={`${slot.code}-result-${i}`}>
+                <td className="w-9 font-mono font-bold">{slot.code}</td>
+                <td className="min-w-28 text-left">
+                  {blank ? (
+                    <span className="block min-h-5 border-b border-black">
+                      <span className="sr-only">место для фамилии</span>
+                    </span>
+                  ) : (
+                    slot.name
+                  )}
+                </td>
+                {tours.map((tourNo) => (
+                  <td key={`${slot.code}-tour-${tourNo}`} className="w-10" />
+                ))}
+                <td className="w-12" />
+                <td className="w-12" />
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -74,6 +220,15 @@ export function ThaiSchedulePrintClient({
     }
   }, [id, seedInput]);
 
+  const downloadPdf = useCallback(() => {
+    const previousTitle = document.title;
+    document.title = buildPdfFilename(payload, id);
+    window.print();
+    window.setTimeout(() => {
+      document.title = previousTitle;
+    }, 300);
+  }, [id, payload]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -96,6 +251,13 @@ export function ThaiSchedulePrintClient({
           >
             Печать
           </button>
+          <button
+            type="button"
+            onClick={downloadPdf}
+            className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
+          >
+            {"\u0421\u043a\u0430\u0447\u0430\u0442\u044c PDF"}
+          </button>
           <label className="flex items-center gap-2 text-sm text-zinc-600">
             Seed R1 (только до старта R1 в БД):
             <input
@@ -115,7 +277,7 @@ export function ThaiSchedulePrintClient({
         </div>
       </div>
 
-      <div className="mx-auto max-w-4xl px-4 py-8 print:max-w-none print:px-6 print:py-4">
+      <div className="mx-auto max-w-4xl px-4 py-8 print:w-full print:max-w-none print:px-0 print:py-0">
         {loading ? <p className="text-zinc-500">Загрузка…</p> : null}
         {error ? (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -125,7 +287,7 @@ export function ThaiSchedulePrintClient({
 
         {payload ? (
           <>
-            <header className="mb-8 border-b border-zinc-300 pb-6 print:mb-6">
+            <header className="mb-8 border-b border-zinc-300 pb-6 print:hidden">
               <h1 className="font-heading text-2xl font-bold uppercase tracking-wide text-zinc-900 print:text-xl">
                 Расписание турнира (Thai)
               </h1>
@@ -149,20 +311,20 @@ export function ThaiSchedulePrintClient({
               </p>
             </header>
 
-            <section className="mb-10 print:mb-8 print:break-inside-avoid">
-              <h2 className="mb-4 border-b border-amber-600/40 pb-2 font-heading text-xl font-bold uppercase text-zinc-900 print:text-lg">
+            <section className="mb-10 print:mb-0">
+              <h2 className="mb-4 border-b border-amber-600/40 pb-2 font-heading text-xl font-bold uppercase text-zinc-900 print:hidden">
                 Раунд 1 — корты
               </h2>
-              <p className="mb-4 text-sm text-zinc-600 print:text-black">
+              <p className="mb-4 text-sm text-zinc-600 print:hidden">
                 В матчах указаны фамилии и условные пары: для MN — П = профи, Н = новичок
                 (номер — место в четвёрке на корту); для MF — М / Ж; для MM/WW — №1…№8 по
                 списку на корту.
               </p>
-              <div className="space-y-8">
+              <div className="space-y-8 print:space-y-0">
                 {payload.r1Courts.map((court) => (
                   <article
                     key={`r1-${court.courtNo}`}
-                    className="rounded-xl border border-zinc-300 bg-white p-5 shadow-sm print:break-after-page print:break-inside-avoid print:rounded-none print:border print:border-black print:p-4 print:shadow-none"
+                    className="thai-print-court rounded-xl border border-zinc-300 bg-white p-5 shadow-sm print:break-inside-avoid print:rounded-none print:border print:border-black print:p-3 print:shadow-none"
                   >
                     <h3 className="text-lg font-bold text-zinc-900">
                       Корт {court.courtLabel}
@@ -170,20 +332,14 @@ export function ThaiSchedulePrintClient({
                         (сид расписания туров: {court.courtScheduleSeed})
                       </span>
                     </h3>
-                    <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2 print:mt-2 print:gap-0.5 print:text-[13px]">
-                      {court.rosterLines.map((line, i) => (
-                        <li key={i} className="text-zinc-700 print:text-black">
-                          {line}
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="mt-4 space-y-4 print:mt-3 print:space-y-3">
+                    <CourtRosterResultsTable lines={court.rosterLines} tourCount={payload.tourCount} />
+                    <div className="thai-tours-list mt-4 space-y-4 print:mt-2 print:space-y-1.5">
                       {court.tours.map((tour) => (
                         <div key={tour.tourNo}>
-                          <div className="font-semibold text-zinc-800 print:text-black">
+                          <div className="thai-tour-title font-semibold text-zinc-800 print:text-black">
                             Тур {tour.tourNo}
                           </div>
-                          <table className="mt-2 w-full border-collapse text-sm">
+                          <table className="thai-match-table mt-2 w-full border-collapse text-sm print:mt-0.5">
                             <thead>
                               <tr className="border-b border-zinc-300 text-left text-xs uppercase text-zinc-500 print:border-gray-800 print:text-black">
                                 <th className="py-1 pr-2">#</th>
@@ -210,13 +366,12 @@ export function ThaiSchedulePrintClient({
                                       {m.team2Symbolic}
                                     </div>
                                   </td>
-                                  <td className="py-2 text-zinc-800 print:text-black">
-                                    <div>
-                                      {m.team1Names}{' '}
-                                      <span className="text-zinc-400 print:text-black">—</span>{' '}
-                                      {m.team2Names}
-                                    </div>
-                                  </td>
+                                  <MatchPlayersCell
+                                    team1Names={m.team1Names}
+                                    team2Names={m.team2Names}
+                                    team1Symbolic={m.team1Symbolic}
+                                    team2Symbolic={m.team2Symbolic}
+                                  />
                                   <ScoreCell
                                     matchKey={`r1-${court.courtNo}-${tour.tourNo}-${m.matchNo}`}
                                   />
@@ -227,40 +382,39 @@ export function ThaiSchedulePrintClient({
                         </div>
                       ))}
                     </div>
-                    <div className="hidden justify-between border-t border-black pt-4 print:mt-6 print:flex">
-                      <span>Судья на корте: _________________</span>
-                      <span>Подпись: _________________</span>
-                    </div>
+                    <p className="mt-4 hidden items-end justify-end border-t border-black pt-3 text-xs print:flex">
+                      Судья на корте: _________________
+                    </p>
                   </article>
                 ))}
               </div>
             </section>
 
             <section className="print:break-before-page">
-              <h2 className="mb-4 border-b border-amber-600/40 pb-2 font-heading text-xl font-bold uppercase text-zinc-900 print:text-lg">
+              <h2 className="mb-4 border-b border-amber-600/40 pb-2 font-heading text-xl font-bold uppercase text-zinc-900 print:hidden">
                 Раунд 2 — зоны
               </h2>
               {payload.r2IsTemplate ? (
-                <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 print:border-amber-300 print:bg-amber-50/80">
+                <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 print:hidden">
                   Ниже — шаблон схемы пар по турам (условные П1…Н4). После завершения R1 имена
                   подставятся автоматически по итоговым местам в пулах.
                 </p>
               ) : (
-                <p className="mb-4 text-sm text-zinc-600 print:text-black">
+                <p className="mb-4 text-sm text-zinc-600 print:hidden">
                   Составы зон R2 рассчитаны по итогам R1 (глобальная сортировка внутри пулов).
                   Условные обозначения — порядок на корте R2.
                 </p>
               )}
-              <ul className="mb-6 list-disc space-y-2 pl-5 text-sm text-zinc-700 print:text-black">
+              <ul className="mb-6 list-disc space-y-2 pl-5 text-sm text-zinc-700 print:hidden">
                 {payload.r2Legend.map((line, i) => (
                   <li key={i}>{line}</li>
                 ))}
               </ul>
-              <div className="space-y-8">
+              <div className="space-y-8 print:space-y-0">
                 {payload.r2Courts.map((court) => (
                   <article
                     key={`r2-${court.courtNo}`}
-                    className="rounded-xl border border-zinc-300 bg-white p-5 shadow-sm print:break-after-page print:break-inside-avoid print:rounded-none print:border print:border-black print:p-4 print:shadow-none"
+                    className="thai-print-court rounded-xl border border-zinc-300 bg-white p-5 shadow-sm print:break-inside-avoid print:rounded-none print:border print:border-black print:p-3 print:shadow-none"
                   >
                     <h3 className="text-lg font-bold text-zinc-900">
                       {court.zoneLabel ?? court.courtLabel}
@@ -268,20 +422,14 @@ export function ThaiSchedulePrintClient({
                         · корт {court.courtNo} · сид туров {court.courtScheduleSeed}
                       </span>
                     </h3>
-                    <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2 print:mt-2 print:gap-0.5 print:text-[13px]">
-                      {court.rosterLines.map((line, i) => (
-                        <li key={i} className="text-zinc-700 print:text-black">
-                          {line}
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="mt-4 space-y-4 print:mt-3 print:space-y-3">
+                    <CourtRosterResultsTable lines={court.rosterLines} tourCount={payload.tourCount} />
+                    <div className="thai-tours-list mt-4 space-y-4 print:mt-2 print:space-y-1.5">
                       {court.tours.map((tour) => (
                         <div key={tour.tourNo}>
-                          <div className="font-semibold text-zinc-800 print:text-black">
+                          <div className="thai-tour-title font-semibold text-zinc-800 print:text-black">
                             Тур {tour.tourNo}
                           </div>
-                          <table className="mt-2 w-full border-collapse text-sm">
+                          <table className="thai-match-table mt-2 w-full border-collapse text-sm print:mt-0.5">
                             <thead>
                               <tr className="border-b border-zinc-300 text-left text-xs uppercase text-zinc-500 print:border-gray-800 print:text-black">
                                 <th className="py-1 pr-2">#</th>
@@ -308,13 +456,12 @@ export function ThaiSchedulePrintClient({
                                       {m.team2Symbolic}
                                     </div>
                                   </td>
-                                  <td className="py-2 text-zinc-800 print:text-black">
-                                    <div>
-                                      {m.team1Names}{' '}
-                                      <span className="text-zinc-400 print:text-black">—</span>{' '}
-                                      {m.team2Names}
-                                    </div>
-                                  </td>
+                                  <MatchPlayersCell
+                                    team1Names={m.team1Names}
+                                    team2Names={m.team2Names}
+                                    team1Symbolic={m.team1Symbolic}
+                                    team2Symbolic={m.team2Symbolic}
+                                  />
                                   <ScoreCell
                                     matchKey={`r2-${court.courtNo}-${tour.tourNo}-${m.matchNo}`}
                                   />
@@ -325,10 +472,9 @@ export function ThaiSchedulePrintClient({
                         </div>
                       ))}
                     </div>
-                    <div className="hidden justify-between border-t border-black pt-4 print:mt-6 print:flex">
-                      <span>Судья на корте: _________________</span>
-                      <span>Подпись: _________________</span>
-                    </div>
+                    <p className="mt-4 hidden items-end justify-end border-t border-black pt-3 text-xs print:flex">
+                      Судья на корте: _________________
+                    </p>
                   </article>
                 ))}
               </div>
@@ -339,11 +485,82 @@ export function ThaiSchedulePrintClient({
 
       <style jsx global>{`
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 7mm;
+          }
           .no-print {
             display: none !important;
           }
           .schedule-print-root {
             background: white !important;
+            min-height: auto !important;
+          }
+          .thai-print-court {
+            break-after: page;
+            width: 100%;
+            font-size: 11px;
+            line-height: 1.18;
+          }
+          .thai-print-court h3 {
+            font-size: 14px;
+            line-height: 1.18;
+            margin-bottom: 3px;
+          }
+          .thai-print-court:last-child {
+            break-after: auto;
+          }
+          .thai-tour-title {
+            font-size: 12px;
+            line-height: 1.15;
+          }
+          .thai-match-table {
+            font-size: 10.5px;
+            line-height: 1.12;
+          }
+          .thai-match-table th,
+          .thai-match-table td {
+            border: 1px solid #111 !important;
+            padding: 3px 5px !important;
+          }
+          .thai-match-table tr {
+            break-inside: avoid;
+          }
+          .thai-match-players-cell {
+            padding-top: 3px !important;
+            padding-bottom: 3px !important;
+          }
+          .thai-match-writeins {
+            padding-top: 1px !important;
+          }
+          .thai-match-writeins-stack {
+            gap: 1px !important;
+          }
+          .thai-writein-pair {
+            column-gap: 4px !important;
+            line-height: 1;
+          }
+          .thai-writein-code,
+          .thai-writein-plus {
+            font-size: 9px !important;
+          }
+          .thai-writein-line {
+            min-height: 13px !important;
+          }
+          .thai-score-box {
+            width: 24px !important;
+            height: 24px !important;
+          }
+          .thai-results-table {
+            font-size: 9.5px;
+            line-height: 1.08;
+          }
+          .thai-results-table th,
+          .thai-results-table td {
+            border: 1px solid #111 !important;
+            height: 16px;
+            padding: 1px 4px !important;
+            text-align: center;
           }
         }
       `}</style>

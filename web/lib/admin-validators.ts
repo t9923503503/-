@@ -10,6 +10,10 @@ import {
   normalizeThaiAdminSettings,
 } from './admin-legacy-sync';
 import { validateGoSetup } from './go-next-config';
+import {
+  normalizeGoEngineVersion,
+  requestedGoEngineVersion,
+} from './go-v2-activation';
 
 const TOURNAMENT_STATUSES = new Set(['draft', 'open', 'full', 'finished', 'cancelled']);
 const TOURNAMENT_DIVISIONS = new Set(['Мужской', 'Женский', 'Микст']);
@@ -19,6 +23,8 @@ const PLAYER_STATUSES = new Set(['active', 'temporary', 'inactive', 'injured', '
 const PLAYER_SKILL_LEVELS = new Set(['light', 'medium', 'advanced', 'pro']);
 const PLAYER_POSITIONS = new Set(['attacker', 'defender', 'universal', 'setter', 'blocker']);
 const BULK_PLAYER_ACTIONS = new Set(['status', 'level', 'delete']);
+const GO_V2_MIN_TEAMS = 2;
+const GO_V2_MAX_TEAMS = 48;
 type PlayerStatus = 'active' | 'temporary' | 'inactive' | 'injured' | 'vacation';
 type PlayerSkillLevel = 'light' | 'medium' | 'advanced' | 'pro';
 type PlayerPreferredPosition = 'attacker' | 'defender' | 'universal' | 'setter' | 'blocker';
@@ -79,9 +85,9 @@ function normalizeTournamentDivision(value: unknown): string {
   const raw = toSafeString(value);
   if (!raw) return '';
   const normalized = raw.toLowerCase();
-  if (normalized === 'муж' || normalized === 'мужской') return 'Мужской';
-  if (normalized === 'жен' || normalized === 'женский') return 'Женский';
-  if (normalized === 'микст' || normalized === 'mix') return 'Микст';
+  if (normalized === 'муж' || normalized === 'мужской' || normalized === 'men') return 'Мужской';
+  if (normalized === 'жен' || normalized === 'женский' || normalized === 'women') return 'Женский';
+  if (normalized === 'микст' || normalized === 'mix' || normalized === 'mixed') return 'Микст';
   return raw;
 }
 
@@ -107,19 +113,27 @@ function normalizeTournamentParticipants(value: unknown) {
 export function normalizeTournamentInput(input: Record<string, unknown>) {
   const statusRaw = toSafeString(input.status || 'open').toLowerCase();
   const status = TOURNAMENT_STATUSES.has(statusRaw) ? statusRaw : 'open';
+  const isDraft = status === 'draft';
+  const settings = (typeof input.settings === 'object' && input.settings !== null)
+    ? input.settings as Record<string, unknown>
+    : {};
   return {
     id: toSafeString(input.id),
     name: toSafeString(input.name),
     date: toSafeString(input.date),
-    time: toSafeString(input.time),
-    location: toSafeString(input.location),
-    format: toSafeString(input.format || 'thai'),
-    division: normalizeTournamentDivision(input.division),
+    time: toSafeString(input.time || (isDraft ? '20:00' : '')),
+    location: toSafeString(input.location || (isDraft ? 'МАЛИБУ' : '')),
+    format: toSafeString(input.format || (isDraft ? 'Round Robin' : 'thai')),
+    division: normalizeTournamentDivision(input.division || (isDraft ? 'Мужской' : '')),
     level: normalizeTournamentLevel(input.level),
-    capacity: clampNonNegativeInt(input.capacity, 0),
+    capacity: clampNonNegativeInt(input.capacity, isDraft ? 4 : 0),
     status,
     reason: toSafeString(input.reason),
-    settings: (typeof input.settings === 'object' && input.settings !== null) ? input.settings as Record<string, unknown> : {},
+    settings,
+    goEngineVersion: normalizeGoEngineVersion(requestedGoEngineVersion({
+      goEngineVersion: input.goEngineVersion,
+      settings,
+    })),
     participants: normalizeTournamentParticipants(input.participants),
   };
 }
@@ -128,12 +142,6 @@ export function validateTournamentInput(input: ReturnType<typeof normalizeTourna
   if (!input.name) return 'Tournament name is required';
   if (!input.date) return 'Tournament date is required';
   if (!isValidIsoDate(input.date)) return 'Tournament date must be YYYY-MM-DD';
-  if (!input.time) return 'Tournament time is required';
-  if (!isValidTime(input.time)) return 'Tournament time must be HH:mm';
-  if (!input.division) return 'Division is required';
-  if (!TOURNAMENT_DIVISIONS.has(input.division)) return 'Division must be Мужской, Женский, or Микст';
-  if (!TOURNAMENT_LEVELS.has(input.level)) return 'Level must be hard, medium, or easy';
-  if (input.capacity < 4) return 'Capacity must be at least 4';
   if (input.participants) {
     const seen = new Set<string>();
     for (const participant of input.participants) {
@@ -142,6 +150,24 @@ export function validateTournamentInput(input: ReturnType<typeof normalizeTourna
       seen.add(participant.playerId);
     }
   }
+  if (input.status === 'draft') {
+    if (isGoAdminFormat(input.format) && input.goEngineVersion === 2) {
+      const rawDeclared = Number(input.settings?.goDeclaredTeamCount ?? input.settings?.declaredTeamCount);
+      if (Number.isFinite(rawDeclared)) {
+        const declared = Math.floor(rawDeclared);
+        if (declared < GO_V2_MIN_TEAMS || declared > GO_V2_MAX_TEAMS) {
+          return `Tournament Engine V2 team count must be between ${GO_V2_MIN_TEAMS} and ${GO_V2_MAX_TEAMS}.`;
+        }
+      }
+    }
+    return null;
+  }
+  if (!input.time) return 'Tournament time is required';
+  if (!isValidTime(input.time)) return 'Tournament time must be HH:mm';
+  if (!input.division) return 'Division is required';
+  if (!TOURNAMENT_DIVISIONS.has(input.division)) return 'Division must be Мужской, Женский, or Микст';
+  if (!TOURNAMENT_LEVELS.has(input.level)) return 'Level must be hard, medium, or easy';
+  if (input.capacity < 4) return 'Capacity must be at least 4';
   if (isThaiAdminFormat(input.format) && input.status !== 'open') {
     const thaiSettings = normalizeThaiAdminSettings(input.settings, input.participants?.length ?? 0);
     const expectedParticipants = getThaiSeatCount(thaiSettings.courts);
@@ -154,9 +180,27 @@ export function validateTournamentInput(input: ReturnType<typeof normalizeTourna
     const rawDeclared = Number(input.settings?.goDeclaredTeamCount ?? input.settings?.declaredTeamCount);
     if (Number.isFinite(rawDeclared)) {
       const declared = Math.floor(rawDeclared);
-      if (declared < GO_ADMIN_MIN_DECLARED_TEAMS || declared > GO_ADMIN_MAX_DECLARED_TEAMS) {
+      const minTeams = input.goEngineVersion === 2 ? GO_V2_MIN_TEAMS : GO_ADMIN_MIN_DECLARED_TEAMS;
+      const maxTeams = input.goEngineVersion === 2 ? GO_V2_MAX_TEAMS : GO_ADMIN_MAX_DECLARED_TEAMS;
+      if (declared < minTeams || declared > maxTeams) {
+        if (input.goEngineVersion === 2) {
+          return `Tournament Engine V2 team count must be between ${GO_V2_MIN_TEAMS} and ${GO_V2_MAX_TEAMS}.`;
+        }
         return `GO declared team count must be between ${GO_ADMIN_MIN_DECLARED_TEAMS} and ${GO_ADMIN_MAX_DECLARED_TEAMS}.`;
       }
+    }
+    if (input.goEngineVersion === 2) {
+      const mainParticipants = (input.participants ?? []).filter((participant) => !participant.isWaitlist);
+      if (mainParticipants.length > GO_V2_MAX_TEAMS * 2) {
+        return `Tournament Engine V2 supports at most ${GO_V2_MAX_TEAMS} teams.`;
+      }
+      if (mainParticipants.length > 0 && mainParticipants.length < GO_V2_MIN_TEAMS * 2) {
+        return `Tournament Engine V2 requires at least ${GO_V2_MIN_TEAMS} complete teams.`;
+      }
+      if (mainParticipants.length % 2 !== 0) {
+        return 'Tournament Engine V2 requires complete pairs.';
+      }
+      return null;
     }
     const goSettings = normalizeGoAdminSettings(input.settings, input.participants?.length ?? 0);
     const declaredParticipants = Math.max(

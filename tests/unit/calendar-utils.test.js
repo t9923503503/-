@@ -60,7 +60,7 @@ describe('tournament status helpers', () => {
     ).toBe('open');
   });
 
-  it('marks past tournaments as finished automatically', () => {
+  it('keeps past tournaments awaiting verified results', () => {
     expect(
       resolveTournamentStatus(
         makeTournament({
@@ -69,7 +69,7 @@ describe('tournament status helpers', () => {
         }),
         NOW
       )
-    ).toBe('finished');
+    ).toBe('awaiting_results');
   });
 
   it('preserves cancelled tournaments', () => {
@@ -83,6 +83,20 @@ describe('tournament status helpers', () => {
       )
     ).toBe('cancelled');
   });
+
+  it.each(['in_progress', 'awaiting_results'])(
+    'preserves the explicit %s state and keeps registration closed',
+    (status) => {
+      const tournament = enrichTournamentRuntimeState(
+        makeTournament({ status, participantCount: 8 }),
+        NOW
+      );
+
+      expect(tournament.status).toBe(status);
+      expect(tournament.registrationClosed).toBe(true);
+      expect(tournament.spotsLeft).toBe(8);
+    }
+  );
 
   it('adds derived runtime fields for cards and detail pages', () => {
     const tournament = enrichTournamentRuntimeState(
