@@ -7,8 +7,10 @@ type RegistrationType = "with_partner" | "solo";
 
 export default function TournamentRegisterForm({
   tournamentId,
+  individualOnly = false,
 }: {
   tournamentId: string;
+  individualOnly?: boolean;
 }) {
   const [name, setName] = useState("");
   const [gender, setGender] = useState<Gender>("M");
@@ -27,11 +29,11 @@ export default function TournamentRegisterForm({
   const canSubmit = useMemo(() => {
     const hasBaseData = name.trim().length >= 2 && !loading;
     if (!hasBaseData) return false;
-    if (registrationType === "with_partner") {
+    if (!individualOnly && registrationType === "with_partner") {
       return partnerName.trim().length >= 2;
     }
     return true;
-  }, [name, loading, registrationType, partnerName]);
+  }, [name, loading, individualOnly, registrationType, partnerName]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,7 +43,7 @@ export default function TournamentRegisterForm({
       setMessage({ type: "error", text: "Введите имя и фамилию (минимум 2 символа)." });
       return;
     }
-    if (registrationType === "with_partner" && partnerName.trim().length < 2) {
+    if (!individualOnly && registrationType === "with_partner" && partnerName.trim().length < 2) {
       setMessage({
         type: "error",
         text: "Для регистрации с партнёром укажите имя партнёра (минимум 2 символа).",
@@ -59,10 +61,10 @@ export default function TournamentRegisterForm({
           name,
           gender,
           phone: phone.trim().length ? phone.trim() : undefined,
-          registrationType,
-          partnerWanted: registrationType === "solo" ? partnerWanted : false,
+          registrationType: individualOnly ? "solo" : registrationType,
+          partnerWanted: individualOnly ? false : registrationType === "solo" ? partnerWanted : false,
           partnerName:
-            registrationType === "with_partner" && partnerName.trim().length
+            !individualOnly && registrationType === "with_partner" && partnerName.trim().length
               ? partnerName.trim()
               : undefined,
         }),
@@ -147,6 +149,16 @@ export default function TournamentRegisterForm({
         </label>
       </div>
 
+      {individualOnly ? (
+        <div className="mt-5 rounded-lg border border-brand/25 bg-brand/10 px-4 py-3">
+          <div className="text-xs font-body uppercase tracking-wide text-brand">
+            Индивидуальная регистрация
+          </div>
+          <p className="mt-1 text-sm font-body text-text-primary/75">
+            Партнёры и игровые пары формируются организатором в рамках турнира.
+          </p>
+        </div>
+      ) : (
       <div className="mt-5">
         <div className="text-text-secondary text-xs font-body uppercase tracking-wide">
           Тип регистрации
@@ -176,8 +188,9 @@ export default function TournamentRegisterForm({
           </label>
         </div>
       </div>
+      )}
 
-      {registrationType === "with_partner" ? (
+      {!individualOnly && registrationType === "with_partner" ? (
         <div className="mt-5">
           <label className="block">
             <span className="text-text-secondary text-xs font-body uppercase tracking-wide">
@@ -192,7 +205,7 @@ export default function TournamentRegisterForm({
             />
           </label>
         </div>
-      ) : (
+      ) : !individualOnly ? (
         <div className="mt-5 rounded-lg border border-white/10 bg-white/5 p-4">
           <div className="text-text-secondary text-xs font-body uppercase tracking-wide">
             Поиск партнёра
@@ -228,7 +241,7 @@ export default function TournamentRegisterForm({
             </label>
           </div>
         </div>
-      )}
+      ) : null}
 
       <div className="mt-5">
         <div className="text-text-secondary text-xs font-body uppercase tracking-wide">
@@ -299,4 +312,3 @@ export default function TournamentRegisterForm({
     </form>
   );
 }
-

@@ -6,10 +6,11 @@ import { cookies } from 'next/headers';
 
 export interface AccessSummaryPlayer {
   id: number;
-  email: string;
+  email: string | null;
   fullName: string | null;
   nickname: string | null;
   displayName: string;
+  authMethod: 'telegram' | 'email' | 'email+telegram';
 }
 
 export interface AccessSummary {
@@ -43,20 +44,28 @@ async function loadPlayerSummaryFromCookies(): Promise<AccessSummaryPlayer | nul
 
   let fullName: string | null = null;
   let nickname: string | null = null;
+  let email: string | null = String(payload.email || '').includes('@')
+    ? String(payload.email)
+    : null;
+  let authMethod: 'telegram' | 'email' | 'email+telegram' = email ? 'email' : 'telegram';
 
   try {
     const pool = getPool();
     const { rows } = await pool.query(
-      'SELECT full_name, nickname FROM users WHERE id = $1 LIMIT 1',
+      'SELECT email, full_name, nickname, telegram_user_id FROM users WHERE id = $1 LIMIT 1',
       [payload.id]
     );
+    email = rows[0]?.email ? String(rows[0].email) : null;
     fullName = rows[0]?.full_name ? String(rows[0].full_name) : null;
     nickname = rows[0]?.nickname ? String(rows[0].nickname) : null;
+    authMethod = rows[0]?.telegram_user_id
+      ? (email ? 'email+telegram' : 'telegram')
+      : 'email';
   } catch {
     // Player session should still work even if the profile query fails.
   }
 
-  const emailPrefix = String(payload.email || '').split('@')[0] || 'Игрок';
+  const emailPrefix = String(email || '').split('@')[0];
   const displayName =
     normalizeDisplayName(nickname) ||
     normalizeDisplayName(fullName) ||
@@ -65,10 +74,11 @@ async function loadPlayerSummaryFromCookies(): Promise<AccessSummaryPlayer | nul
 
   return {
     id: payload.id,
-    email: payload.email,
+    email,
     fullName,
     nickname,
     displayName,
+    authMethod,
   };
 }
 
@@ -126,4 +136,3 @@ export function getAccessSubtitle(summary: AccessSummary): string {
 export function hasAnyAccess(summary: AccessSummary): boolean {
   return Boolean(summary.player || summary.admin || summary.judgeApproved);
 }
-

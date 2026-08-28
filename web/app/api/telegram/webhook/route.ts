@@ -5,7 +5,20 @@ import {
   sendTelegramMessage,
 } from '@/lib/telegram';
 import { handleTgStart, handleTgMy, handleTgUnlink, handleTgHelp } from '@/lib/telegram-commands';
-import { confirmTelegramWebLogin, startTelegramWebLogin } from '@/lib/telegram-registration';
+import {
+  confirmTelegramWebLogin,
+  startTelegramWebLogin,
+  telegramRegistrations,
+} from '@/lib/telegram-registration';
+import {
+  confirmGameAttendanceFromTelegram,
+  createGameDraftFromTelegram,
+  joinGameFromTelegram,
+  leaveGameFromTelegram,
+  respondGameInviteFromTelegram,
+  telegramGameCreateMenu,
+  type TelegramGameActionResult,
+} from '@/lib/telegram-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +56,14 @@ function checkSecret(req: NextRequest): boolean {
   return req.headers.get('x-telegram-bot-api-secret-token') === expected;
 }
 
+async function sendGameFlow(chatId: string, result: TelegramGameActionResult) {
+  if (result.buttons?.length) {
+    await sendTelegramInlineMessage(chatId, result.reply, result.buttons);
+  } else {
+    await sendTelegramMessage(chatId, result.reply);
+  }
+}
+
 export async function POST(req: NextRequest) {
   if (!checkSecret(req)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -56,7 +77,8 @@ export async function POST(req: NextRequest) {
   }
 
   const callback = update.callback_query;
-  const callbackMatch = String(callback?.data || '').match(/^wl:r:([A-Za-z0-9_-]{20,64})$/);
+  const callbackData = String(callback?.data || '');
+  const callbackMatch = callbackData.match(/^wl:r:([A-Za-z0-9_-]{20,64})$/);
   if (callback && callbackMatch) {
     const callbackChatId = String(callback.message?.chat?.id ?? '').trim();
     const callbackUserId = String(callback.from?.id ?? '').trim();
@@ -75,6 +97,56 @@ export async function POST(req: NextRequest) {
       await answerTelegramCallback(callback.id, 'Временная ошибка');
     }
     return NextResponse.json({ ok: true });
+  }
+
+  if (callback) {
+    const callbackChatId = String(callback.message?.chat?.id ?? '').trim();
+    const callbackUserId = String(callback.from?.id ?? '').trim();
+    const callbackPrivateChatId = callback.message?.chat?.type === 'private' ? callbackChatId : '';
+    const attendance = callbackData.match(/^attendance:([yn]):([0-9a-f-]{36})$/i);
+    const invitation = callbackData.match(/^invite:([ad]):([0-9a-f-]{36})$/i);
+    const gameJoin = callbackData.match(/^(join|leave):([0-9a-f-]{36})$/i);
+    const create = callbackData.match(/^create:(2x2|thai|king)(?::(rated|friendly))?$/i);
+    const createMode = callbackData.match(/^create:mode:(rated|friendly)$/i);
+    try {
+      let result: TelegramGameActionResult | null = null;
+      if (attendance) {
+        result = attendance[1].toLowerCase() === 'y'
+          ? await confirmGameAttendanceFromTelegram(callbackUserId, attendance[2])
+          : await leaveGameFromTelegram(callbackUserId, attendance[2]);
+      } else if (invitation) {
+        result = await respondGameInviteFromTelegram(
+          callbackUserId,
+          invitation[2],
+          invitation[1].toLowerCase() === 'a' ? 'accept' : 'decline'
+        );
+      } else if (gameJoin) {
+        result = gameJoin[1].toLowerCase() === 'join'
+          ? await joinGameFromTelegram(callbackUserId, gameJoin[2])
+          : await leaveGameFromTelegram(callbackUserId, gameJoin[2]);
+      } else if (callbackData === 'create:menu' || createMode) {
+        result = callbackPrivateChatId
+          ? await telegramGameCreateMenu(callbackUserId, createMode?.[1].toLowerCase() === 'friendly' ? 'friendly' : 'rated')
+          : { ok: false, reply: 'Создание игры доступно только в личном чате.' };
+      } else if (create) {
+        result = callbackPrivateChatId
+          ? await createGameDraftFromTelegram(
+              callbackUserId,
+              create[1].toLowerCase() as '2x2' | 'thai' | 'king',
+              create[2]?.toLowerCase() === 'friendly' ? 'friendly' : 'rated'
+            )
+          : { ok: false, reply: 'Создание игры доступно только в личном чате.' };
+      }
+      if (result) {
+        await answerTelegramCallback(callback.id, result.reply);
+        if (callbackPrivateChatId && result.buttons?.length) await sendGameFlow(callbackChatId, result);
+        return NextResponse.json({ ok: true });
+      }
+    } catch (err) {
+      console.error('[api/telegram/webhook][game-callback]', err);
+      await answerTelegramCallback(callback.id, 'Временная ошибка');
+      return NextResponse.json({ ok: true });
+    }
   }
 
   const message = update.message;
@@ -108,12 +180,23 @@ export async function POST(req: NextRequest) {
           await sendTelegramMessage(chatId, result.reply);
         }
       }
+      else if (command === '/start' && payload === 'create_game' && privateChatId) {
+        await sendGameFlow(chatId, await telegramGameCreateMenu(telegramUserId));
+      }
       else if (command === '/start') {
         reply = await handleTgStart(chatId, payload, telegramUserId, privateChatId);
       }
       else if (command === '/my') reply = await handleTgMy(chatId);
       else if (command === '/unlink') reply = await handleTgUnlink(chatId);
       else if (command === '/help') reply = handleTgHelp();
+      else if (command === '/create_game' && privateChatId) {
+        await sendGameFlow(chatId, await telegramGameCreateMenu(telegramUserId));
+      }
+      else if (command === '/registrations' && privateChatId) {
+        const result = await telegramRegistrations(telegramUserId, privateChatId);
+        if (result.buttons?.length) await sendTelegramInlineMessage(chatId, result.reply, result.buttons);
+        else await sendTelegramMessage(chatId, result.reply);
+      }
 
       if (reply) await sendTelegramMessage(chatId, reply);
     } catch (err) {

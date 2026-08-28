@@ -4,27 +4,33 @@ import LandingFAQ from '@/components/landing/LandingFAQ';
 export const metadata = {
   title: 'Как начать играть — LPVOLLEY.RU',
   description:
-    'Первый турнир по пляжному волейболу в Сургуте: регистрация, поиск пары, форматы, FAQ. Всё, что нужно новичку.',
+    'Как устроены игры и результаты LPVOLLEY: выбери или создай игру, сыграй, внеси счёт и подтверди результат.',
 };
 
 const STEPS = [
   {
     num: '1',
-    title: 'Зарегистрируйся',
-    text: 'Создай аккаунт игрока — так ты сможешь подавать заявки, искать пару и следить за своими турнирами.',
-    action: { href: '/login', label: 'Создать аккаунт →' },
+    title: 'Выбери или создай игру',
+    text: 'Открой ближайшую игру или создай свою: укажи площадку, формат, дату и состав участников.',
+    action: { href: '/partner', label: 'Открыть игры →' },
   },
   {
     num: '2',
-    title: 'Найди пару или заявись один',
-    text: 'Ищи напарника в сообществе или выбирай турнир с индивидуальной заявкой — подходящий вариант найдётся для каждого.',
-    action: { href: '/partner', label: 'Найти пару →' },
+    title: 'Собери участников',
+    text: 'Участники записываются в состав, а организатор видит статус игры, площадку и готовность к старту.',
+    action: { href: '/partner/manage', label: 'Создать игру →' },
   },
   {
     num: '3',
-    title: 'Приходи на корт в «Малибу»',
-    text: 'В карточке турнира будут дата, время и площадка. Возьми спортивную форму, воду и приходи немного заранее — остальное расскажем на месте.',
-    action: { href: '/calendar', label: 'Выбрать турнир →' },
+    title: 'Сыграйте и внесите счёт',
+    text: 'После игры организатор или участник вносит структурированный результат в карточку события.',
+    action: { href: '/profile', label: 'Открыть профиль →' },
+  },
+  {
+    num: '4',
+    title: 'Подтвердите результат',
+    text: 'После подтверждения обновляются история матчей, статистика и отдельный игровой рейтинг.',
+    action: { href: '/rankings', label: 'Смотреть рейтинг →' },
   },
 ] as const;
 
@@ -45,14 +51,14 @@ export default function HowItWorksPage() {
                 className="mt-3 text-3xl font-black uppercase leading-tight tracking-[-0.04em] text-white md:text-5xl"
                 style={{ fontFamily: 'Sora, sans-serif' }}
               >
-                Первый турнир —{' '}
+                Каждая игра —{' '}
                 <span className="bg-gradient-to-r from-[#00D1FF] to-[#FF7A00] bg-clip-text text-transparent">
-                  это просто
+                часть истории
                 </span>
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-white/72 md:text-base">
-                Даже если ты впервые выходишь на песок, до своей первой игры всего три шага.
-                Уровень и опыт не важны — подскажем формат и поможем освоиться.
+                LPVOLLEY собирает в одном месте игры, турниры и результаты. После каждого
+                подтверждённого матча история и статистика игрока обновляются автоматически.
               </p>
             </div>
           </div>
@@ -62,7 +68,7 @@ export default function HowItWorksPage() {
       {/* Steps */}
       <section className="px-4 py-6 md:px-6 md:py-8">
         <div className="mx-auto max-w-7xl">
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {STEPS.map((step) => (
               <div
                 key={step.num}
@@ -132,7 +138,7 @@ export default function HowItWorksPage() {
                 Выходи на песок
               </h2>
               <p className="mt-2 text-sm leading-6 text-white/70 md:text-base">
-                Выбирай турнир в календаре, находи пару и становись частью «Лютых пляжников».
+                  Выбирай игру или турнир, сохраняй результаты и становись частью истории «Лютых пляжников».
               </p>
             </div>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">

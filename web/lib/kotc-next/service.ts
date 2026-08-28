@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { PoolClient } from 'pg';
 import { applyTournamentStatusOverride, upsertTournamentResults } from '@/lib/admin-queries';
 import { getTournamentTableColumnsTx } from '@/lib/admin-queries-pg';
@@ -46,6 +47,8 @@ import type {
   KotcNextFinalIndividualResult,
   KotcNextFinalZoneResult,
   KotcNextGameEvent,
+  KotcNextHeartbeatInput,
+  KotcNextHeartbeatResult,
   KotcNextJudgeAggregatePairStanding,
   KotcNextJudgeAggregatePlayerStanding,
   KotcNextJudgeCourtNavItem,
@@ -57,12 +60,16 @@ import type {
   KotcNextOperatorStage,
   KotcNextOperatorState,
   KotcNextPairLiveState,
+  KotcNextPairPointResult,
   KotcNextPairView,
   KotcNextR2ManualPlayerRef,
   KotcNextR2ManualZone,
   KotcNextR2SeedZone,
   KotcNextRaundHistoryEntry,
   KotcNextRaundStatus,
+  KotcNextScoreFeedback,
+  KotcNextScoreHistoryEntry,
+  KotcNextScoreViewer,
   KotcNextRoundStatus,
   KotcNextRoundType,
   KotcNextVariant,
@@ -136,7 +143,7 @@ interface RaundRow {
   accumulatedPauseMs: number;
   pausedPhase: 'countdown' | 'running' | null;
   statusChangedAt: string | null;
-  lastControlledBy: KotcNextControlActor['kind'] | null;
+  lastControlledBy: Exclude<KotcNextControlActor['kind'], 'player'> | null;
   revision: number;
   status: KotcNextRaundStatus;
   kingPairIdx: number;
@@ -206,6 +213,17 @@ interface JudgeMutationResult {
   tournamentId: string;
   pin: string;
   publishResults: boolean;
+}
+
+interface ScoreMutationActorInput {
+  viewerUserId?: number | null;
+  deviceId?: string | null;
+  commandId?: string | null;
+  expectedRevision?: number | null;
+}
+
+interface PairPointMutationResult extends JudgeMutationResult {
+  feedback: KotcNextScoreFeedback;
 }
 
 const ZONE_ORDER: KotcNextZoneKey[] = ['kin', 'advance', 'medium', 'lite'];
@@ -504,6 +522,9 @@ async function loadTournamentTx(
       raundTimerMinutes: paramsBase.raundTimerMinutes,
       takeoversMode: paramsBase.takeoversMode,
       r2SeedingMode: paramsBase.r2SeedingMode,
+      selfScoringEnabled: paramsBase.selfScoringEnabled,
+      scoreVoiceEnabled: paramsBase.scoreVoiceEnabled,
+      scoreHistoryVisible: paramsBase.scoreHistoryVisible,
       variant: 'MF',
     },
     variant: 'MF',
@@ -569,6 +590,9 @@ async function hydrateTournamentTx(
         raundTimerMinutes: paramsAligned.raundTimerMinutes,
         takeoversMode: paramsAligned.takeoversMode,
         r2SeedingMode: paramsAligned.r2SeedingMode,
+        selfScoringEnabled: paramsAligned.selfScoringEnabled,
+        scoreVoiceEnabled: paramsAligned.scoreVoiceEnabled,
+        scoreHistoryVisible: paramsAligned.scoreHistoryVisible,
         variant,
       },
     },
@@ -890,6 +914,157 @@ async function listGameEventsTx(client: PoolClient, raundId: string): Promise<Ko
   }));
 }
 
+async function loadScoreViewerTx(
+  client: PoolClient,
+  userId: number | null | undefined,
+  pairs: PairRow[],
+  selfScoringEnabled: boolean,
+): Promise<KotcNextScoreViewer | null> {
+  const normalizedUserId = Math.trunc(Number(userId));
+  if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) return null;
+  const res = await client.query(
+    `
+      SELECT u.id, u.player_id, COALESCE(NULLIF(p.name, ''), NULLIF(u.full_name, ''), 'Player') AS display_name
+      FROM users u
+      LEFT JOIN players p ON p.id = u.player_id
+      WHERE u.id = $1
+      LIMIT 1
+    `,
+    [normalizedUserId],
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  const playerId = row.player_id ? String(row.player_id) : null;
+  const pair = playerId
+    ? pairs.find((entry) => entry.primaryPlayerId === playerId || entry.secondaryPlayerId === playerId) ?? null
+    : null;
+  return {
+    userId: normalizedUserId,
+    playerId,
+    displayName: String(row.display_name || 'Player'),
+    pairIdx: pair?.pairIdx ?? null,
+    canSelfScore: selfScoringEnabled && pair != null,
+  };
+}
+
+function scoreHistoryActorKind(value: unknown): KotcNextScoreHistoryEntry['actorKind'] {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'player' || normalized === 'judge' || normalized === 'operator' || normalized === 'admin') {
+    return normalized;
+  }
+  return 'system';
+}
+
+function scoreHistoryEventType(value: unknown): KotcNextScoreHistoryEntry['eventType'] | null {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (
+    normalized === 'pair_point' ||
+    normalized === 'undo' ||
+    normalized === 'correct_score' ||
+    normalized === 'revert_correction'
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
+async function listScoreHistoryTx(
+  client: PoolClient,
+  raundId: string,
+  pairs: PairRow[],
+  limit = 60,
+): Promise<KotcNextScoreHistoryEntry[]> {
+  const safeLimit = Math.max(1, Math.min(200, Math.trunc(Number(limit) || 60)));
+  const pairLabels = new Map(pairs.map((pair) => [pair.pairIdx, pairLabel(pair)]));
+  const res = await client.query(
+    `
+      SELECT events.*,
+             EXISTS (
+               SELECT 1 FROM kotcn_event_log reversal
+               WHERE reversal.reverted_event_id = events.id
+             ) AS reverted
+      FROM kotcn_event_log events
+      WHERE events.raund_id = $1
+        AND events.event_type IN ('pair_point', 'undo', 'correct_score', 'revert_correction')
+      ORDER BY events.created_at DESC, events.id DESC
+      LIMIT $2
+    `,
+    [raundId, safeLimit],
+  );
+  return res.rows.flatMap((row) => {
+    const eventType = scoreHistoryEventType(row.event_type);
+    if (!eventType) return [];
+    const payload = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+      ? (row.payload as Record<string, unknown>)
+      : {};
+    const rawPairIdx = payload.pairIdx;
+    const parsedPairIdx = Math.trunc(Number(rawPairIdx));
+    const pairIdx = rawPairIdx == null || !Number.isInteger(parsedPairIdx) ? null : parsedPairIdx;
+    const rawScoreBefore = payload.scoreBefore;
+    const rawScoreAfter = payload.scoreAfter;
+    const scoreBefore = rawScoreBefore == null || !Number.isFinite(Number(rawScoreBefore))
+      ? null
+      : Math.trunc(Number(rawScoreBefore));
+    const scoreAfter = rawScoreAfter == null || !Number.isFinite(Number(rawScoreAfter))
+      ? null
+      : Math.trunc(Number(rawScoreAfter));
+    const fallbackDelta = eventType === 'undo' || eventType === 'revert_correction' ? -1 : 1;
+    const delta = Number.isFinite(Number(payload.delta)) ? Math.trunc(Number(payload.delta)) : fallbackDelta;
+    const actorKind = scoreHistoryActorKind(row.actor_kind);
+    const actorName = String(
+      payload.actorName ||
+      (actorKind === 'player'
+        ? 'Player'
+        : actorKind === 'admin'
+          ? 'Administrator'
+          : actorKind === 'operator'
+            ? 'Operator'
+            : actorKind === 'judge'
+              ? 'Court device'
+              : 'System'),
+    );
+    return [{
+      id: String(row.id),
+      commandId: row.command_id ? String(row.command_id) : null,
+      eventType,
+      pairIdx,
+      pairLabel: String(payload.pairLabel || (pairIdx == null ? 'Pair' : pairLabels.get(pairIdx) || `Pair ${pairIdx + 1}`)),
+      delta,
+      scoreBefore,
+      scoreAfter,
+      actorKind,
+      actorId: row.actor_id ? String(row.actor_id) : null,
+      actorName,
+      deviceId: payload.deviceId ? String(payload.deviceId) : null,
+      createdAt: new Date(String(row.created_at)).toISOString(),
+      revertedEventId: row.reverted_event_id ? String(row.reverted_event_id) : null,
+      reverted: Boolean(row.reverted),
+    } satisfies KotcNextScoreHistoryEntry];
+  });
+}
+
+function scoreFeedbackFromEventRow(
+  row: Record<string, unknown>,
+  idempotent: boolean,
+): KotcNextScoreFeedback {
+  const payload = row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+    ? (row.payload as Record<string, unknown>)
+    : {};
+  return {
+    eventId: String(row.id),
+    commandId: String(row.command_id || ''),
+    pairIdx: asInt(payload.pairIdx, -1),
+    pairLabel: String(payload.pairLabel || 'Pair'),
+    delta: 1,
+    scoreBefore: asInt(payload.scoreBefore, 0),
+    scoreAfter: asInt(payload.scoreAfter, 0),
+    actorName: String(payload.actorName || 'Court device'),
+    appliedAt: new Date(String(row.created_at)).toISOString(),
+    revision: asInt(payload.raundRevision, asInt(row.revision_after, 0)),
+    idempotent,
+  };
+}
+
 async function nextGameSeqNoTx(client: PoolClient, raundId: string): Promise<number> {
   const res = await client.query(`SELECT COALESCE(MAX(seq_no), 0) + 1 AS next_seq FROM kotcn_game WHERE raund_id = $1`, [raundId]);
   return asInt(res.rows[0]?.next_seq, 1);
@@ -984,6 +1159,9 @@ async function loadCourtByPinTx(
       raundTimerMinutes: paramsBase.raundTimerMinutes,
       takeoversMode: paramsBase.takeoversMode,
       r2SeedingMode: paramsBase.r2SeedingMode,
+      selfScoringEnabled: paramsBase.selfScoringEnabled,
+      scoreVoiceEnabled: paramsBase.scoreVoiceEnabled,
+      scoreHistoryVisible: paramsBase.scoreHistoryVisible,
       variant: 'MF',
     },
     variant: 'MF',
@@ -1020,6 +1198,9 @@ async function loadCourtByPinTx(
         raundTimerMinutes: paramsAligned.raundTimerMinutes,
         takeoversMode: paramsAligned.takeoversMode,
         r2SeedingMode: paramsAligned.r2SeedingMode,
+        selfScoringEnabled: paramsAligned.selfScoringEnabled,
+        scoreVoiceEnabled: paramsAligned.scoreVoiceEnabled,
+        scoreHistoryVisible: paramsAligned.scoreHistoryVisible,
         variant,
       },
     },
@@ -1317,7 +1498,20 @@ function getAccessibleRaundNos(raunds: RaundRow[]): Set<number> {
     }
   }
   const firstPending = raunds.find((row) => row.status === 'pending') ?? null;
-  if (firstPending) accessible.add(firstPending.raundNo);
+  if (!firstPending) return accessible;
+
+  const active = raunds.find((row) => row.status === 'running' || row.status === 'paused') ?? null;
+  if (active) {
+    if (firstPending.raundNo === active.raundNo + 1 && hasRaundTimerEnded(active)) {
+      accessible.add(firstPending.raundNo);
+    }
+    return accessible;
+  }
+
+  const previousRaunds = raunds.filter((row) => row.raundNo < firstPending.raundNo);
+  if (previousRaunds.every((row) => row.status === 'finished')) {
+    accessible.add(firstPending.raundNo);
+  }
   return accessible;
 }
 
@@ -3128,12 +3322,32 @@ async function recordPairPointTx(
   pin: string,
   raundNo: number,
   pairIdx: number,
-): Promise<JudgeMutationResult> {
+  actorInput: ScoreMutationActorInput,
+): Promise<PairPointMutationResult> {
   const target = await loadActionTargetTx(client, pin, raundNo);
-  const revisionBefore = await getControlRevisionTx(client, target.tournament.id);
   if (target.tournament.params.takeoversMode !== 'no_takeovers') {
     throw new KotcNextError(409, 'Pair-point action is only available for no-takeovers KOTC');
   }
+
+  const requestedCommandId = String(actorInput.commandId || '').trim();
+  const commandId = (requestedCommandId || `pair-point:${randomUUID()}`).slice(0, 160);
+  const existingEvent = await client.query(
+    `SELECT * FROM kotcn_event_log WHERE tournament_id = $1 AND command_id = $2 LIMIT 1`,
+    [target.tournament.id, commandId],
+  );
+  if (existingEvent.rows[0]) {
+    const existingFeedback = scoreFeedbackFromEventRow(existingEvent.rows[0], true);
+    if (existingFeedback.pairIdx !== Math.trunc(Number(pairIdx))) {
+      throw new KotcNextError(409, 'commandId was already used for another pair', 'IDEMPOTENCY_KEY_REUSED');
+    }
+    return {
+      tournamentId: target.tournament.id,
+      pin,
+      publishResults: false,
+      feedback: existingFeedback,
+    };
+  }
+
   if (target.raund.status === 'finished') {
     throw new KotcNextError(423, 'Raund already finished');
   }
@@ -3147,8 +3361,50 @@ async function recordPairPointTx(
     throw new KotcNextError(400, 'pairIdx is invalid');
   }
 
+  const expectedRevision = actorInput.expectedRevision == null
+    ? null
+    : Math.trunc(Number(actorInput.expectedRevision));
+  if (
+    expectedRevision != null &&
+    (!Number.isInteger(expectedRevision) || expectedRevision !== target.raund.revision)
+  ) {
+    throw new KotcNextError(
+      409,
+      `Score revision mismatch: expected ${expectedRevision}, got ${target.raund.revision}`,
+      'REVISION_MISMATCH',
+    );
+  }
+
+  const deviceId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(actorInput.deviceId || '').trim(),
+  )
+    ? String(actorInput.deviceId).trim().toLowerCase()
+    : null;
+  const viewer = await loadScoreViewerTx(
+    client,
+    actorInput.viewerUserId,
+    target.pairs,
+    target.tournament.params.selfScoringEnabled,
+  );
+  if (target.tournament.params.selfScoringEnabled) {
+    if (!viewer) {
+      throw new KotcNextError(401, 'Sign in to add a point in self-scoring mode', 'PLAYER_AUTH_REQUIRED');
+    }
+    if (!viewer.canSelfScore || viewer.pairIdx !== normalizedPairIdx || !viewer.playerId) {
+      throw new KotcNextError(403, 'A player can add points only to their current pair', 'PLAYER_PAIR_MISMATCH');
+    }
+    if (!deviceId) {
+      throw new KotcNextError(400, 'deviceId is required in self-scoring mode');
+    }
+    if (expectedRevision == null) {
+      throw new KotcNextError(400, 'expectedRevision is required in self-scoring mode');
+    }
+  }
+
   const currentState = buildLiveState(target.pairs, target.raund, target.stats);
   const nextState = applyNoTakeoversPairPoint(currentState, normalizedPairIdx);
+  const scoreBefore = currentState.pairs.find((pair) => pair.pairIdx === normalizedPairIdx)?.kingWins ?? 0;
+  const scoreAfter = nextState.pairs.find((pair) => pair.pairIdx === normalizedPairIdx)?.kingWins ?? scoreBefore + 1;
   const nextSeqNo = await nextGameSeqNoTx(client, target.raund.raundId);
 
   const inserted = await client.query(
@@ -3161,8 +3417,16 @@ async function recordPairPointTx(
   );
   await writeRaundStateTx(client, target.raund.raundId, nextState);
   await setCourtStatusTx(client, target.court.courtId, 'live');
+  const revisionBefore = await getControlRevisionTx(client, target.tournament.id);
   const revisionAfter = revisionBefore + 1;
-  await appendControlEventTx(client, {
+  const scorePair = target.pairs.find((pair) => pair.pairIdx === normalizedPairIdx)!;
+  const actor = viewer && target.tournament.params.selfScoringEnabled
+    ? { kind: 'player' as const, id: viewer.playerId }
+    : { kind: 'judge' as const, id: deviceId ? `device:${deviceId}` : `court:${target.court.courtId}` };
+  const actorName = viewer && target.tournament.params.selfScoringEnabled
+    ? viewer.displayName
+    : `Court ${target.court.courtNo}`;
+  const auditEvent = await appendControlEventTx(client, {
     tournamentId: target.tournament.id,
     roundId: target.round.roundId,
     courtId: target.court.courtId,
@@ -3170,15 +3434,45 @@ async function recordPairPointTx(
     roundNo: target.round.roundNo,
     courtNo: target.court.courtNo,
     raundNo,
-    commandId: `judge-pair-point:${target.raund.raundId}:${nextSeqNo}`,
+    commandId,
     eventType: 'pair_point',
-    actor: { kind: 'judge', id: pin },
-    payload: { legacyGameId: String(inserted.rows[0]?.id || ''), seqNo: nextSeqNo, pairIdx: normalizedPairIdx },
+    actor,
+    payload: {
+      legacyGameId: String(inserted.rows[0]?.id || ''),
+      seqNo: nextSeqNo,
+      pairIdx: normalizedPairIdx,
+      pairLabel: pairLabel(scorePair),
+      delta: 1,
+      scoreBefore,
+      scoreAfter,
+      actorName,
+      actorUserId: viewer?.userId ?? null,
+      actorPlayerId: viewer?.playerId ?? null,
+      deviceId,
+      source: target.tournament.params.selfScoringEnabled ? 'player_self_score' : 'judge_screen',
+      raundRevision: target.raund.revision + 1,
+    },
+    beforeState: { pairIdx: normalizedPairIdx, score: scoreBefore },
+    afterState: { pairIdx: normalizedPairIdx, score: scoreAfter },
     revisionBefore,
     revisionAfter,
   });
 
-  return { tournamentId: target.tournament.id, pin, publishResults: false };
+  return {
+    tournamentId: target.tournament.id,
+    pin,
+    publishResults: false,
+    feedback: scoreFeedbackFromEventRow(
+      {
+        id: auditEvent.id,
+        command_id: auditEvent.commandId,
+        payload: auditEvent.payload,
+        created_at: auditEvent.createdAt,
+        revision_after: auditEvent.revisionAfter,
+      },
+      false,
+    ),
+  };
 }
 
 async function manualPairSwitchTx(
@@ -3234,9 +3528,26 @@ async function resetRaundTx(client: PoolClient, pin: string, raundNo: number): P
   return { tournamentId: target.tournament.id, pin, publishResults: false };
 }
 
-async function undoLastEventTx(client: PoolClient, pin: string, raundNo: number): Promise<JudgeMutationResult> {
+async function undoLastEventTx(
+  client: PoolClient,
+  pin: string,
+  raundNo: number,
+  actorInput: ScoreMutationActorInput = {},
+): Promise<JudgeMutationResult> {
   const target = await loadActionTargetTx(client, pin, raundNo);
-  const revisionBefore = await getControlRevisionTx(client, target.tournament.id);
+  const requestedCommandId = String(actorInput.commandId || '').trim();
+  const commandId = (requestedCommandId || `undo:${randomUUID()}`).slice(0, 160);
+  const existingEvent = await client.query(
+    `SELECT event_type FROM kotcn_event_log WHERE tournament_id = $1 AND command_id = $2 LIMIT 1`,
+    [target.tournament.id, commandId],
+  );
+  if (existingEvent.rows[0]) {
+    if (String(existingEvent.rows[0].event_type) !== 'undo') {
+      throw new KotcNextError(409, 'commandId was already used for another action', 'IDEMPOTENCY_KEY_REUSED');
+    }
+    return { tournamentId: target.tournament.id, pin, publishResults: false };
+  }
+
   if (target.raund.status === 'finished') {
     throw new KotcNextError(423, 'Raund already finished');
   }
@@ -3245,12 +3556,87 @@ async function undoLastEventTx(client: PoolClient, pin: string, raundNo: number)
     throw new KotcNextError(400, 'There are no game events to undo');
   }
 
+  const selfScoringActive =
+    target.tournament.params.selfScoringEnabled && target.tournament.params.takeoversMode === 'no_takeovers';
+  const expectedRevision = actorInput.expectedRevision == null
+    ? null
+    : Math.trunc(Number(actorInput.expectedRevision));
+  if (
+    expectedRevision != null &&
+    (!Number.isInteger(expectedRevision) || expectedRevision !== target.raund.revision)
+  ) {
+    throw new KotcNextError(
+      409,
+      `Score revision mismatch: expected ${expectedRevision}, got ${target.raund.revision}`,
+      'REVISION_MISMATCH',
+    );
+  }
+  const deviceId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(actorInput.deviceId || '').trim(),
+  )
+    ? String(actorInput.deviceId).trim().toLowerCase()
+    : null;
+  const pointPairIdx = target.tournament.params.takeoversMode === 'no_takeovers'
+    ? lastEvent.kingPairIdx
+    : null;
+  const viewer = await loadScoreViewerTx(
+    client,
+    actorInput.viewerUserId,
+    target.pairs,
+    selfScoringActive,
+  );
+  if (selfScoringActive) {
+    if (!viewer) {
+      throw new KotcNextError(401, 'Sign in to undo a point in self-scoring mode', 'PLAYER_AUTH_REQUIRED');
+    }
+    if (!viewer.canSelfScore || viewer.pairIdx !== pointPairIdx || !viewer.playerId) {
+      throw new KotcNextError(403, 'A player can undo only the latest point of their current pair', 'PLAYER_PAIR_MISMATCH');
+    }
+    if (!deviceId) {
+      throw new KotcNextError(400, 'deviceId is required in self-scoring mode');
+    }
+    if (expectedRevision == null) {
+      throw new KotcNextError(400, 'expectedRevision is required in self-scoring mode');
+    }
+  }
+
+  const currentState = buildLiveState(target.pairs, target.raund, target.stats, target.events);
+  const scoreBefore = pointPairIdx == null
+    ? null
+    : currentState.pairs.find((pair) => pair.pairIdx === pointPairIdx)?.kingWins ?? null;
+  const sourceAudit = await client.query(
+    `
+      SELECT id
+      FROM kotcn_event_log
+      WHERE tournament_id = $1
+        AND raund_id = $2
+        AND event_type = 'pair_point'
+        AND payload ->> 'legacyGameId' = $3
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `,
+    [target.tournament.id, target.raund.raundId, lastEvent.id],
+  );
+
   await client.query(
     `UPDATE kotcn_game SET reverted_at = now(), reverted_reason = 'judge_undo' WHERE id = $1 AND reverted_at IS NULL`,
     [lastEvent.id],
   );
   const nextState = await recomputeRaundFromEventsTx(client, target.tournament, target.round, target.court, target.raund, target.pairs, target.events.slice(0, -1));
+  const scoreAfter = pointPairIdx == null
+    ? null
+    : nextState.pairs.find((pair) => pair.pairIdx === pointPairIdx)?.kingWins ?? null;
+  const revisionBefore = await getControlRevisionTx(client, target.tournament.id);
   const revisionAfter = revisionBefore + 1;
+  const scorePair = pointPairIdx == null
+    ? null
+    : target.pairs.find((pair) => pair.pairIdx === pointPairIdx) ?? null;
+  const actor = viewer && selfScoringActive
+    ? { kind: 'player' as const, id: viewer.playerId }
+    : { kind: 'judge' as const, id: deviceId ? `device:${deviceId}` : `court:${target.court.courtId}` };
+  const actorName = viewer && selfScoringActive
+    ? viewer.displayName
+    : `Court ${target.court.courtNo}`;
   await appendControlEventTx(client, {
     tournamentId: target.tournament.id,
     roundId: target.round.roundId,
@@ -3259,14 +3645,29 @@ async function undoLastEventTx(client: PoolClient, pin: string, raundNo: number)
     roundNo: target.round.roundNo,
     courtNo: target.court.courtNo,
     raundNo,
-    commandId: `judge-undo:${target.raund.raundId}:${revisionAfter}`,
+    commandId,
     eventType: 'undo',
-    actor: { kind: 'judge', id: pin },
-    payload: { legacyGameId: lastEvent.id, seqNo: lastEvent.seqNo },
-    beforeState: buildLiveState(target.pairs, target.raund, target.stats, target.events),
-    afterState: nextState,
+    actor,
+    payload: {
+      legacyGameId: lastEvent.id,
+      seqNo: lastEvent.seqNo,
+      pairIdx: pointPairIdx,
+      pairLabel: scorePair ? pairLabel(scorePair) : null,
+      delta: pointPairIdx == null ? 0 : -1,
+      scoreBefore,
+      scoreAfter,
+      actorName,
+      actorUserId: viewer?.userId ?? null,
+      actorPlayerId: viewer?.playerId ?? null,
+      deviceId,
+      source: selfScoringActive ? 'player_self_score' : 'judge_screen',
+      raundRevision: target.raund.revision + 1,
+    },
+    beforeState: pointPairIdx == null ? currentState : { pairIdx: pointPairIdx, score: scoreBefore },
+    afterState: pointPairIdx == null ? nextState : { pairIdx: pointPairIdx, score: scoreAfter },
     revisionBefore,
     revisionAfter,
+    revertedEventId: sourceAudit.rows[0]?.id ? String(sourceAudit.rows[0].id) : null,
   });
 
   return { tournamentId: target.tournament.id, pin, publishResults: false };
@@ -3759,7 +4160,7 @@ export async function resetKotcNextR2(tournamentId: string): Promise<KotcNextOpe
 
 export async function getKotcNextJudgeSnapshotByPin(
   pin: string,
-  options?: { raundNo?: number | null },
+  options?: { raundNo?: number | null; viewerUserId?: number | null },
 ): Promise<KotcNextJudgeSnapshot> {
   const normalizedPin = String(pin || '').trim().toUpperCase();
   if (!normalizedPin) {
@@ -3799,8 +4200,17 @@ export async function getKotcNextJudgeSnapshotByPin(
     );
     currentStats = await listRaundStatsTx(client, currentRaund.raundId);
     currentEvents = await listGameEventsTx(client, currentRaund.raundId);
+    const selfScoringActive =
+      tournament.params.selfScoringEnabled && tournament.params.takeoversMode === 'no_takeovers';
+    const scoreHistory = selfScoringActive && tournament.params.scoreHistoryVisible
+      ? await listScoreHistoryTx(client, currentRaund.raundId, pairs)
+      : [];
+    const viewer = selfScoringActive
+      ? await loadScoreViewerTx(client, options?.viewerUserId, pairs, true)
+      : null;
     const aggregatePairRows = await loadJudgeRaundPairRowsTx(client, round, tournament, currentRaund.raundNo);
     const raundHistory: KotcNextRaundHistoryEntry[] = [];
+    const accessibleRaundNos = [...getAccessibleRaundNos(raunds)].sort((left, right) => left - right);
 
     for (const raund of raunds) {
       const raundStats = await listRaundStatsTx(client, raund.raundId);
@@ -3816,6 +4226,7 @@ export async function getKotcNextJudgeSnapshotByPin(
     }
 
     return {
+      serverNow: Date.now(),
       tournamentId: tournament.id,
       tournamentName: tournament.name,
       tournamentDate: tournament.date,
@@ -3839,11 +4250,67 @@ export async function getKotcNextJudgeSnapshotByPin(
       roundNav,
       courtNav,
       raundHistory,
+      accessibleRaundNos,
       selectedRaundNo: currentRaund.raundNo,
       currentEvents,
+      scoreHistory,
+      viewer,
       currentRaundInstanceKey: buildJudgeRaundInstanceKey(currentRaund),
       currentRaundRevision: buildJudgeRaundRevision(currentRaund, currentEvents),
       canUndo: currentEvents.length > 0 && currentRaund.status !== 'finished',
+    };
+  });
+}
+
+export async function heartbeatKotcNextJudge(
+  pin: string,
+  input: KotcNextHeartbeatInput,
+  diagnostics?: { userAgent?: string | null },
+): Promise<KotcNextHeartbeatResult> {
+  const normalizedPin = String(pin || '').trim().toUpperCase();
+  const deviceId = String(input.deviceId || '').trim().toLowerCase();
+  const selectedRaundNo = Math.trunc(Number(input.selectedRaundNo) || 0);
+  if (!normalizedPin) throw new KotcNextError(400, 'pin is required');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(deviceId)) {
+    throw new KotcNextError(400, 'deviceId must be a UUID');
+  }
+  if (selectedRaundNo < 1) throw new KotcNextError(400, 'selectedRaundNo is required');
+
+  return withTransaction(async (client) => {
+    const { tournament, court } = await loadCourtByPinTx(client, normalizedPin);
+    const raund = await loadRaundByCourtAndNoTx(client, court.courtId, selectedRaundNo);
+    if (!raund) throw new KotcNextError(400, 'selectedRaundNo does not belong to this court');
+    const events = await listGameEventsTx(client, raund.raundId);
+    const revision = buildJudgeRaundRevision(raund, events);
+    await client.query(
+      `
+        INSERT INTO kotcn_presence (
+          tournament_id, court_id, device_id, selected_raund_no,
+          app_version, platform, user_agent, first_seen_at, last_seen_at
+        ) VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, now(), now())
+        ON CONFLICT (court_id, device_id) DO UPDATE SET
+          selected_raund_no = EXCLUDED.selected_raund_no,
+          app_version = EXCLUDED.app_version,
+          platform = EXCLUDED.platform,
+          user_agent = EXCLUDED.user_agent,
+          last_seen_at = now()
+      `,
+      [
+        tournament.id,
+        court.courtId,
+        deviceId,
+        selectedRaundNo,
+        String(input.appVersion || '').trim().slice(0, 80) || null,
+        String(input.platform || '').trim().slice(0, 120) || null,
+        String(diagnostics?.userAgent || '').trim().slice(0, 512) || null,
+      ],
+    );
+    const knownRevision = input.knownRevision == null ? null : Math.trunc(Number(input.knownRevision));
+    return {
+      ok: true,
+      serverNow: Date.now(),
+      revision,
+      requiresSnapshot: knownRevision == null || knownRevision !== revision,
     };
   });
 }
@@ -3882,7 +4349,8 @@ export async function recordKotcNextPairPoint(
   pin: string,
   raundNo: number,
   pairIdx: number,
-): Promise<KotcNextJudgeSnapshot> {
+  actorInput: ScoreMutationActorInput = {},
+): Promise<KotcNextPairPointResult> {
   const normalizedPin = String(pin || '').trim().toUpperCase();
   const normalizedRaundNo = Math.max(1, asInt(raundNo, 0));
   const normalizedPairIdx = Math.trunc(Number(pairIdx));
@@ -3890,10 +4358,14 @@ export async function recordKotcNextPairPoint(
   if (!normalizedRaundNo) throw new KotcNextError(400, 'raundNo is required');
   if (!Number.isInteger(normalizedPairIdx)) throw new KotcNextError(400, 'pairIdx is required');
 
-  await withTransaction((client) =>
-    recordPairPointTx(client, normalizedPin, normalizedRaundNo, normalizedPairIdx),
+  const mutation = await withTransaction((client) =>
+    recordPairPointTx(client, normalizedPin, normalizedRaundNo, normalizedPairIdx, actorInput),
   );
-  return getKotcNextJudgeSnapshotByPin(normalizedPin);
+  const snapshot = await getKotcNextJudgeSnapshotByPin(normalizedPin, {
+    raundNo: normalizedRaundNo,
+    viewerUserId: actorInput.viewerUserId ?? null,
+  });
+  return { snapshot, feedback: mutation.feedback };
 }
 
 export async function manualRotateKotcNextPairs(
@@ -3929,14 +4401,21 @@ export async function resetKotcNextRaund(pin: string, raundNo: number): Promise<
   return getKotcNextJudgeSnapshotByPin(normalizedPin);
 }
 
-export async function undoKotcNextLastEvent(pin: string, raundNo: number): Promise<KotcNextJudgeSnapshot> {
+export async function undoKotcNextLastEvent(
+  pin: string,
+  raundNo: number,
+  actorInput: ScoreMutationActorInput = {},
+): Promise<KotcNextJudgeSnapshot> {
   const normalizedPin = String(pin || '').trim().toUpperCase();
   const normalizedRaundNo = Math.max(1, asInt(raundNo, 0));
   if (!normalizedPin) throw new KotcNextError(400, 'pin is required');
   if (!normalizedRaundNo) throw new KotcNextError(400, 'raundNo is required');
 
-  await withTransaction((client) => undoLastEventTx(client, normalizedPin, normalizedRaundNo));
-  return getKotcNextJudgeSnapshotByPin(normalizedPin);
+  await withTransaction((client) => undoLastEventTx(client, normalizedPin, normalizedRaundNo, actorInput));
+  return getKotcNextJudgeSnapshotByPin(normalizedPin, {
+    raundNo: normalizedRaundNo,
+    viewerUserId: actorInput.viewerUserId ?? null,
+  });
 }
 
 export async function finishKotcNextRaund(
@@ -4080,6 +4559,33 @@ async function getControlRevisionTx(client: PoolClient, tournamentId: string): P
   return asInt(res.rows[0]?.revision, 0);
 }
 
+async function getCourtPresenceTx(client: PoolClient, courtId: string) {
+  const res = await client.query(
+    `
+      SELECT
+        COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '12 seconds')::int AS online_devices,
+        COUNT(*) FILTER (
+          WHERE last_seen_at < now() - interval '12 seconds'
+            AND last_seen_at >= now() - interval '30 seconds'
+        )::int AS stale_devices,
+        MAX(last_seen_at) AS last_seen_at
+      FROM kotcn_presence
+      WHERE court_id = $1
+    `,
+    [courtId],
+  );
+  const row = res.rows[0] ?? {};
+  const onlineDevices = asInt(row.online_devices, 0);
+  const staleDevices = asInt(row.stale_devices, 0);
+  const lastSeenAt = row.last_seen_at ? new Date(row.last_seen_at).toISOString() : null;
+  return {
+    onlineDevices,
+    staleDevices,
+    lastSeenAt,
+    status: onlineDevices > 0 ? 'online' as const : staleDevices > 0 ? 'stale' as const : 'offline' as const,
+  };
+}
+
 function controlEventFromRow(row: Record<string, unknown>): KotcNextControlEvent {
   const rawPayload = row.payload;
   return {
@@ -4087,7 +4593,7 @@ function controlEventFromRow(row: Record<string, unknown>): KotcNextControlEvent
     commandId: row.command_id ? String(row.command_id) : null,
     eventType: String(row.event_type || ''),
     actorKind:
-      row.actor_kind === 'judge' || row.actor_kind === 'operator' || row.actor_kind === 'admin'
+      row.actor_kind === 'player' || row.actor_kind === 'judge' || row.actor_kind === 'operator' || row.actor_kind === 'admin'
         ? row.actor_kind
         : 'system',
     actorId: row.actor_id ? String(row.actor_id) : null,
@@ -4216,15 +4722,31 @@ export async function executeKotcNextControlCommand(
 
   const transactionResult = await withTransaction(async (client) => {
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`kotcn:${normalizedId}`]);
+    const requestJson = JSON.stringify({ ...input, commandId, action });
     const existing = await client.query(
-      `SELECT result_json FROM kotcn_control_command WHERE tournament_id = $1 AND command_id = $2 LIMIT 1`,
-      [normalizedId, commandId],
+      `
+        SELECT result_json, request_json, request_json = $3::jsonb AS same_request
+        FROM kotcn_control_command
+        WHERE tournament_id = $1 AND command_id = $2
+        LIMIT 1
+      `,
+      [normalizedId, commandId, requestJson],
     );
     if (existing.rows[0]) {
-      if (!existing.rows[0].result_json) {
+      if (!existing.rows[0].same_request) {
+        throw new KotcNextError(409, 'commandId was already used for a different request', 'IDEMPOTENCY_KEY_REUSED');
+      }
+      if (existing.rows[0].result_json) {
+        return { existing: existing.rows[0].result_json as KotcNextControlCommandResult };
+      }
+      const recoveredEvent = await client.query(
+        `SELECT * FROM kotcn_event_log WHERE tournament_id = $1 AND command_id = $2 LIMIT 1`,
+        [normalizedId, commandId],
+      );
+      if (!recoveredEvent.rows[0]) {
         throw new KotcNextError(409, 'Duplicate command is still in progress');
       }
-      return { existing: existing.rows[0].result_json as KotcNextControlCommandResult };
+      return { recoveredEvent: controlEventFromRow(recoveredEvent.rows[0]) };
     }
 
     await client.query(
@@ -4233,7 +4755,7 @@ export async function executeKotcNextControlCommand(
           tournament_id, command_id, action, actor_kind, actor_id, request_json
         ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
       `,
-      [normalizedId, commandId, action, actor.kind, actor.id ?? null, JSON.stringify(input)],
+      [normalizedId, commandId, action, actor.kind, actor.id ?? null, requestJson],
     );
 
     const { tournament, roster } = await hydrateTournamentTx(client, normalizedId, { forUpdate: true });
@@ -4254,6 +4776,7 @@ export async function executeKotcNextControlCommand(
     let beforeState: unknown = null;
     let afterState: unknown = null;
     let revertedEventId: string | null = null;
+    const affectedCourtNos = new Set<number>();
 
     if (action !== 'force_finish_all' && action !== 'rollback_r2' && action !== 'revert_correction') {
       if (roundNo !== 1 && roundNo !== 2) throw new KotcNextError(400, 'roundNo is required');
@@ -4266,12 +4789,47 @@ export async function executeKotcNextControlCommand(
       await assertPreviousRaundsFinishedAcrossRoundTx(client, round.roundId, raundNo);
       const raunds = await listRaundsByRoundAndNoTx(client, round.roundId, raundNo, { forUpdate: true });
       if (!raunds.length) throw new KotcNextError(404, 'KOTC Next raund not found');
+      for (const court of await listCourtsByRoundTx(client, round.roundId)) affectedCourtNos.add(court.courtNo);
       beforeState = raunds;
 
       if (action === 'start_raund') {
         if (raunds.some((entry) => entry.status === 'paused')) {
           throw new KotcNextError(409, 'Raund is paused; use resume');
         }
+        const presenceRes = await client.query(
+          `
+            SELECT kc.court_no, MAX(p.last_seen_at) AS last_seen_at
+            FROM kotcn_court kc
+            LEFT JOIN kotcn_presence p ON p.court_id = kc.id
+            WHERE kc.round_id = $1
+            GROUP BY kc.id, kc.court_no
+            ORDER BY kc.court_no
+          `,
+          [round.roundId],
+        );
+        const now = Date.now();
+        const unavailable = presenceRes.rows
+          .map((row) => {
+            const lastSeen = row.last_seen_at ? new Date(row.last_seen_at).getTime() : null;
+            const ageSeconds = lastSeen == null ? null : Math.max(0, Math.round((now - lastSeen) / 1000));
+            if (ageSeconds != null && ageSeconds <= 12) return null;
+            return {
+              courtNo: asInt(row.court_no, 0),
+              status: ageSeconds != null && ageSeconds <= 30 ? 'stale' : 'offline',
+              ageSeconds,
+            };
+          })
+          .filter((entry): entry is { courtNo: number; status: string; ageSeconds: number | null } => entry !== null);
+        if (unavailable.length && !input.acknowledgeOffline) {
+          const details = unavailable
+            .map((entry) => `Court ${entry.courtNo}: ${entry.status}${entry.ageSeconds == null ? '' : ` ${entry.ageSeconds}s`}`)
+            .join(', ');
+          throw new KotcNextError(409, details, 'COURTS_OFFLINE');
+        }
+        if (unavailable.length && (actor.kind !== 'admin' || !reason)) {
+          throw new KotcNextError(403, 'Offline override requires admin role and a reason');
+        }
+        payload = { ...payload, acknowledgeOffline: Boolean(input.acknowledgeOffline), unavailableCourts: unavailable };
         const startsAt = new Date(Date.now() + KOTC_NEXT_START_COUNTDOWN_SECONDS * 1000);
         await client.query(
           `
@@ -4334,6 +4892,7 @@ export async function executeKotcNextControlCommand(
       const target = await loadActionTargetByTournamentCourtTx(client, normalizedId, roundNo, courtNo, raundNo);
       targetCourt = target.court;
       targetRaund = target.raund;
+      affectedCourtNos.add(target.court.courtNo);
       beforeState = target.raund;
       if (target.raund.status === 'finished') throw new KotcNextError(423, 'Raund already finished');
       await client.query(
@@ -4355,6 +4914,7 @@ export async function executeKotcNextControlCommand(
       beforeState = { unfinished: await getControlRevisionTx(client, normalizedId) };
       let completedCount = 0;
       for (const currentRound of rounds.sort((a, b) => a.roundNo - b.roundNo)) {
+        for (const court of await listCourtsByRoundTx(client, currentRound.roundId)) affectedCourtNos.add(court.courtNo);
         const updated = await client.query(
           `
             UPDATE kotcn_raund raund
@@ -4382,8 +4942,9 @@ export async function executeKotcNextControlCommand(
       }
       const raunds = await listRaundsByRoundAndNoTx(client, round.roundId, raundNo, { forUpdate: true });
       if (!raunds.length) throw new KotcNextError(404, 'KOTC Next raund not found');
-      if (raunds.some((entry) => entry.status !== 'pending' && entry.status !== 'paused')) {
-        throw new KotcNextError(409, 'Remaining time can only be corrected while pending or paused');
+      for (const court of await listCourtsByRoundTx(client, round.roundId)) affectedCourtNos.add(court.courtNo);
+      if (raunds.some((entry) => entry.status === 'finished')) {
+        throw new KotcNextError(409, 'Remaining time cannot be corrected after finish');
       }
       if (raunds.some((entry) => remainingMs > entry.timerMinutes * 60_000)) {
         throw new KotcNextError(400, 'remainingMs exceeds the configured raund duration');
@@ -4392,9 +4953,11 @@ export async function executeKotcNextControlCommand(
       await client.query(
         `
           UPDATE kotcn_raund
-          SET status = 'paused',
+          SET status = CASE WHEN status = 'running' THEN 'running' ELSE 'paused' END,
               started_at = now() + $2 * interval '1 millisecond' - timer_minutes * interval '1 minute',
-              finished_at = NULL, paused_at = now(), paused_phase = 'running',
+              finished_at = NULL,
+              paused_at = CASE WHEN status = 'running' THEN NULL ELSE now() END,
+              paused_phase = CASE WHEN status = 'running' THEN NULL ELSE 'running' END,
               status_changed_at = now(), last_controlled_by = 'admin', revision = revision + 1
           WHERE id = ANY($1::uuid[])
         `,
@@ -4407,6 +4970,7 @@ export async function executeKotcNextControlCommand(
       const target = await loadActionTargetByTournamentCourtTx(client, normalizedId, roundNo, courtNo, raundNo);
       targetCourt = target.court;
       targetRaund = target.raund;
+      affectedCourtNos.add(target.court.courtNo);
       if (targetRaund.status !== 'pending' && targetRaund.status !== 'paused') {
         throw new KotcNextError(409, 'Positions can only be corrected while pending or paused');
       }
@@ -4452,6 +5016,7 @@ export async function executeKotcNextControlCommand(
       const courts = await listCourtsByRoundTx(client, round.roundId);
       targetCourt = courts.find((entry) => entry.courtNo === courtNo) ?? null;
       if (!targetCourt) throw new KotcNextError(404, 'KOTC Next court not found');
+      affectedCourtNos.add(targetCourt.courtNo);
       targetRaund = await loadRaundByCourtAndNoTx(client, targetCourt.courtId, raundNo, { forUpdate: true });
       if (!targetRaund) throw new KotcNextError(404, 'KOTC Next raund not found');
       beforeState = await listRaundStatsTx(client, targetRaund.raundId);
@@ -4528,26 +5093,39 @@ export async function executeKotcNextControlCommand(
       revisionAfter,
       revertedEventId,
     });
-    return { event, shouldPublishResults };
+    return { event, shouldPublishResults, affectedCourts: [...affectedCourtNos].sort((a, b) => a - b) };
   });
 
   if ('existing' in transactionResult) {
     return { ...(transactionResult.existing as KotcNextControlCommandResult), idempotent: true };
   }
-  if (transactionResult.shouldPublishResults) {
+  if ('shouldPublishResults' in transactionResult && transactionResult.shouldPublishResults) {
     await syncKotcNextResultsToTournamentResults(normalizedId);
   }
   const { persistKotcNextSpectatorSnapshot } = await import('./spectator');
   await persistKotcNextSpectatorSnapshot(normalizedId).catch(() => {});
   const state = await getKotcNextOperatorStateSummary(normalizedId);
   if (!state) throw new KotcNextError(404, 'KOTC Next state not found');
+  const resultEvent = ('recoveredEvent' in transactionResult
+    ? transactionResult.recoveredEvent
+    : transactionResult.event) ?? null;
+  if (!resultEvent) throw new KotcNextError(500, 'Control command completed without an audit event');
+  const affectedCourts = ('affectedCourts' in transactionResult
+    ? transactionResult.affectedCourts
+    : state.rounds
+        .filter((entry) => input.roundNo == null || entry.roundNo === Math.trunc(Number(input.roundNo)))
+        .flatMap((entry) => entry.courts.map((court) => court.courtNo))
+        .filter((courtNo, index, all) => all.indexOf(courtNo) === index)
+        .sort((left, right) => left - right)) ?? [];
   const result: KotcNextControlCommandResult = {
     success: true,
     action,
     state,
-    event: transactionResult.event,
-    idempotent: false,
+    event: resultEvent,
+    idempotent: 'recoveredEvent' in transactionResult,
     serverNow: Date.now(),
+    appliedAt: resultEvent.createdAt,
+    affectedCourts,
   };
   await withClient((client) =>
     client.query(
@@ -4618,6 +5196,7 @@ async function buildRoundViewTx(
       raunds: progress,
       currentRaundNo: currentRaund?.raundNo ?? null,
       liveState,
+      presence: await getCourtPresenceTx(client, court.courtId),
     });
   }
 

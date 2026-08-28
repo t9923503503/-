@@ -23,10 +23,13 @@ export default function Footer() {
                 href="/rankings"
                 className="hover:text-brand transition-colors"
               >
-                {"\u0420\u0435\u0439\u0442\u0438\u043d\u0433\u0438"}
+                {"\u0420\u0435\u0439\u0442\u0438\u043d\u0433"}
               </Link>
               <Link href="/calendar" className="hover:text-brand transition-colors">
-                {"\u041a\u0430\u043b\u0435\u043d\u0434\u0430\u0440\u044c"}
+                Турниры
+              </Link>
+              <Link href="/archive" className="hover:text-brand transition-colors">
+                Результаты
               </Link>
               <Link href="/about" className="hover:text-brand transition-colors">
                 О нас

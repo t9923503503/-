@@ -108,7 +108,7 @@ describe('public draft tournament filters', () => {
     await expect(fetchTournaments(20)).resolves.toEqual([
       expect.objectContaining({
         id: 'tour-open',
-        status: 'open',
+        status: 'awaiting_results',
       }),
     ]);
     await expect(fetchTournamentById('tour-draft')).resolves.toBeNull();

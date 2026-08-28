@@ -97,8 +97,21 @@ export function normalizeKotcAdminSettings(settings: Record<string, unknown> | n
   const raundTimerMinutes = clamp(toInt(raw.kotcRaundTimerMinutes ?? raw.raundTimerMinutes, KOTC_NEXT_DEFAULT_TIMER), KOTC_NEXT_MIN_TIMER, KOTC_NEXT_MAX_TIMER);
   const takeoversMode = normalizeKotcTakeoversMode(raw.kotcTakeoversMode);
   const r2SeedingMode = normalizeKotcR2SeedingMode(raw.kotcR2SeedingMode);
+  const selfScoringEnabled = toBoolean(raw.kotcSelfScoringEnabled, false);
+  const scoreVoiceEnabled = toBoolean(raw.kotcScoreVoiceEnabled, true);
+  const scoreHistoryVisible = toBoolean(raw.kotcScoreHistoryVisible, true);
 
-  return { courts, ppc, raundCount, raundTimerMinutes, takeoversMode, r2SeedingMode };
+  return {
+    courts,
+    ppc,
+    raundCount,
+    raundTimerMinutes,
+    takeoversMode,
+    r2SeedingMode,
+    selfScoringEnabled,
+    scoreVoiceEnabled,
+    scoreHistoryVisible,
+  };
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -241,6 +254,15 @@ export function validateKotcNextTournamentStructuralLock(input: {
 function toInt(value: unknown, fallback: number): number {
   const n = Math.floor(Number(value));
   return Number.isFinite(n) ? n : fallback;
+}
+
+function toBoolean(value: unknown, fallback: boolean): boolean {
+  if (value == null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') return true;
+  if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') return false;
+  return fallback;
 }
 
 function clamp(n: number, min: number, max: number): number {

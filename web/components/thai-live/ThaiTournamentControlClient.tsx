@@ -583,41 +583,24 @@ export function ThaiTournamentControlClient({
   const opsLog = thaiLivePayload?.thaiOpsLog ?? [];
 
   return (
-    <div id="thai-live-overview" className="mx-auto flex w-full max-w-4xl scroll-mt-24 flex-col gap-4 px-4 py-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <Link
-            href="/admin/tournaments"
-            className="text-xs font-semibold uppercase tracking-wider text-brand hover:text-brand/80"
-          >
-            ← Турниры
-          </Link>
-          <h1 className="mt-2 text-xl font-bold text-white sm:text-2xl">Thai Tournament Control</h1>
-          <p className="mt-1 text-sm text-text-secondary">Турнир ID: {id}</p>
-          {thaiLivePayload?.thaiJudgeModule === 'next' && thaiLivePayload?.thaiOperatorState ? (
-            <a
-              href={`/live/thai/${encodeURIComponent(id)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 inline-block text-sm font-medium text-sky-300 underline decoration-sky-400/40 underline-offset-2 hover:text-sky-200"
-            >
-              Ссылка для зрителей →
-            </a>
-          ) : null}
-          <Link
-            href={printHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-2 inline-flex items-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-100 hover:border-emerald-400/50 hover:bg-emerald-500/15"
-          >
-            Распечатать расписание R1/R2
-            <span className="text-[10px] font-normal uppercase tracking-wide text-emerald-200/70">постер · П+Н</span>
-          </Link>
-          <p className="mt-3 max-w-xl text-xs text-text-secondary">
-            После завершения последнего раунда нажмите «Завершить турнир»: результаты автоматически попадут в рейтинг и
-            архив, а турнир закроется в календаре.
-          </p>
-        </div>
+    <div id="thai-live-overview" className="mx-auto flex w-full max-w-4xl scroll-mt-24 flex-col gap-4 px-3 pb-24 pt-3 sm:px-4 sm:pt-5 md:pb-6">
+      <div className="flex items-center justify-between gap-3 px-1">
+        <Link
+          href="/admin/tournaments"
+          className="text-xs font-semibold uppercase tracking-wider text-brand hover:text-brand/80"
+        >
+          ← Турниры
+        </Link>
+        <details className="relative text-right text-[11px] text-text-secondary">
+          <summary className="cursor-pointer list-none rounded-full border border-white/10 bg-white/5 px-3 py-1.5 marker:hidden [&::-webkit-details-marker]:hidden">
+            О турнире
+          </summary>
+          <div className="absolute right-0 z-20 mt-2 w-72 rounded-2xl border border-white/10 bg-[#11111d] p-3 text-left shadow-xl">
+            <div className="font-semibold text-white">Thai Tournament Control</div>
+            <div className="mt-1 break-all">ID: {id}</div>
+            <p className="mt-2 leading-4">После последнего раунда завершите турнир: результаты автоматически попадут в общий рейтинг и архив, а календарь обновится.</p>
+          </div>
+        </details>
       </div>
 
       {thaiLiveLoading && !thaiLivePayload ? (
@@ -625,7 +608,7 @@ export function ThaiTournamentControlClient({
       ) : null}
 
       {secAgo !== null && secAgo > 0 && !thaiLiveLoading ? (
-        <p className="text-right text-[11px] text-text-secondary/60">обновлено {secAgo} сек назад</p>
+        <p className="-mt-2 text-right text-[11px] text-text-secondary/60">обновлено {secAgo} сек назад</p>
       ) : null}
 
       {refreshError && !thaiLiveLoading ? (

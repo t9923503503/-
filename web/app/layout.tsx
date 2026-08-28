@@ -10,13 +10,14 @@ import {
 } from '@/lib/seo';
 
 const METRIKA_ID = process.env.YANDEX_METRIKA_ID || process.env.NEXT_PUBLIC_YANDEX_METRIKA_ID || '108430286';
+const METRIKA_ENABLED = process.env.YANDEX_METRIKA_ENABLED === 'true';
 
 const THEME_BOOTSTRAP = `(function(){var k='lpvolley-theme';var t='dark';try{var s=localStorage.getItem(k);t=s==='light'||s==='dark'?s:(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark')}catch(e){}document.documentElement.dataset.theme=t;document.documentElement.style.colorScheme=t;var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',t==='light'?'#f8fafc':'#070b14')})()`;
 
 export const metadata: Metadata = {
-  title: 'Пляжный волейбол в Сургуте: тренировки, игры, турниры | LPVOLLEY.RU',
+  title: 'LPVOLLEY — игры, турниры, результаты и рейтинг',
   description:
-    'Пляжный волейбол в Сургуте: тренировки, игры, турниры, рейтинг игроков и поиск пары. LPVOLLEY.RU объединяет любителей пляжного волейбола. Форматы: THAI, King of the Court, миксты.',
+    'Игры и турниры по пляжному волейболу в Сургуте: сохраняй результаты матчей, следи за статистикой, историей и турнирным рейтингом LPVOLLEY.',
   keywords: [
     'пляжный волейбол Сургут',
     'пляжный волейбол в Сургуте',
@@ -25,6 +26,8 @@ export const metadata: Metadata = {
     'волейбол 2 на 2 Сургут',
     'King of the Court Сургут',
     'рейтинг игроков пляжного волейбола',
+    'результаты пляжного волейбола Сургут',
+    'статистика игроков пляжного волейбола',
   ],
   robots: {
     index: true,
@@ -44,9 +47,9 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: 'Пляжный волейбол в Сургуте: тренировки, игры, турниры | LPVOLLEY.RU',
+    title: 'LPVOLLEY — игры, турниры, результаты и рейтинг',
     description:
-      'Пляжный волейбол в Сургуте: тренировки, игры, турниры, рейтинг игроков и поиск пары.',
+      'Игры, турниры, результаты и статистика пляжного волейбола в Сургуте.',
     url: 'https://lpvolley.ru',
     siteName: 'LPVOLLEY.RU',
     locale: 'ru_RU',
@@ -62,9 +65,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Пляжный волейбол в Сургуте: тренировки, игры и турниры',
+    title: 'LPVOLLEY — игры, турниры, результаты и рейтинг',
     description:
-      'Пляжный волейбол в Сургуте: тренировки, игры, турниры, рейтинги игроков и поиск пары.',
+      'Игры, турниры, результаты и статистика пляжного волейбола в Сургуте.',
     images: {
       url: 'https://lpvolley.ru/og-banner.jpg',
       alt: 'LPVolley — пляжный волейбол в Сургуте',
@@ -92,7 +95,7 @@ export default function RootLayout({
       <head>
         <meta charSet="utf-8" />
         <meta name="google-site-verification" content="QHxxU1_WOQ8QMaZZHrE-qxrL5gZiMCpr65VJOjrLSe4" />
-        <meta name="yandex-metrika-id" content={METRIKA_ID} />
+        {METRIKA_ENABLED ? <meta name="yandex-metrika-id" content={METRIKA_ID} /> : null}
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={jsonLdScriptProps(buildWebsiteJsonLd())} />
         <script type="application/ld+json" dangerouslySetInnerHTML={jsonLdScriptProps(buildSportsOrganizationJsonLd())} />
@@ -112,9 +115,11 @@ export default function RootLayout({
         className="bg-surface text-text-primary font-body antialiased min-h-screen flex flex-col"
       >
         <SiteChrome>{children}</SiteChrome>
-        <Suspense fallback={null}>
-          <YandexMetrika counterId={METRIKA_ID} />
-        </Suspense>
+        {METRIKA_ENABLED ? (
+          <Suspense fallback={null}>
+            <YandexMetrika counterId={METRIKA_ID} />
+          </Suspense>
+        ) : null}
       </body>
     </html>
   );

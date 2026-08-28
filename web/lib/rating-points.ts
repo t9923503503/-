@@ -72,7 +72,9 @@ export function effectiveRatingPtsFromStored(
   pool: RatingPool,
   storedRatingPts: number | null | undefined,
   level?: TournamentRatingLevel | null,
+  ratingExcluded = false,
 ): number {
+  if (ratingExcluded) return 0;
   const computed = level ? ratingPointsForLevelPlace(place, level, pool) : ratingPointsForPlace(place, pool);
   const s = storedRatingPts == null ? Number.NaN : Number(storedRatingPts);
   return Number.isFinite(s) && s > 0 ? s : computed;
@@ -80,6 +82,7 @@ export function effectiveRatingPtsFromStored(
 
 export function sqlEffectiveRatingPointsExpr(trAlias = 'tr'): string {
   return `CASE
+    WHEN COALESCE(${trAlias}.rating_excluded, false) THEN 0
     WHEN COALESCE(${trAlias}.rating_pts, 0) > 0
     THEN ${trAlias}.rating_pts
     WHEN COALESCE(${trAlias}.rating_pool, 'pro') = 'novice'

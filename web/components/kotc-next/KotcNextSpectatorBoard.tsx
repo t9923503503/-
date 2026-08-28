@@ -3,7 +3,9 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { calcKotcNextRaundStandings } from '@/lib/kotc-next/core';
+import { resolveKotcNextRotatingPairLabel } from '@/lib/kotc-next/pair-rotation';
 import type { KotcNextSpectatorPayload } from '@/lib/kotc-next/types';
+import { KotcNextFinalIndividualTables } from './KotcNextFinalIndividualTables';
 
 function formatStage(stage: string | undefined): string {
   switch (stage) {
@@ -20,8 +22,20 @@ function formatStage(stage: string | undefined): string {
   }
 }
 
-function pairLabel(court: KotcNextSpectatorPayload['rounds'][number]['courts'][number], pairIdx: number): string {
-  return court.pairs.find((pair) => pair.pairIdx === pairIdx)?.label ?? `Pair ${pairIdx + 1}`;
+function pairLabel(
+  court: KotcNextSpectatorPayload['rounds'][number]['courts'][number],
+  pairIdx: number,
+  variant: string,
+  raundNo: number,
+): string {
+  return resolveKotcNextRotatingPairLabel(court.pairs, pairIdx, variant, raundNo);
+}
+
+function formatRun(value: { longestKingRun?: number; firstLongestKingRunOrder?: number | null }): string {
+  const run = value.longestKingRun ?? 0;
+  const order = value.firstLongestKingRunOrder ?? null;
+  if (!run) return '0';
+  return order ? `${run} (#${order})` : String(run);
 }
 
 export function KotcNextSpectatorBoard({ data }: { data: KotcNextSpectatorPayload }) {
@@ -93,6 +107,7 @@ export function KotcNextSpectatorBoard({ data }: { data: KotcNextSpectatorPayloa
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
                 {round.courts.map((court) => {
+                  const currentRaundNo = court.liveState?.currentRaundNo || court.currentRaundNo || 1;
                   const standings =
                     court.liveState?.pairs?.length
                       ? calcKotcNextRaundStandings(court.liveState.pairs, data.params.takeoversMode)
@@ -117,13 +132,13 @@ export function KotcNextSpectatorBoard({ data }: { data: KotcNextSpectatorPayloa
                           <div className="rounded-2xl border border-[#5b4713] bg-[#18140d] px-3 py-3">
                             <div className="text-[10px] uppercase tracking-[0.2em] text-[#8f7c4a]">King</div>
                             <div className="mt-2 text-sm font-semibold text-white">
-                              {pairLabel(court, court.liveState.kingPairIdx)}
+                              {pairLabel(court, court.liveState.kingPairIdx, data.variant, currentRaundNo)}
                             </div>
                           </div>
                           <div className="rounded-2xl border border-white/8 bg-white/5 px-3 py-3">
                             <div className="text-[10px] uppercase tracking-[0.2em] text-[#7d8498]">Challenger</div>
                             <div className="mt-2 text-sm font-semibold text-white">
-                              {pairLabel(court, court.liveState.challengerPairIdx)}
+                              {pairLabel(court, court.liveState.challengerPairIdx, data.variant, currentRaundNo)}
                             </div>
                           </div>
                         </div>
@@ -135,6 +150,7 @@ export function KotcNextSpectatorBoard({ data }: { data: KotcNextSpectatorPayloa
                             <tr>
                               <th className="pb-2 pr-3">Pair</th>
                               <th className="pb-2 px-2 text-center">KP</th>
+                              <th className="pb-2 px-2 text-center">Run</th>
                               <th className="pb-2 px-2 text-center">TO</th>
                               <th className="pb-2 pl-2 text-center">Games</th>
                             </tr>
@@ -142,8 +158,11 @@ export function KotcNextSpectatorBoard({ data }: { data: KotcNextSpectatorPayloa
                           <tbody>
                             {standings.map((row) => (
                               <tr key={`${court.courtId}-${row.pairIdx}`} className="border-t border-white/6">
-                                <td className="py-2 pr-3 font-medium text-white">{pairLabel(court, row.pairIdx)}</td>
+                                <td className="py-2 pr-3 font-medium text-white">
+                                  {pairLabel(court, row.pairIdx, data.variant, currentRaundNo)}
+                                </td>
                                 <td className="py-2 px-2 text-center text-[#ffd24a]">{row.kingWins}</td>
+                                <td className="py-2 px-2 text-center text-[#8ee6ff]">{formatRun(row)}</td>
                                 <td className="py-2 px-2 text-center">{row.takeovers}</td>
                                 <td className="py-2 pl-2 text-center">{row.gamesPlayed}</td>
                               </tr>
@@ -169,7 +188,7 @@ export function KotcNextSpectatorBoard({ data }: { data: KotcNextSpectatorPayloa
                     <div className="mt-3 space-y-2">
                       {zone.pairs.map((pair) => (
                         <div key={`${zone.zone}-${pair.position}-${pair.pairLabel}`} className="rounded-2xl border border-[#5b4713] bg-[#18140d] px-3 py-2 text-sm font-semibold text-white">
-                          #{pair.position} · {pair.pairLabel} · KP {pair.kingWins} · TO {pair.takeovers}
+                          #{pair.position} · {pair.pairLabel} · KP {pair.kingWins} · Run {formatRun(pair)} · TO {pair.takeovers}
                         </div>
                       ))}
                     </div>
@@ -177,6 +196,15 @@ export function KotcNextSpectatorBoard({ data }: { data: KotcNextSpectatorPayloa
                 ))}
               </div>
             </section>
+          ) : null}
+
+          {data.finalIndividualResults?.length ? (
+            <KotcNextFinalIndividualTables
+              rows={data.finalIndividualResults}
+              eyebrow="Finals"
+              title="Итоги игроков"
+              hint="Индивидуальная таблица: отдельно мужчины и женщины, с фильтром по итоговой зоне."
+            />
           ) : null}
         </main>
       </div>

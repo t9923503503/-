@@ -27,7 +27,7 @@ describe('thai judge config helpers', () => {
 
   it('normalizes judge module and bootstrap signature defaults', () => {
     expect(normalizeThaiJudgeModule('next')).toBe(THAI_JUDGE_MODULE_NEXT);
-    expect(normalizeThaiJudgeModule('legacy')).toBe(THAI_JUDGE_MODULE_LEGACY);
+    expect(normalizeThaiJudgeModule('legacy')).toBe(THAI_JUDGE_MODULE_NEXT);
     expect(normalizeThaiJudgeModule('', THAI_JUDGE_MODULE_NEXT)).toBe(THAI_JUDGE_MODULE_NEXT);
     expect(THAI_STRUCTURAL_DRIFT_LOCKED_CODE).toBe('STRUCTURAL_DRIFT_LOCKED');
     expect(normalizeThaiJudgeBootstrapSignature('  sig:v1  ')).toBe('sig:v1');
@@ -37,7 +37,7 @@ describe('thai judge config helpers', () => {
         thaiJudgeBootstrapSignature: 'variant=MF;courts=1;tours=4;players=p1,p2',
       }),
     ).toBe(THAI_JUDGE_MODULE_NEXT);
-    expect(inferThaiJudgeModuleFromSettings({ thaiJudgeModule: 'legacy' })).toBe(THAI_JUDGE_MODULE_LEGACY);
+    expect(inferThaiJudgeModuleFromSettings({ thaiJudgeModule: 'legacy' })).toBe(THAI_JUDGE_MODULE_NEXT);
   });
 
   it('builds a stable structural signature from settings and ordered main roster', () => {
@@ -114,10 +114,7 @@ describe('thai judge config helpers', () => {
           participants,
         },
       }),
-    ).toEqual({
-      code: THAI_STRUCTURAL_DRIFT_LOCKED_CODE,
-      message: 'Cannot downgrade judge module after Thai Next state initialization.',
-    });
+    ).toBeNull();
 
     expect(
       validateThaiNextStructuralLock({

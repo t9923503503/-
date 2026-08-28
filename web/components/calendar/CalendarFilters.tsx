@@ -37,6 +37,28 @@ export default function CalendarFilters({
 }) {
   const [open, setOpen] = useState(false);
   const hasActiveFilters = hasActiveCalendarFilters(filters);
+  const activeLabels = [
+    filters.query ? { key: 'q', label: `Поиск: ${filters.query}` } : null,
+    filters.month ? { key: 'month', label: formatTournamentMonthLabel(filters.month) } : null,
+    filters.format ? { key: 'format', label: filters.format } : null,
+    filters.division ? { key: 'division', label: filters.division } : null,
+    filters.level ? { key: 'level', label: levelLabels[filters.level] || filters.level } : null,
+    filters.status !== 'all' ? { key: 'status', label: statusLabels[filters.status] } : null,
+    filters.available ? { key: 'available', label: 'Есть места' } : null,
+  ].filter((item): item is { key: string; label: string } => Boolean(item));
+
+  function removeFilterHref(key: string): string {
+    const params = new URLSearchParams();
+    if (filters.query && key !== 'q') params.set('q', filters.query);
+    if (filters.month && key !== 'month') params.set('month', filters.month);
+    if (filters.format && key !== 'format') params.set('format', filters.format);
+    if (filters.division && key !== 'division') params.set('division', filters.division);
+    if (filters.level && key !== 'level') params.set('level', filters.level);
+    if (filters.status !== 'all' && key !== 'status') params.set('status', filters.status);
+    if (filters.available && key !== 'available') params.set('available', '1');
+    const query = params.toString();
+    return query ? `/calendar?${query}` : '/calendar';
+  }
 
   return (
     <section className="mt-8 rounded-2xl border border-white/10 bg-surface-light/20 p-4 md:p-5">
@@ -51,18 +73,12 @@ export default function CalendarFilters({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {hasActiveFilters && (
-            <span className="inline-flex items-center rounded-full border border-brand/30 bg-brand/10 px-3 py-1 text-xs font-body uppercase tracking-wide text-brand-light">
-              Активные фильтры
-            </span>
-          )}
-
           <button
             type="button"
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
             aria-controls="calendar-filters-panel"
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-body font-semibold text-white transition-colors hover:bg-brand-light"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-body font-semibold text-black transition-colors hover:bg-brand-light md:hidden"
           >
             <span>{open ? "Скрыть фильтры" : "Показать фильтры"}</span>
             <svg
@@ -81,20 +97,29 @@ export default function CalendarFilters({
             </svg>
           </button>
 
-          <Link
+          {hasActiveFilters ? <Link
             href="/calendar"
             className="inline-flex items-center justify-center rounded-lg border border-white/10 px-4 py-2 text-sm font-body text-text-primary/80 transition-colors hover:border-brand hover:text-text-primary"
           >
             Сбросить
-          </Link>
+          </Link> : null}
         </div>
       </div>
 
-      {open && (
-        <form
+      {activeLabels.length ? (
+        <div className="mt-4 flex flex-wrap gap-2" aria-label="Активные фильтры">
+          {activeLabels.map((item) => (
+            <Link key={item.key} href={removeFilterHref(item.key)} aria-label={`Убрать фильтр: ${item.label}`} className="rounded-full border border-brand/25 bg-brand/10 px-3 py-1 text-xs text-brand-light transition hover:border-brand/60">
+              {item.label} <span aria-hidden="true">×</span>
+            </Link>
+          ))}
+        </div>
+      ) : null}
+
+      <form
           id="calendar-filters-panel"
           method="GET"
-          className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4"
+          className={`${open ? 'grid' : 'hidden'} mt-5 grid-cols-1 gap-3 md:grid md:grid-cols-2 xl:grid-cols-4`}
         >
           <label className="block xl:col-span-2">
             <span className="text-text-secondary text-xs uppercase tracking-wide font-body">
@@ -217,8 +242,7 @@ export default function CalendarFilters({
               Применить
             </button>
           </div>
-        </form>
-      )}
+      </form>
     </section>
   );
 }

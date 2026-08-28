@@ -1,420 +1,557 @@
-"use client";
+// @ts-nocheck — recovered verbatim from production build X6ckiqIYGHO_dkvUdX54y.
+/* eslint-disable */
+'use client';
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as a from 'react/jsx-runtime';
+import * as i from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { METRIKA_GOALS, reachMetrikaGoal } from '@/lib/metrika-goals';
 
-type PlayerSummary = {
-  id: string;
-  name: string;
-  gender: "M" | "W";
-  photoUrl: string;
-};
+const n = () => Link;
+const s = { useRouter };
+const o = { l7: METRIKA_GOALS, sv: reachMetrikaGoal };
 
-type LinkState = {
-  full_name: string | null;
-  linked_player: PlayerSummary | null;
-  resolved_player: PlayerSummary | null;
-  search_results: PlayerSummary[];
-};
-
-const inputClass =
-  "w-full rounded-xl border border-white/10 bg-surface px-4 py-3 font-body text-text-primary outline-none transition-colors focus:border-brand";
-const ghostButtonClass =
-  "inline-flex items-center justify-center rounded-xl border border-white/15 px-4 py-2 font-body text-sm text-text-primary transition hover:border-brand/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-60";
-const primaryButtonClass =
-  "inline-flex items-center justify-center rounded-xl bg-brand px-4 py-2 font-body text-sm font-semibold text-black transition hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60";
-
-function playerHref(playerId: string): string {
-  return `/players/${playerId}`;
+let c =
+    "inline-flex items-center justify-center rounded-xl border border-white/15 px-4 py-2 font-body text-sm text-text-primary transition hover:border-brand/60 hover:text-white disabled:cursor-not-allowed disabled:opacity-60",
+  d =
+    "inline-flex items-center justify-center rounded-xl bg-brand px-4 py-2 font-body text-sm font-semibold text-black transition hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60";
+function x(e) {
+  return "/players/".concat(e);
 }
-
-function samePlayer(a: PlayerSummary | null, b?: { id?: string | null } | null): boolean {
-  return Boolean(a?.id && b?.id && a.id === b.id);
+function p(e, t) {
+  return !!(
+    (null == e ? void 0 : e.id) &&
+    (null == t ? void 0 : t.id) &&
+    e.id === t.id
+  );
 }
-
-export default function ProfileLinkPlayerForm({
-  targetPlayerId,
-  targetPlayerName,
-  loginHref = "/login?returnTo=%2Fprofile",
-  className = "",
-  embedded = false,
-}: {
-  targetPlayerId?: string;
-  targetPlayerName?: string;
-  loginHref?: string;
-  className?: string;
-  embedded?: boolean;
-}) {
-  const router = useRouter();
-  const [state, setState] = useState<LinkState | null>(null);
-  const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [searching, setSearching] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [info, setInfo] = useState("");
-  const [needsAuth, setNeedsAuth] = useState(false);
-  const autoSearchedRef = useRef(false);
-
-  const loadState = useCallback(async (searchQuery = "") => {
-    const url = searchQuery
-      ? `/api/auth/player-link?q=${encodeURIComponent(searchQuery)}`
-      : "/api/auth/player-link";
-    const res = await fetch(url, { cache: "no-store" });
-    const data = await res.json().catch(() => null);
-
-    if (res.status === 401) {
-      setNeedsAuth(true);
-      setState(null);
-      return null;
-    }
-
-    if (!res.ok) {
-      throw new Error(data?.error || "Не удалось получить состояние привязки");
-    }
-
-    setNeedsAuth(false);
-    setState(data as LinkState);
-    return data as LinkState;
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      try {
-        setLoading(true);
-        const data = await loadState();
-        if (!mounted || !data) return;
-        if (!autoSearchedRef.current && !data.linked_player && data.full_name) {
-          autoSearchedRef.current = true;
-          setQuery(data.full_name);
-          setSearching(true);
-          try {
-            await loadState(data.full_name);
-          } finally {
-            if (mounted) setSearching(false);
-          }
-        }
-      } catch (err) {
-        if (!mounted) return;
-        setError(err instanceof Error ? err.message : "Ошибка загрузки");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, [loadState]);
-
-  const handleSearch = useCallback(
-    async (nextQuery?: string) => {
-      const finalQuery = String(nextQuery ?? query).trim();
-      if (finalQuery.length < 2) {
-        setError("Введите минимум 2 символа для поиска.");
-        return;
-      }
-
-      try {
-        setSearching(true);
-        setError("");
-        const data = await loadState(finalQuery);
-        if (data) {
-          setQuery(finalQuery);
-          if (data.search_results.length === 0) {
-            setInfo("По этому запросу карточки игрока не найдены.");
-          } else {
-            setInfo("");
-          }
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Ошибка поиска");
-      } finally {
-        setSearching(false);
-      }
-    },
-    [loadState, query]
-  );
-
-  const handleSubmit = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      await handleSearch();
-    },
-    [handleSearch]
-  );
-
-  const bindPlayer = useCallback(
-    async (playerId: string) => {
-      try {
-        setSaving(true);
-        setError("");
-        setInfo("");
-
-        const res = await fetch("/api/auth/player-link", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ playerId }),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok) {
-          throw new Error(data?.error || "Не удалось привязать карточку");
-        }
-
-        setState(data as LinkState);
-        setInfo(data?.message || "Карточка игрока привязана.");
-        router.refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Ошибка привязки");
-      } finally {
-        setSaving(false);
-      }
-    },
-    [router]
-  );
-
-  const unlinkPlayer = useCallback(async () => {
-    try {
-      setSaving(true);
-      setError("");
-      setInfo("");
-
-      const res = await fetch("/api/auth/player-link", { method: "DELETE" });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(data?.error || "Не удалось снять привязку");
-      }
-
-      setState(data as LinkState);
-      setInfo(data?.message || "Привязка снята.");
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Ошибка снятия привязки");
-    } finally {
-      setSaving(false);
-    }
-  }, [router]);
-
-  const currentPlayer = state?.linked_player ?? null;
-  const resolvedPlayer = state?.resolved_player ?? null;
-  const targetPlayer = useMemo(
-    () =>
-      targetPlayerId
-        ? {
-            id: targetPlayerId,
-            name: targetPlayerName || "Эта карточка игрока",
-          }
-        : null,
-    [targetPlayerId, targetPlayerName]
-  );
-
-  const rootClass = embedded
-    ? ["space-y-4", className].join(" ").trim()
-    : ["rounded-xl border border-white/10 bg-surface-light/20 p-4 space-y-4", className]
-        .join(" ")
-        .trim();
-
-  if (loading) {
+function m(e) {
+  var t, r, l;
+  let {
+      targetPlayerId: m,
+      targetPlayerName: u,
+      loginHref: f = "/login?returnTo=%2Fprofile",
+      className: b = "",
+      embedded: h = !1,
+      compact: v = !1,
+    } = e,
+    g = (0, s.useRouter)(),
+    [j, y] = (0, i.useState)(null),
+    [N, k] = (0, i.useState)(""),
+    [w, T] = (0, i.useState)(!0),
+    [C, S] = (0, i.useState)(!1),
+    [R, P] = (0, i.useState)(!1),
+    [_, I] = (0, i.useState)(""),
+    [M, W] = (0, i.useState)(""),
+    [K, A] = (0, i.useState)(!1),
+    O = (0, i.useRef)(!1),
+    F = (0, i.useCallback)(async function () {
+      let e =
+          arguments.length > 0 && void 0 !== arguments[0]
+            ? arguments[0]
+            : "",
+        t = e
+          ? "/api/auth/player-link?q=".concat(encodeURIComponent(e))
+          : "/api/auth/player-link",
+        r = await fetch(t, { cache: "no-store" }),
+        a = await r.json().catch(() => null);
+      if (401 === r.status) return A(!0), y(null), null;
+      if (!r.ok)
+        throw Error(
+          (null == a ? void 0 : a.error) ||
+            "Не удалось получить состояние привязки",
+        );
+      return A(!1), y(a), a;
+    }, []);
+  (0, i.useEffect)(() => {
+    let e = !0;
     return (
-      <section className={rootClass}>
-        <p className="font-body text-sm text-text-secondary">Загрузка блока привязки...</p>
-      </section>
+      (async () => {
+        try {
+          T(!0);
+          let t = await F();
+          if (!e || !t) return;
+          if (!O.current && !t.linked_player && t.full_name) {
+            (O.current = !0), k(t.full_name), S(!0);
+            try {
+              await F(t.full_name);
+            } finally {
+              e && S(!1);
+            }
+          }
+        } catch (t) {
+          if (!e) return;
+          I(t instanceof Error ? t.message : "Ошибка загрузки");
+        } finally {
+          e && T(!1);
+        }
+      })(),
+      () => {
+        e = !1;
+      }
     );
-  }
-
-  if (needsAuth) {
-    return (
-      <section className={rootClass}>
-        {!embedded ? (
-          <div>
-            <h3 className="font-heading text-2xl text-text-primary tracking-wide">
-              Привязка к карточке игрока
-            </h3>
-            <p className="mt-2 font-body text-sm text-text-secondary">
-              Чтобы привязать эту карточку к своему аккаунту, сначала войдите в личный кабинет.
-            </p>
-          </div>
-        ) : (
-          <p className="font-body text-sm text-text-secondary">
-            Чтобы привязать карточку к своему аккаунту, сначала войдите в личный кабинет.
-          </p>
-        )}
-        <Link href={loginHref} className="btn-action-outline inline-flex">
-          Войти и привязать
-        </Link>
-      </section>
-    );
-  }
-
-  return (
-    <section className={rootClass}>
-      {!embedded ? (
-        <div>
-          <h3 className="font-heading text-2xl text-text-primary tracking-wide">
-            Привязка к карточке игрока
-          </h3>
-          <p className="mt-1 font-body text-sm text-text-secondary">
-            Закрепите свой аккаунт за карточкой игрока, чтобы профиль, статистика и фото
-            открывались автоматически.
-          </p>
-        </div>
-      ) : (
-        <p className="font-body text-sm text-text-secondary">
-          Закрепите свой аккаунт за карточкой игрока, чтобы профиль, статистика и фото
-          открывались автоматически.
-        </p>
-      )}
-
-      {error ? (
-        <div className="rounded-xl border border-red-400/35 bg-red-500/10 p-3 font-body text-sm text-red-100">
-          {error}
-        </div>
-      ) : null}
-      {info ? (
-        <div className="rounded-xl border border-emerald-400/35 bg-emerald-500/10 p-3 font-body text-sm text-emerald-100">
-          {info}
-        </div>
-      ) : null}
-
-      {currentPlayer ? (
-        <div className="rounded-xl border border-emerald-400/35 bg-emerald-500/10 p-4">
-          <p className="font-body text-xs uppercase tracking-[0.2em] text-emerald-200/90">
-            Активная привязка
-          </p>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-heading text-xl text-text-primary">{currentPlayer.name}</p>
-              <p className="font-body text-sm text-emerald-100/85">
-                {currentPlayer.gender === "W" ? "Женский профиль" : "Мужской профиль"}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href={playerHref(currentPlayer.id)} className={ghostButtonClass}>
-                Открыть карточку
-              </Link>
-              <button type="button" className={ghostButtonClass} onClick={unlinkPlayer} disabled={saving}>
-                Снять привязку
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : resolvedPlayer ? (
-        <div className="rounded-xl border border-amber-400/35 bg-amber-500/10 p-4">
-          <p className="font-body text-xs uppercase tracking-[0.2em] text-amber-100/90">
-            Автоматически найдено
-          </p>
-          <p className="mt-2 font-body text-sm text-amber-50">
-            Сейчас кабинет находит вашу статистику через старую автосвязку:{' '}
-            <Link href={playerHref(resolvedPlayer.id)} className="underline underline-offset-2">
-              {resolvedPlayer.name}
-            </Link>
-            . Лучше закрепить её явно кнопкой ниже.
-          </p>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-white/10 bg-black/10 p-4 font-body text-sm text-text-secondary">
-          Явная привязка пока не настроена.
-        </div>
-      )}
-
-      {targetPlayer ? (
-        <div className="rounded-xl border border-brand/35 bg-brand/10 p-4">
-          <p className="font-body text-xs uppercase tracking-[0.2em] text-brand-light/90">
-            Быстрая привязка
-          </p>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-heading text-xl text-text-primary">{targetPlayer.name}</p>
-              <p className="font-body text-sm text-text-secondary">
-                Эта карточка открыта сейчас на странице игрока.
-              </p>
-            </div>
-            {samePlayer(currentPlayer, targetPlayer) ? (
-              <span className="rounded-full border border-emerald-400/35 px-3 py-1 font-body text-sm text-emerald-100">
-                Уже привязано
-              </span>
-            ) : (
-              <button
-                type="button"
-                className={primaryButtonClass}
-                onClick={() => bindPlayer(targetPlayer.id)}
-                disabled={saving}
-              >
-                Привязать эту карточку
-              </button>
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div>
-          <label className="font-body text-xs uppercase tracking-[0.2em] text-text-secondary">
-            Найти по имени
-          </label>
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Например: Лебедев Александр"
-            className={`mt-2 ${inputClass}`}
-          />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="submit" className={primaryButtonClass} disabled={searching || saving}>
-            {searching ? "Ищу..." : "Найти карточку"}
-          </button>
-          {state?.full_name ? (
-            <button
-              type="button"
-              className={ghostButtonClass}
-              disabled={searching || saving}
-              onClick={() => handleSearch(state.full_name || "")}
-            >
-              Найти по имени аккаунта
-            </button>
-          ) : null}
-        </div>
-      </form>
-
-      {state?.search_results?.length ? (
-        <div className="space-y-2">
-          {state.search_results.map((player) => (
-            <div
-              key={player.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/10 p-3"
-            >
-              <div>
-                <Link
-                  href={playerHref(player.id)}
-                  className="font-body text-base text-text-primary hover:text-brand-light"
-                >
-                  {player.name}
-                </Link>
-                <p className="font-body text-sm text-text-secondary">
-                  {player.gender === "W" ? "Женский профиль" : "Мужской профиль"}
-                </p>
-              </div>
-              {samePlayer(currentPlayer, player) ? (
-                <span className="rounded-full border border-emerald-400/35 px-3 py-1 font-body text-sm text-emerald-100">
-                  Уже привязано
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  className={ghostButtonClass}
-                  disabled={saving}
-                  onClick={() => bindPlayer(player.id)}
-                >
-                  Привязать
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </section>
-  );
+  }, [F]);
+  let E = (0, i.useCallback)(
+      async (e) => {
+        let t = String(null != e ? e : N).trim();
+        if (t.length < 2)
+          return void I("Введите минимум 2 символа для поиска.");
+        try {
+          S(!0), I("");
+          let e = await F(t);
+          e &&
+            (k(t),
+            0 === e.search_results.length
+              ? W("По этому запросу карточки игрока не найдены.")
+              : W(""));
+        } catch (e) {
+          I(e instanceof Error ? e.message : "Ошибка поиска");
+        } finally {
+          S(!1);
+        }
+      },
+      [F, N],
+    ),
+    U = (0, i.useCallback)(
+      async (e) => {
+        e.preventDefault(), await E();
+      },
+      [E],
+    ),
+    H = (0, i.useCallback)(
+      async (e) => {
+        try {
+          P(!0), I(""), W("");
+          let t = await fetch("/api/auth/player-link", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ playerId: e }),
+            }),
+            r = await t.json().catch(() => null);
+          if (!t.ok)
+            throw Error(
+              (null == r ? void 0 : r.error) ||
+                "Не удалось привязать карточку",
+            );
+          y(r),
+            W(
+              (null == r ? void 0 : r.message) ||
+                "Карточка игрока привязана.",
+            ),
+            (0, o.sv)(o.l7.playerLinked),
+            g.refresh();
+        } catch (e) {
+          I(e instanceof Error ? e.message : "Ошибка привязки");
+        } finally {
+          P(!1);
+        }
+      },
+      [g],
+    ),
+    L = (0, i.useCallback)(async () => {
+      try {
+        P(!0), I(""), W("");
+        let e = await fetch("/api/auth/player-link", {
+            method: "DELETE",
+          }),
+          t = await e.json().catch(() => null);
+        if (!e.ok)
+          throw Error(
+            (null == t ? void 0 : t.error) || "Не удалось снять привязку",
+          );
+        y(t),
+          W((null == t ? void 0 : t.message) || "Привязка снята."),
+          g.refresh();
+      } catch (e) {
+        I(e instanceof Error ? e.message : "Ошибка снятия привязки");
+      } finally {
+        P(!1);
+      }
+    }, [g]),
+    D = null != (r = null == j ? void 0 : j.linked_player) ? r : null,
+    z = null != (l = null == j ? void 0 : j.resolved_player) ? l : null,
+    B = (0, i.useMemo)(
+      () => (m ? { id: m, name: u || "Эта карточка игрока" } : null),
+      [m, u],
+    ),
+    Q = Boolean(null == j ? void 0 : j.link_requires_moderation),
+    Y = String((null == j ? void 0 : j.telegram_bot) || "Lpvolley_bot").replace(/^@/, ""),
+    Z = h
+      ? ["space-y-4", b].join(" ").trim()
+      : [
+          "rounded-xl border border-white/10 bg-surface-light/20 p-4 space-y-4",
+          b,
+        ]
+          .join(" ")
+          .trim();
+  return w
+    ? v
+      ? null
+      : (0, a.jsx)("section", {
+          className: Z,
+          children: (0, a.jsx)("p", {
+            className: "font-body text-sm text-text-secondary",
+            children: "Загрузка блока привязки...",
+          }),
+        })
+    : K
+      ? v
+        ? (0, a.jsx)(n(), {
+            href: f,
+            className:
+              "inline-flex min-h-9 items-center justify-center rounded-full border border-[var(--profile-border)] bg-[var(--profile-card)] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--profile-muted-strong)] transition hover:border-[var(--profile-accent)] hover:text-[var(--profile-text)]",
+            children: "Это вы? Привязать",
+          })
+        : (0, a.jsxs)("section", {
+            className: Z,
+            children: [
+              h
+                ? (0, a.jsx)("p", {
+                    className: "font-body text-sm text-text-secondary",
+                    children:
+                      "Чтобы привязать карточку к своему аккаунту, сначала войдите в личный кабинет.",
+                  })
+                : (0, a.jsxs)("div", {
+                    children: [
+                      (0, a.jsx)("h3", {
+                        className:
+                          "font-heading text-2xl text-text-primary tracking-wide",
+                        children: "Привязка к карточке игрока",
+                      }),
+                      (0, a.jsx)("p", {
+                        className:
+                          "mt-2 font-body text-sm text-text-secondary",
+                        children:
+                          "Чтобы привязать эту карточку к своему аккаунту, сначала войдите в личный кабинет.",
+                      }),
+                    ],
+                  }),
+              (0, a.jsx)(n(), {
+                href: f,
+                className: "btn-action-outline inline-flex",
+                children: "Войти и привязать",
+              }),
+            ],
+          })
+      : Q && !D
+        ? v
+          ? (0, a.jsx)("a", {
+              href: "https://t.me/".concat(Y),
+              target: "_blank",
+              rel: "noreferrer",
+              className:
+                "inline-flex min-h-9 items-center justify-center rounded-full bg-[#2AABEE] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-[#229ED9]",
+              children: "Подтвердить в Telegram",
+            })
+          : (0, a.jsxs)("section", {
+              className: Z,
+              children: [
+                (0, a.jsx)("p", {
+                  className: "font-body text-sm text-text-secondary",
+                  children:
+                    "Карточку Telegram-аккаунта подтверждает организатор — так никто не сможет присвоить чужую статистику.",
+                }),
+                (0, a.jsx)("a", {
+                  href: "https://t.me/".concat(Y),
+                  target: "_blank",
+                  rel: "noreferrer",
+                  className:
+                    "inline-flex items-center justify-center rounded-xl bg-[#2AABEE] px-4 py-2 font-body text-sm font-semibold text-white transition hover:bg-[#229ED9]",
+                  children: "Открыть бота и привязать карточку",
+                }),
+                (0, a.jsxs)("p", {
+                  className: "font-body text-xs text-text-secondary",
+                  children: ["В боте нажмите «Привязать карточку» или отправьте ", (0, a.jsx)("code", { children: "/register" }), "."],
+                }),
+              ],
+            })
+        : v
+        ? B
+          ? p(D, B)
+            ? (0, a.jsx)("span", {
+                className:
+                  "inline-flex min-h-9 items-center rounded-full border border-emerald-400/35 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-300",
+                children: "Ваш профиль",
+              })
+            : (0, a.jsx)("button", {
+                type: "button",
+                className:
+                  "inline-flex min-h-9 items-center justify-center rounded-full border border-[var(--profile-border)] bg-[var(--profile-card)] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--profile-muted-strong)] transition hover:border-[var(--profile-accent)] hover:text-[var(--profile-text)] disabled:cursor-not-allowed disabled:opacity-60",
+                onClick: () => H(B.id),
+                disabled: R,
+                "aria-label": "Привязать карточку игрока ".concat(
+                  B.name,
+                  " к своему аккаунту",
+                ),
+                children: R ? "Привязываю..." : "Это вы? Привязать",
+              })
+          : null
+        : (0, a.jsxs)("section", {
+            className: Z,
+            children: [
+              h
+                ? (0, a.jsx)("p", {
+                    className: "font-body text-sm text-text-secondary",
+                    children:
+                      "Закрепите свой аккаунт за карточкой игрока, чтобы профиль, статистика и фото открывались автоматически.",
+                  })
+                : (0, a.jsxs)("div", {
+                    children: [
+                      (0, a.jsx)("h3", {
+                        className:
+                          "font-heading text-2xl text-text-primary tracking-wide",
+                        children: "Привязка к карточке игрока",
+                      }),
+                      (0, a.jsx)("p", {
+                        className:
+                          "mt-1 font-body text-sm text-text-secondary",
+                        children:
+                          "Закрепите свой аккаунт за карточкой игрока, чтобы профиль, статистика и фото открывались автоматически.",
+                      }),
+                    ],
+                  }),
+              _
+                ? (0, a.jsx)("div", {
+                    className:
+                      "rounded-xl border border-red-400/35 bg-red-500/10 p-3 font-body text-sm text-red-100",
+                    children: _,
+                  })
+                : null,
+              M
+                ? (0, a.jsx)("div", {
+                    className:
+                      "rounded-xl border border-emerald-400/35 bg-emerald-500/10 p-3 font-body text-sm text-emerald-100",
+                    children: M,
+                  })
+                : null,
+              D
+                ? (0, a.jsxs)("div", {
+                    className:
+                      "rounded-xl border border-emerald-400/35 bg-emerald-500/10 p-4",
+                    children: [
+                      (0, a.jsx)("p", {
+                        className:
+                          "font-body text-xs uppercase tracking-[0.2em] text-emerald-200/90",
+                        children: "Активная привязка",
+                      }),
+                      (0, a.jsxs)("div", {
+                        className:
+                          "mt-2 flex flex-wrap items-center justify-between gap-3",
+                        children: [
+                          (0, a.jsxs)("div", {
+                            children: [
+                              (0, a.jsx)("p", {
+                                className:
+                                  "font-heading text-xl text-text-primary",
+                                children: D.name,
+                              }),
+                              (0, a.jsx)("p", {
+                                className:
+                                  "font-body text-sm text-emerald-100/85",
+                                children:
+                                  "W" === D.gender
+                                    ? "Женский профиль"
+                                    : "Мужской профиль",
+                              }),
+                            ],
+                          }),
+                          (0, a.jsxs)("div", {
+                            className: "flex flex-wrap gap-2",
+                            children: [
+                              (0, a.jsx)(n(), {
+                                href: x(D.id),
+                                className: c,
+                                children: "Открыть карточку",
+                              }),
+                              (0, a.jsx)("button", {
+                                type: "button",
+                                className: c,
+                                onClick: L,
+                                disabled: R,
+                                children: "Снять привязку",
+                              }),
+                            ],
+                          }),
+                        ],
+                      }),
+                    ],
+                  })
+                : z
+                  ? (0, a.jsxs)("div", {
+                      className:
+                        "rounded-xl border border-amber-400/35 bg-amber-500/10 p-4",
+                      children: [
+                        (0, a.jsx)("p", {
+                          className:
+                            "font-body text-xs uppercase tracking-[0.2em] text-amber-100/90",
+                          children: "Автоматически найдено",
+                        }),
+                        (0, a.jsxs)("p", {
+                          className:
+                            "mt-2 font-body text-sm text-amber-50",
+                          children: [
+                            "Сейчас кабинет находит вашу статистику через старую автосвязку:",
+                            " ",
+                            (0, a.jsx)(n(), {
+                              href: x(z.id),
+                              className: "underline underline-offset-2",
+                              children: z.name,
+                            }),
+                            ". Лучше закрепить её явно кнопкой ниже.",
+                          ],
+                        }),
+                      ],
+                    })
+                  : (0, a.jsx)("div", {
+                      className:
+                        "rounded-xl border border-white/10 bg-black/10 p-4 font-body text-sm text-text-secondary",
+                      children: "Явная привязка пока не настроена.",
+                    }),
+              B
+                ? (0, a.jsxs)("div", {
+                    className:
+                      "rounded-xl border border-brand/35 bg-brand/10 p-4",
+                    children: [
+                      (0, a.jsx)("p", {
+                        className:
+                          "font-body text-xs uppercase tracking-[0.2em] text-brand-light/90",
+                        children: "Быстрая привязка",
+                      }),
+                      (0, a.jsxs)("div", {
+                        className:
+                          "mt-2 flex flex-wrap items-center justify-between gap-3",
+                        children: [
+                          (0, a.jsxs)("div", {
+                            children: [
+                              (0, a.jsx)("p", {
+                                className:
+                                  "font-heading text-xl text-text-primary",
+                                children: B.name,
+                              }),
+                              (0, a.jsx)("p", {
+                                className:
+                                  "font-body text-sm text-text-secondary",
+                                children:
+                                  "Эта карточка открыта сейчас на странице игрока.",
+                              }),
+                            ],
+                          }),
+                          p(D, B)
+                            ? (0, a.jsx)("span", {
+                                className:
+                                  "rounded-full border border-emerald-400/35 px-3 py-1 font-body text-sm text-emerald-100",
+                                children: "Уже привязано",
+                              })
+                            : (0, a.jsx)("button", {
+                                type: "button",
+                                className: d,
+                                onClick: () => H(B.id),
+                                disabled: R,
+                                children: "Привязать эту карточку",
+                              }),
+                        ],
+                      }),
+                    ],
+                  })
+                : null,
+              (0, a.jsxs)("form", {
+                onSubmit: U,
+                className: "space-y-3",
+                children: [
+                  (0, a.jsxs)("div", {
+                    children: [
+                      (0, a.jsx)("label", {
+                        className:
+                          "font-body text-xs uppercase tracking-[0.2em] text-text-secondary",
+                        children: "Найти по имени",
+                      }),
+                      (0, a.jsx)("input", {
+                        value: N,
+                        onChange: (e) => k(e.target.value),
+                        placeholder: "Например: Лебедев Александр",
+                        className: "mt-2 ".concat(
+                          "w-full rounded-xl border border-white/10 bg-surface px-4 py-3 font-body text-text-primary outline-none transition-colors focus:border-brand",
+                        ),
+                      }),
+                    ],
+                  }),
+                  (0, a.jsxs)("div", {
+                    className: "flex flex-wrap gap-2",
+                    children: [
+                      (0, a.jsx)("button", {
+                        type: "submit",
+                        className: d,
+                        disabled: C || R,
+                        children: C ? "Ищу..." : "Найти карточку",
+                      }),
+                      (null == j ? void 0 : j.full_name)
+                        ? (0, a.jsx)("button", {
+                            type: "button",
+                            className: c,
+                            disabled: C || R,
+                            onClick: () => E(j.full_name || ""),
+                            children: "Найти по имени аккаунта",
+                          })
+                        : null,
+                    ],
+                  }),
+                ],
+              }),
+              (
+                null == j || null == (t = j.search_results)
+                  ? void 0
+                  : t.length
+              )
+                ? (0, a.jsx)("div", {
+                    className: "space-y-2",
+                    children: j.search_results.map((e) =>
+                      (0, a.jsxs)(
+                        "div",
+                        {
+                          className:
+                            "flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/10 p-3",
+                          children: [
+                            (0, a.jsxs)("div", {
+                              children: [
+                                (0, a.jsx)(n(), {
+                                  href: x(e.id),
+                                  className:
+                                    "font-body text-base text-text-primary hover:text-brand-light",
+                                  children: e.name,
+                                }),
+                                (0, a.jsx)("p", {
+                                  className:
+                                    "font-body text-sm text-text-secondary",
+                                  children:
+                                    "W" === e.gender
+                                      ? "Женский профиль"
+                                      : "Мужской профиль",
+                                }),
+                              ],
+                            }),
+                            p(D, e)
+                              ? (0, a.jsx)("span", {
+                                  className:
+                                    "rounded-full border border-emerald-400/35 px-3 py-1 font-body text-sm text-emerald-100",
+                                  children: "Уже привязано",
+                                })
+                              : (0, a.jsx)("button", {
+                                  type: "button",
+                                  className: c,
+                                  disabled: R,
+                                  onClick: () => H(e.id),
+                                  children: "Привязать",
+                                }),
+                          ],
+                        },
+                        e.id,
+                      ),
+                    ),
+                  })
+                : null,
+            ],
+          });
 }
+
+export default m;

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { SudyamBootstrapPayload } from '@/lib/sudyam-bootstrap';
+import { ThaiInlineActionConfirm } from '@/components/thai-live/ThaiInlineActionConfirm';
 
 type AdminPlayerOption = {
   id: string;
@@ -115,13 +116,6 @@ export function ThaiPlayerReplacementPanel({
       setMessage('Укажите причину замены не короче 4 символов.');
       return;
     }
-    if (
-      typeof window !== 'undefined' &&
-      !window.confirm(`Заменить ${selectedOldPlayer.playerName} на ${selectedNewPlayer.name}?`)
-    ) {
-      return;
-    }
-
     setSubmitLoading(true);
     setMessage(null);
     try {
@@ -262,14 +256,19 @@ export function ThaiPlayerReplacementPanel({
       </label>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => void submitReplacement()}
-          disabled={disabled || submitLoading}
-          className="rounded-lg border border-fuchsia-400/45 bg-fuchsia-500/20 px-4 py-2 text-sm font-medium text-fuchsia-50 hover:bg-fuchsia-500/30 disabled:opacity-50"
-        >
-          {submitLoading ? 'Сохраняем…' : 'Заменить игрока'}
-        </button>
+        <ThaiInlineActionConfirm
+          label="Заменить игрока"
+          armedLabel="Подтвердить замену"
+          description={
+            selectedOldPlayer && selectedNewPlayer
+              ? `Заменить ${selectedOldPlayer.playerName} на ${selectedNewPlayer.name}. Новый игрок будет подставлен в материалы Thai Next и результаты турнира.`
+              : 'Сначала выберите игрока турнира и нового кандидата на замену.'
+          }
+          onConfirm={() => void submitReplacement()}
+          disabled={disabled || submitLoading || !selectedOldPlayer || !selectedNewPlayer || reason.trim().length < 4}
+          busy={submitLoading}
+          tone="warn"
+        />
         {message ? (
           <p className={`text-xs ${message.includes('Замена сохранена') ? 'text-emerald-200' : 'text-red-200'}`}>
             {message}

@@ -71,15 +71,19 @@ interface GameRow {
   id: string;
   kind: string;
   title: string;
+  rating_mode: string;
   starts_at: string;
   venue: string;
   level_min: string | null;
   level_max: string | null;
   capacity: number;
+  price_mode: string;
   price_rub: number;
+  court_cost_rub: number | null;
   confirmed: number;
   status?: string;
   join_policy?: string;
+  archived_at?: string | null;
 }
 
 function formatGameText(row: GameRow): string {
@@ -87,7 +91,15 @@ function formatGameText(row: GameRow): string {
   const what = row.kind === 'training' ? 'Новая тренировка' : 'Новая игра';
   const free = Math.max(0, Number(row.capacity) - Number(row.confirmed));
   const level = formatLevelRange(normalizeLevel(row.level_min), normalizeLevel(row.level_max));
-  const price = Number(row.price_rub) > 0 ? `${row.price_rub} ₽` : 'Бесплатно';
+  const courtCost = Number(row.court_cost_rub || 0);
+  const splitPerPlayer = row.price_mode === 'split' && courtCost > 0 && Number(row.capacity) > 0
+    ? Math.round(courtCost / Number(row.capacity))
+    : 0;
+  const price = splitPerPlayer > 0
+    ? `${courtCost} ₽ за корт · ≈${splitPerPlayer} ₽/чел.`
+    : Number(row.price_rub) > 0
+      ? `${row.price_rub} ₽/чел.`
+      : 'Бесплатно';
   const lines = [
     `${emoji} ${what}: «${row.title}»`,
     `📅 ${formatPlayDate(row.starts_at, { weekday: 'short' })}`,
@@ -97,6 +109,9 @@ function formatGameText(row: GameRow): string {
     `👥 Свободно мест: ${free} из ${row.capacity}`,
     `💰 ${price}`,
   ];
+  if (row.kind === 'game') {
+    lines.splice(1, 0, row.rating_mode === 'friendly' ? '🎈 Обычная игра' : '🏆 Игра на рейтинг');
+  }
   if (row.status === 'cancelled') lines.unshift('❌ СОБЫТИЕ ОТМЕНЕНО');
   else if (free <= 0) lines.push('⏳ Основной состав набран — доступен резерв');
   return lines.join('\n');
@@ -123,13 +138,15 @@ async function listGames(
                         WHERE tcp.entity_type = 'play_post' AND tcp.entity_id = pp.id::text)`
     : '';
   const { rows } = await getPool().query(
-    `SELECT pp.id::text, pp.kind, pp.title, pp.starts_at, pp.price_rub, pp.capacity,
+    `SELECT pp.id::text, pp.kind, pp.title, pp.rating_mode, pp.starts_at, pp.price_mode, pp.price_rub,
+            pp.court_cost_rub, pp.capacity,
             pp.level_min, pp.level_max, pv.name AS venue,
             (SELECT COUNT(*)::int FROM play_post_participants ppp
               WHERE ppp.post_id = pp.id AND ppp.status = 'confirmed') AS confirmed
        FROM play_posts pp
        JOIN play_venues pv ON pv.id = pp.venue_id
       WHERE pp.status = 'published'
+        AND pp.archived_at IS NULL
         AND pp.visibility = 'public'
         AND pp.join_policy <> 'closed'
         AND pp.starts_at > now()
@@ -256,8 +273,9 @@ export async function buildChannelUpdates(limit = 25): Promise<ChannelUpdateItem
   if (!channel) return [];
   const capped = Math.max(1, Math.min(limit, 50));
   const { rows } = await getPool().query(
-    `SELECT pp.id::text, pp.kind, pp.title, pp.starts_at, pp.price_rub, pp.capacity,
-            pp.level_min, pp.level_max, pp.status, pp.join_policy, pv.name AS venue,
+    `SELECT pp.id::text, pp.kind, pp.title, pp.rating_mode, pp.starts_at, pp.price_mode, pp.price_rub,
+            pp.court_cost_rub, pp.capacity,
+            pp.level_min, pp.level_max, pp.status, pp.join_policy, pp.archived_at, pv.name AS venue,
             tcp.message_id,
             (SELECT COUNT(*)::int FROM play_post_participants ppp
               WHERE ppp.post_id = pp.id AND ppp.status = 'confirmed') AS confirmed
@@ -271,7 +289,7 @@ export async function buildChannelUpdates(limit = 25): Promise<ChannelUpdateItem
     [capped]
   );
   return (rows as Array<GameRow & { message_id: number }>).map((row) => {
-    const canJoin = row.status === 'published' && row.join_policy !== 'closed';
+    const canJoin = row.status === 'published' && row.join_policy !== 'closed' && !row.archived_at;
     const full = Number(row.confirmed) >= Number(row.capacity);
     return {
       entityType: 'play_post' as const,

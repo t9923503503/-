@@ -31,10 +31,13 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+/** Timezone-safe date formatting: parse YYYY-MM-DD without shifting */
 function formatDate(value: string) {
   if (!value) return '';
   try {
-    return new Date(value).toLocaleDateString('ru-RU', {
+    const [y, m, d] = value.split('T')[0].split('-').map(Number);
+    if (!y || !m || !d) return value;
+    return new Date(y, m - 1, d).toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'long',
     });
@@ -156,7 +159,7 @@ function PlayerCard({
             </div>
             <div className="mt-1 flex items-center gap-2 text-sm text-slate-400">
               <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-slate-300">
-                {player.gender === 'M' ? 'Мужчины' : 'Женщины'}
+                {player.gender === 'M' ? 'Мужчины' : player.gender === 'W' ? 'Женщины' : 'Не указан'}
               </span>
             </div>
           </div>
@@ -168,7 +171,7 @@ function PlayerCard({
           <StatCard label="Турниров" value={String(player.tournaments)} />
           {featured && (
             <div className="hidden md:block">
-              <StatCard label="Сезон" value={player.lastSeen ? player.lastSeen.slice(0, 4) : '2026'} />
+              <StatCard label="Сезон" value={player.lastSeen ? player.lastSeen.slice(0, 4) : ''} />
             </div>
           )}
         </div>
@@ -194,8 +197,9 @@ function TournamentCard({
 }) {
   const status = statusMeta(tournament.status);
   const albumUrl = String(tournament.photoUrl || '').trim();
+  const coverPhotoUrl = String(tournament.coverPhotoUrl || '').trim();
   const localPosterSrc = localPosterForTournamentId(tournament.id);
-  const posterSrc = localPosterSrc || (isLikelyHostedPlayerOrVkPhoto(albumUrl)
+  const posterSrc = coverPhotoUrl || localPosterSrc || (isLikelyHostedPlayerOrVkPhoto(albumUrl)
     ? albumUrl
     : fallbackPosterForTournament(tournament));
   const showAlbumLink = Boolean(albumUrl) && !isLikelyHostedPlayerOrVkPhoto(albumUrl);
@@ -264,6 +268,22 @@ function TournamentCard({
   );
 }
 
+/* ── Empty State ────────────────────────────── */
+function EmptyState({ title, action }: { title: string; action: { href: string; label: string } }) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-[24px] border border-white/10 bg-[#11161F] px-6 py-14 text-center">
+      <div className="text-4xl mb-3" aria-hidden>🏐</div>
+      <p className="text-sm text-slate-400">{title}</p>
+      <Link
+        href={action.href}
+        className="mt-4 inline-flex items-center justify-center rounded-xl bg-brand px-5 py-2 text-sm font-bold text-white transition hover:bg-brand/90"
+      >
+        {action.label}
+      </Link>
+    </div>
+  );
+}
+
 export default function ActivityTabs({
   tournaments,
   topPlayers,
@@ -289,14 +309,16 @@ export default function ActivityTabs({
   }));
 
   return (
-    <section className="px-4 py-6 md:px-6 md:py-8">
+    <section className="px-4 py-6 md:px-6 md:py-8" aria-label="Ближайшие события и рейтинг">
       <div className="mx-auto max-w-7xl">
         {/* Tabs */}
-        <div className="mb-5 flex items-end justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Переключение между турнирами и рейтингом">
             <button
+              role="tab"
+              aria-selected={activeTab === 'tournaments'}
               onClick={() => setActiveTab('tournaments')}
-              className={`rounded-xl px-4 py-2 text-sm font-bold uppercase tracking-wide transition-all ${
+              className={`rounded-xl px-4 py-2 text-sm font-bold uppercase tracking-wide transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0F] ${
                 activeTab === 'tournaments'
                   ? 'bg-brand text-white shadow-[0_4px_20px_rgba(255,90,0,0.25)]'
                   : 'border border-white/10 text-slate-400 hover:border-white/20 hover:text-white'
@@ -305,8 +327,10 @@ export default function ActivityTabs({
               Ближайшие турниры
             </button>
             <button
+              role="tab"
+              aria-selected={activeTab === 'rating'}
               onClick={() => setActiveTab('rating')}
-              className={`rounded-xl px-4 py-2 text-sm font-bold uppercase tracking-wide transition-all ${
+              className={`rounded-xl px-4 py-2 text-sm font-bold uppercase tracking-wide transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0F] ${
                 activeTab === 'rating'
                   ? 'bg-brand text-white shadow-[0_4px_20px_rgba(255,90,0,0.25)]'
                   : 'border border-white/10 text-slate-400 hover:border-white/20 hover:text-white'
@@ -325,17 +349,35 @@ export default function ActivityTabs({
 
         {/* Tab content */}
         {activeTab === 'tournaments' ? (
-          <div className="grid gap-4 lg:grid-cols-3">
-            {tournamentCards.map(({ tournament, headerClass }) => (
-              <TournamentCard key={tournament.id} tournament={tournament} headerClass={headerClass} />
-            ))}
-          </div>
+          tournamentCards.length > 0 ? (
+            <div role="tabpanel" className="grid gap-4 lg:grid-cols-3">
+              {tournamentCards.map(({ tournament, headerClass }) => (
+                <TournamentCard key={tournament.id} tournament={tournament} headerClass={headerClass} />
+              ))}
+            </div>
+          ) : (
+            <div role="tabpanel">
+              <EmptyState
+                title="Пока нет ближайших турниров"
+                action={{ href: '/calendar', label: 'Весь календарь' }}
+              />
+            </div>
+          )
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[1.18fr_1fr_1fr]">
-            {playerCards.map(({ player, headerClass, featured }) => (
-              <PlayerCard key={player.playerId} player={player} headerClass={headerClass} featured={featured} />
-            ))}
-          </div>
+          playerCards.length > 0 ? (
+            <div role="tabpanel" className="grid gap-4 lg:grid-cols-[1.18fr_1fr_1fr]">
+              {playerCards.map(({ player, headerClass, featured }) => (
+                <PlayerCard key={player.playerId} player={player} headerClass={headerClass} featured={featured} />
+              ))}
+            </div>
+          ) : (
+            <div role="tabpanel">
+              <EmptyState
+                title="Рейтинг пока пуст"
+                action={{ href: '/rankings', label: 'Полный рейтинг' }}
+              />
+            </div>
+          )
         )}
       </div>
     </section>

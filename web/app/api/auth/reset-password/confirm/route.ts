@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getPool } from '@/lib/db';
-import { createPlayerToken, setPlayerCookie } from '@/lib/player-auth';
+import {
+  createPlayerToken,
+  createRecentPlayerAuthToken,
+  setPlayerCookie,
+  setRecentPlayerAuthCookie,
+} from '@/lib/player-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +53,7 @@ export async function POST(req: Request) {
       redirectTo: '/profile',
     });
     setPlayerCookie(response, sessionToken, { persistent: true });
+    setRecentPlayerAuthCookie(response, createRecentPlayerAuthToken(Number(user.id)));
 
     return response;
   } catch (err) {

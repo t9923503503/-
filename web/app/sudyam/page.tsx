@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import { KotcLiveLayout } from "@/components/kotc-live/judge/KotcLiveLayout";
 import { SudyamFormatWorkspace } from "@/components/sudyam/SudyamFormatWorkspace";
+import { RoundRobinWorkspace } from "@/components/round-robin/RoundRobinWorkspace";
+import { getAdminSessionFromCookies } from "@/lib/admin-auth";
+import { getRrJudgeSnapshot } from "@/lib/round-robin";
 import {
   resolveSudyamBootstrap,
   SudyamBootstrapError,
 } from "@/lib/sudyam-bootstrap";
 import {
   buildSudyamLaunchUrl,
-  getSingleSearchParam,
   parseSudyamLaunch,
   type SearchParamsShape,
   type SudyamFormat,
@@ -71,12 +72,6 @@ function buildLegacyIframeSrc(
   }
 }
 
-function getKotcNcFromSettings(settings: Record<string, unknown>): number | undefined {
-  const parsed = Number(settings.courts ?? settings.nc ?? 0);
-  if (!Number.isFinite(parsed) || parsed < 1) return undefined;
-  return Math.max(1, Math.min(4, Math.floor(parsed)));
-}
-
 // Middleware already validates sudyam_session, so this route is authenticated.
 export default async function SudyamPage({
   searchParams,
@@ -87,12 +82,10 @@ export default async function SudyamPage({
   const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host") ?? "";
   const proto = headerStore.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const requestedLegacyOnly = getSingleSearchParam(resolvedSearchParams?.legacy).trim() === "1";
   const launch = parseSudyamLaunch(resolvedSearchParams);
 
   if (!launch.tournamentId) {
-    const legacyIframeSrc = buildLegacyIframeSrc(host, proto);
-    return <KotcLiveLayout legacyIframeSrc={legacyIframeSrc} initialLegacyMode={requestedLegacyOnly} />;
+    redirect('/admin/tournaments');
   }
 
   let payload;
@@ -120,22 +113,16 @@ export default async function SudyamPage({
   });
   const kotcBaseUrl = buildKotcBaseUrl(host, proto);
 
-  if (payload.format === "thai" && payload.thaiJudgeLegacyUrl && (launch.forceLegacy || payload.thaiJudgeModule === "legacy")) {
-    redirect(payload.thaiJudgeLegacyUrl);
+  if (payload.format === "kotc") {
+    redirect(`/sudyam/kotcn/${encodeURIComponent(payload.tournamentId)}`);
   }
 
-  if (payload.format === "kotc") {
-    if (!launch.forceLegacy && payload.kotcJudgeModule === "next") {
-      redirect(`/sudyam/kotcn/${encodeURIComponent(payload.tournamentId)}`);
-    }
-    return (
-      <KotcLiveLayout
-        legacyIframeSrc={legacyIframeSrc}
-        initialLegacyMode={launch.forceLegacy}
-        targetTournamentId={payload.tournamentId}
-        targetNc={getKotcNcFromSettings(payload.bootstrapState.settings)}
-      />
-    );
+  if (payload.format === "rr") {
+    const [roundRobin, actor] = await Promise.all([
+      getRrJudgeSnapshot(payload.tournamentId),
+      getAdminSessionFromCookies(),
+    ]);
+    return <RoundRobinWorkspace initialSnapshot={roundRobin} canManage={actor?.role === "admin" || actor?.role === "operator"} />;
   }
 
   return (
@@ -143,7 +130,7 @@ export default async function SudyamPage({
       data={payload}
       kotcBaseUrl={kotcBaseUrl}
       legacyIframeSrc={legacyIframeSrc}
-      initialLegacyMode={launch.forceLegacy}
+      initialLegacyMode={payload.format === "thai" ? false : launch.forceLegacy}
     />
   );
 }

@@ -8,14 +8,14 @@ function read(relPath) {
 
 describe('KOTC Next integration source contract', () => {
   it('keeps admin, Sudyam and judge entrypoints aligned on one KOTC Next flow', () => {
-    const adminPage = read('web/app/admin/tournaments/page.tsx');
+    const adminControlPage = read('web/app/admin/tournaments/[id]/kotcn-live/page.tsx');
     const sudyamRoute = read('web/app/api/sudyam/kotcn/route.ts');
     const workspace = read('web/components/kotc-next/KotcNextTournamentWorkspace.tsx');
     const operatorPage = read('web/app/sudyam/kotcn/[id]/page.tsx');
     const judgePage = read('web/app/kotc-next/judge/[pin]/page.tsx');
 
-    expect(adminPage).toContain('/sudyam/kotcn/');
-    expect(adminPage).toContain('KOTC Next Control');
+    expect(adminControlPage).toContain('KotcNextTournamentWorkspace');
+    expect(adminControlPage).toContain('KOTC_COCKPIT_V3_ENABLED');
     expect(sudyamRoute).toContain('requireLiveReadAccess');
     expect(sudyamRoute).toContain('bootstrap_r1');
     expect(sudyamRoute).toContain('finish_r1');
@@ -38,8 +38,8 @@ describe('KOTC Next integration source contract', () => {
     const spectatorPage = read('web/app/live/kotcn/[id]/page.tsx');
     const panel = read('web/components/kotc-next/KotcNextOperatorPanel.tsx');
 
-    expect(service).toContain("canFinishR1: Boolean(r1 && r1.status === 'finished' && !r2)");
-    expect(service).toContain("canFinishR2: Boolean(r2 && r2.status === 'finished')");
+    expect(service).toContain('executeKotcNextControlCommand');
+    expect(service).toContain('affectedCourts');
     expect(service).toContain('persistKotcNextSpectatorSnapshot');
     expect(service).toContain('publishResults');
     expect(service).toContain('syncKotcNextResultsToTournamentResults');
@@ -49,5 +49,6 @@ describe('KOTC Next integration source contract', () => {
     expect(publicRoute).not.toContain('requireApiRole');
     expect(spectatorPage).toContain('KotcNextSpectatorBoard');
     expect(panel).toContain('/live/kotcn/');
+    expect(panel).toContain('buildKotcNextCockpitViewModel');
   });
 });

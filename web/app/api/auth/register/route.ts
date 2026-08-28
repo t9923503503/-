@@ -1,18 +1,35 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
+import { getAuthPublicOrigin } from '@/lib/auth-return-to';
 import { getPool } from '@/lib/db';
+import { PRIVACY_POLICY_VERSION } from '@/lib/privacy';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(req: Request) {
-  let body: { email?: string; password?: string; full_name?: string };
+export async function POST(req: NextRequest) {
+  const origin = String(req.headers.get('origin') || '');
+  let trustedOrigin = false;
+  try {
+    trustedOrigin = new URL(origin).origin === getAuthPublicOrigin(new URL(req.url).origin);
+  } catch {
+    trustedOrigin = false;
+  }
+  if (!trustedOrigin || !String(req.headers.get('content-type') || '').toLowerCase().startsWith('application/json')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  let body: { email?: string; password?: string; full_name?: string; consent?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'Некорректный запрос' }, { status: 400 });
   }
 
-  const { email, password, full_name } = body;
+  const { email, password, full_name, consent } = body;
+
+  if (consent !== true) {
+    return NextResponse.json({ error: 'Подтвердите согласие с Политикой обработки персональных данных' }, { status: 400 });
+  }
 
   if (!email || !email.includes('@')) {
     return NextResponse.json({ error: 'Некорректный email' }, { status: 400 });
@@ -30,10 +47,13 @@ export async function POST(req: Request) {
   try {
     const pool = getPool();
     const res = await pool.query(
-      `INSERT INTO users (email, password_hash, full_name, nickname)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO users (
+         email, password_hash, full_name, nickname,
+         privacy_consent_version, privacy_consented_at
+       )
+       VALUES ($1, $2, $3, $4, $5, now())
        RETURNING id, email, full_name`,
-      [email.toLowerCase().trim(), hash, full_name.trim(), nickname],
+      [email.toLowerCase().trim(), hash, full_name.trim(), nickname, PRIVACY_POLICY_VERSION],
     );
     return NextResponse.json(res.rows[0], { status: 201 });
   } catch (err: unknown) {

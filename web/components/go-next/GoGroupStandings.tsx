@@ -11,6 +11,10 @@ export function GoGroupStandings({
   qualifyCount?: number;
   compact?: boolean;
 }) {
+  const tiedRows = group.standings.filter((row, index, rows) => {
+    const previous = rows[index - 1];
+    return Boolean(previous && previous.wins === row.wins && previous.setQuotient === row.setQuotient && previous.pointQuotient === row.pointQuotient);
+  });
   return (
     <section className="rounded-lg border border-white/10 bg-black/20 p-3">
       <h4 className="text-sm font-semibold text-white">Группа {group.label}</h4>
@@ -55,6 +59,10 @@ export function GoGroupStandings({
             })}
           </tbody>
         </table>
+      </div>
+      <div className="mt-2 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-white/55">
+        Тай-брейк: победы → соотношение сетов → соотношение мячей → личная встреча (для двух пар) → разница мячей.
+        {tiedRows.length ? ` Сейчас равны по основным показателям: ${tiedRows.map((row) => row.teamLabel).join(', ')}; применён следующий критерий.` : ''}
       </div>
     </section>
   );

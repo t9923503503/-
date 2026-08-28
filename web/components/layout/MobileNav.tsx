@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import HeaderAccountEntry from "./HeaderAccountEntry";
+import ThemeToggle from "./ThemeToggle";
 
 type NavLink = { href: string; label: string };
 
@@ -10,7 +11,7 @@ export default function MobileNav({ links }: { links: NavLink[] }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="md:hidden">
+    <div className="lg:hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -68,6 +69,9 @@ export default function MobileNav({ links }: { links: NavLink[] }) {
               <div onClick={() => setOpen(false)}>
                 <HeaderAccountEntry mobile />
               </div>
+            </li>
+            <li>
+              <ThemeToggle placement="menu" />
             </li>
           </ul>
         </nav>

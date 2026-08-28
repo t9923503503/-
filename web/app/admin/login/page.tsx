@@ -9,6 +9,7 @@ type AdminLoginSearchParams = Promise<{
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid: 'Неверный PIN или ID',
+  rate_limited: 'Слишком много попыток. Повторите вход через 15 минут.',
   server: 'Ошибка сервера. Попробуйте ещё раз.',
 };
 
@@ -33,7 +34,7 @@ export default async function AdminLoginPage({
         method="post"
         className="w-full max-w-sm rounded-2xl border border-white/15 bg-white/5 p-6 flex flex-col gap-4"
       >
-        <h1 className="font-heading text-4xl leading-none tracking-wide text-center">Admin Login</h1>
+        <h1 className="font-heading text-4xl leading-none tracking-wide text-center">Вход в админку</h1>
         <input
           type="text"
           name="id"

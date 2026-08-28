@@ -61,13 +61,10 @@ export function isExactThaiTournamentFormat(format: unknown): boolean {
 }
 
 export function normalizeThaiJudgeModule(
-  value: unknown,
-  fallback: ThaiJudgeModule = THAI_JUDGE_MODULE_LEGACY,
+  _value: unknown,
+  _fallback: ThaiJudgeModule = THAI_JUDGE_MODULE_NEXT,
 ): ThaiJudgeModule {
-  const normalized = String(value ?? '').trim().toLowerCase();
-  if (normalized === THAI_JUDGE_MODULE_NEXT) return THAI_JUDGE_MODULE_NEXT;
-  if (normalized === THAI_JUDGE_MODULE_LEGACY) return THAI_JUDGE_MODULE_LEGACY;
-  return fallback;
+  return THAI_JUDGE_MODULE_NEXT;
 }
 
 export function normalizeThaiJudgeBootstrapSignature(value: unknown): string | null {
@@ -76,17 +73,10 @@ export function normalizeThaiJudgeBootstrapSignature(value: unknown): string | n
 }
 
 export function inferThaiJudgeModuleFromSettings(
-  settings: Record<string, unknown> | null | undefined,
-  fallback: ThaiJudgeModule = THAI_JUDGE_MODULE_LEGACY,
+  _settings: Record<string, unknown> | null | undefined,
+  _fallback: ThaiJudgeModule = THAI_JUDGE_MODULE_NEXT,
 ): ThaiJudgeModule {
-  const explicitValue = settings?.thaiJudgeModule;
-  if (explicitValue != null && String(explicitValue).trim()) {
-    return normalizeThaiJudgeModule(explicitValue, fallback);
-  }
-  if (normalizeThaiJudgeBootstrapSignature(settings?.thaiJudgeBootstrapSignature)) {
-    return THAI_JUDGE_MODULE_NEXT;
-  }
-  return fallback;
+  return THAI_JUDGE_MODULE_NEXT;
 }
 
 function stripRulesFromThaiJudgeSignature(signature: string): string {

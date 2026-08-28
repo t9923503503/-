@@ -182,7 +182,7 @@ export function ThaiR2SeedEditor({
     <section className="rounded-[24px] border border-[#3a3016] bg-[linear-gradient(180deg,rgba(20,18,32,0.98),rgba(12,12,24,0.98))] px-5 py-5 shadow-[0_18px_50px_rgba(0,0,0,0.26)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.3em] text-[#8f7c4a]">R2 Seed Editor</div>
+          <div className="text-[10px] uppercase tracking-[0.3em] text-[#8f7c4a]">Шаг 2 из 3 · R2</div>
           <h2 className="mt-2 font-heading text-2xl uppercase tracking-[0.08em] text-[#ffd24a]">
             Зоны HARD / ADVANCE / MEDIUM / LIGHT
           </h2>
@@ -192,6 +192,10 @@ export function ThaiR2SeedEditor({
           </p>
         </div>
       </div>
+
+      <p className="mt-3 text-sm text-[#c7cada]/85">
+        Проверьте распределение игроков по зонам. Если всё верно, нажмите «2. Подтвердить и запустить R2».
+      </p>
 
       {message ? (
         <div className="mt-4 rounded-[18px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-[#c7cada]">
@@ -206,7 +210,7 @@ export function ThaiR2SeedEditor({
           disabled={loading}
           className="inline-flex rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {loading ? 'Обновляем...' : 'Пересчитать автопосев'}
+          {loading ? 'Обновляем...' : 'Обновить автопосев'}
         </button>
         <button
           type="button"
@@ -214,7 +218,7 @@ export function ThaiR2SeedEditor({
           disabled={loading || !zones.length}
           className="inline-flex rounded-full border border-[#5b4713] bg-[#ffd24a] px-4 py-2 text-sm font-semibold text-[#17130b] transition hover:bg-[#ffe07f] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Подтвердить посев
+          2. Подтвердить и запустить R2
         </button>
       </div>
       <p className="mt-3 text-xs uppercase tracking-[0.18em] text-[#7d8498]">

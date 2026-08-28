@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { BreadcrumbSchema } from '@/components/seo/SchemaOrg';
 import CalendarGrid from '@/components/calendar/CalendarGrid';
 import CalendarFilters from '@/components/calendar/CalendarFilters';
 import {
@@ -12,9 +13,32 @@ import { fetchTournaments } from '@/lib/queries';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: '\u041a\u0430\u043b\u0435\u043d\u0434\u0430\u0440\u044c \u0442\u0443\u0440\u043d\u0438\u0440\u043e\u0432 | \u041b\u044e\u0442\u044b\u0435 \u043f\u043b\u044f\u0436\u043d\u0438\u043a\u0438',
+  title: 'Календарь турниров по пляжному волейболу в Сургуте | LPVolley',
   description:
-    '\u0420\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u0442\u0443\u0440\u043d\u0438\u0440\u043e\u0432 King of the Court. \u0414\u0430\u0442\u0430, \u043c\u0435\u0441\u0442\u043e, \u0444\u043e\u0440\u043c\u0430\u0442, \u0441\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u043f\u0438\u0441\u0438.',
+    'Расписание турниров по пляжному волейболу в Сургуте: THAI, King of the Court, миксты. Дата, место, формат, статус записи — всё в одном месте.',
+  keywords: [
+    'календарь турниров Сургут',
+    'пляжный волейбол турниры Сургут',
+    'THAI Сургут',
+    'King of the Court Сургут',
+    'записаться на турнир волейбол',
+  ],
+  alternates: { canonical: 'https://lpvolley.ru/calendar' },
+  openGraph: {
+    title: 'Календарь турниров по пляжному волейболу в Сургуте | LPVolley',
+    description: 'Расписание турниров: THAI, King of the Court, миксты. Дата, место, формат, статус записи.',
+    url: 'https://lpvolley.ru/calendar',
+    type: 'website',
+    locale: 'ru_RU',
+    images: [
+      {
+        url: 'https://lpvolley.ru/og-banner.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'Календарь турниров по пляжному волейболу в Сургуте',
+      },
+    ],
+  },
 };
 
 interface CalendarPageProps {
@@ -33,36 +57,46 @@ export default async function CalendarPage({ searchParams }: CalendarPageProps) 
   const hasFilters = hasActiveCalendarFilters(filters);
 
   return (
-    <main className="max-w-6xl mx-auto px-4 py-12">
-      <h1 className="font-heading text-5xl md:text-6xl text-brand tracking-wide">
-        {'\u041a\u0410\u041b\u0415\u041d\u0414\u0410\u0420\u042c'}
-      </h1>
-      <p className="mt-3 font-body text-text-secondary">
-        {'\u0414\u0430\u0442\u0430, \u043b\u043e\u043a\u0430\u0446\u0438\u044f, \u0444\u043e\u0440\u043c\u0430\u0442 \u0438 \u0441\u0442\u0430\u0442\u0443\u0441 \u0437\u0430\u043f\u0438\u0441\u0438 \u2014 \u0432\u0441\u0451 \u0432 \u043e\u0434\u043d\u043e\u043c \u043c\u0435\u0441\u0442\u0435.'}
-      </p>
-
-      <CalendarFilters
-        filters={filters}
-        options={options}
-        totalCount={baseList.length}
-        visibleCount={visible.length}
+    <>
+      <BreadcrumbSchema
+        items={[
+          { name: 'Главная', url: 'https://lpvolley.ru/' },
+          { name: 'Календарь', url: 'https://lpvolley.ru/calendar' },
+        ]}
       />
+      <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
+        <section className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[radial-gradient(circle_at_85%_20%,rgba(255,104,0,.23),transparent_35%),linear-gradient(135deg,#171717,#090909)] px-6 py-10 md:px-10 md:py-14">
+          <div className="absolute -right-10 -top-16 select-none font-heading text-[180px] leading-none text-white/[0.025]" aria-hidden="true">26</div>
+          <div className="relative max-w-3xl">
+            <p className="text-xs font-bold uppercase tracking-[.28em] text-brand">LPVolley · Сургут</p>
+            <h1 className="mt-4 font-heading text-5xl leading-[.9] tracking-wide text-white md:text-7xl">Время выходить<br /><span className="text-brand">на песок</span></h1>
+            <p className="mt-5 max-w-xl font-body text-base leading-7 text-white/55 md:text-lg">Выбирай турнир по уровню и формату. Дата, место и свободные места — сразу по делу.</p>
+          </div>
+        </section>
 
-      <div className="mt-10">
-        <CalendarGrid
-          tournaments={visible}
-          emptyTitle={
-            hasFilters
-              ? '\u041f\u043e \u0442\u0435\u043a\u0443\u0449\u0438\u043c \u0444\u0438\u043b\u044c\u0442\u0440\u0430\u043c \u0442\u0443\u0440\u043d\u0438\u0440\u043e\u0432 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e.'
-              : '\u041f\u043e\u043a\u0430 \u043d\u0435\u0442 \u0442\u0443\u0440\u043d\u0438\u0440\u043e\u0432.'
-          }
-          emptyHint={
-            hasFilters
-              ? '\u0421\u0431\u0440\u043e\u0441\u044c\u0442\u0435 \u0447\u0430\u0441\u0442\u044c \u0444\u0438\u043b\u044c\u0442\u0440\u043e\u0432 \u0438\u043b\u0438 \u043f\u043e\u043f\u0440\u043e\u0431\u0443\u0439\u0442\u0435 \u0434\u0440\u0443\u0433\u043e\u0439 \u043c\u0435\u0441\u044f\u0446 \u0438 \u0444\u043e\u0440\u043c\u0430\u0442.'
-              : '\u0421\u043b\u0435\u0434\u0438\u0442\u0435 \u0437\u0430 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f\u043c\u0438 \u2014 \u0441\u043a\u043e\u0440\u043e \u043f\u043e\u044f\u0432\u044f\u0442\u0441\u044f \u043d\u043e\u0432\u044b\u0435 \u0441\u043e\u0431\u044b\u0442\u0438\u044f.'
-          }
+        <CalendarFilters
+          filters={filters}
+          options={options}
+          totalCount={baseList.length}
+          visibleCount={visible.length}
         />
-      </div>
-    </main>
+
+        <div className="mt-10">
+          <CalendarGrid
+            tournaments={visible}
+            emptyTitle={
+              hasFilters
+                ? 'По текущим фильтрам турниров не найдено.'
+                : 'Пока нет турниров.'
+            }
+            emptyHint={
+              hasFilters
+                ? 'Сбросьте часть фильтров или попробуйте другой месяц и формат.'
+                : 'Следите за обновлениями — скоро появятся новые события.'
+            }
+          />
+        </div>
+      </main>
+    </>
   );
 }

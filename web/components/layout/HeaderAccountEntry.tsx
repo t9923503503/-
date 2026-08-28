@@ -54,7 +54,13 @@ function AccountIcon() {
   );
 }
 
-export default function HeaderAccountEntry({ mobile = false }: { mobile?: boolean }) {
+export default function HeaderAccountEntry({
+  mobile = false,
+  compact = false,
+}: {
+  mobile?: boolean;
+  compact?: boolean;
+}) {
   const [summary, setSummary] = useState<SummaryPayload>(fallbackSummary);
   const [loading, setLoading] = useState(true);
 
@@ -89,6 +95,25 @@ export default function HeaderAccountEntry({ mobile = false }: { mobile?: boolea
     ? '\u041f\u0440\u043e\u0432\u0435\u0440\u044f\u0435\u043c \u0434\u043e\u0441\u0442\u0443\u043f...'
     : summary.subtitle || '\u0420\u0435\u0433\u0438\u0441\u0442\u0440\u0430\u0446\u0438\u044f';
   const active = hasAnyAccess(summary);
+
+  if (compact) {
+    return (
+      <Link
+        href="/cabinet"
+        className="header-account-entry relative grid h-10 w-10 place-items-center rounded-xl border border-black/10 bg-card text-text-primary shadow-sm transition-colors hover:border-brand/35 hover:text-brand dark:border-white/10"
+        aria-label={active ? `Открыть личный кабинет: ${title}` : 'Войти на сайт'}
+        title={active ? title : 'Войти на сайт'}
+      >
+        <AccountIcon />
+        {active ? (
+          <span
+            className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-brand ring-2 ring-card"
+            aria-hidden="true"
+          />
+        ) : null}
+      </Link>
+    );
+  }
 
   if (mobile) {
     return (

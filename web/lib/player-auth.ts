@@ -130,6 +130,13 @@ export function getPlayerTokenFromCookieHeader(cookieHeader: string): string | n
   return cookieValue(cookieHeader, PLAYER_COOKIE);
 }
 
+export function getVerifiedPlayerSessionFromCookieHeader(
+  cookieHeader: string,
+): { id: number; email: string } | null {
+  const token = getPlayerTokenFromCookieHeader(cookieHeader);
+  return token ? verifyPlayerToken(token) : null;
+}
+
 export function getRecentPlayerAuthTokenFromCookieHeader(cookieHeader: string): string | null {
   return cookieValue(cookieHeader, PLAYER_RECENT_AUTH_COOKIE);
 }

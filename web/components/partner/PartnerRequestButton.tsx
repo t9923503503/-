@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import { METRIKA_GOALS, reachMetrikaGoal } from '@/lib/metrika-goals';
 
 export default function PartnerRequestButton({
   sourceRequestId,
@@ -27,6 +28,7 @@ export default function PartnerRequestButton({
       }
       setState('done');
       setMessage('Запрос отправлен');
+      reachMetrikaGoal(METRIKA_GOALS.partnerRequest);
     } catch {
       setState('error');
       setMessage('Ошибка сети');

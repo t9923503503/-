@@ -204,3 +204,9 @@
 | # | Р¤Р°Р№Р» | Р§С‚Рѕ РґРµР»Р°РµС‚ | РСЃРїРѕР»РЅРёС‚РµР»СЊ | РЎС‚Р°С‚СѓСЃ | РљРѕРјРјРµРЅС‚Р°СЂРёР№ |
 |---|------|------------|-------------|--------|-------------|
 | 6 | `web/app/sudyam/kotcn/[id]/page.tsx` | operator page | Codex | DONE | 2026-04-09, подключена страница `web/app/sudyam/kotcn/[id]/page.tsx` + client workspace |
+
+## Current additions
+
+| Task | Owner | Status | Comment |
+|------|-------|--------|---------|
+| Optional self-scoring feedback and visible score history | Codex | DONE + PROD | 2026-08-10, self-scoring is off by default and restricted to the authenticated player's current pair; voice and player-visible history are independent settings, while the server audit is always on. Score/undo use idempotency, revision checks, device identity, optimistic rollback and accessible live feedback. Future raunds remain locked until the operator starts them or the active timer expires. Migration 082, TypeScript, targeted ESLint/Vitest and production build passed; production build `4LkQrUYNBQNv9mCqs7Y-K`, rollback `/var/www/ipt/.deploy-backup/20260810-173000-kotcn-self-scoring-v2`. |

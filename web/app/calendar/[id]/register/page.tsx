@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import TournamentRegisterForm from '@/components/calendar/TournamentRegisterForm';
-import RegisteredParticipantsList from '@/components/calendar/RegisteredParticipantsList';
-import { fetchTournamentById, fetchTournamentRegistrations } from '@/lib/queries';
+import { fetchTournamentById } from '@/lib/queries';
+import { isKotcAdminFormat, isThaiAdminFormat } from '@/lib/admin-legacy-sync';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,9 +25,12 @@ export default async function TournamentRegisterPage({ params }: PageProps) {
   }
 
   const isRegistrationClosed =
-    tournament.status === 'finished' || tournament.status === 'cancelled';
-
-  const registrations = await fetchTournamentRegistrations(id, tournament.formatCode);
+    tournament.status === 'in_progress' ||
+    tournament.status === 'awaiting_results' ||
+    tournament.status === 'finished' ||
+    tournament.status === 'cancelled';
+  const isIndividualRegistration =
+    isThaiAdminFormat(tournament.format) || isKotcAdminFormat(tournament.format);
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-10">
@@ -48,21 +51,13 @@ export default async function TournamentRegisterPage({ params }: PageProps) {
         Статус: <span className="text-text-primary/90">{tournament.status}</span>
       </p>
 
-      <RegisteredParticipantsList
-        registrations={registrations}
-        capacity={tournament.capacity}
-        participantCount={tournament.participantCount}
-        waitlistCount={tournament.waitlistCount ?? 0}
-        spotsLeft={tournament.spotsLeft}
-      />
-
       {isRegistrationClosed ? (
         <section className="mt-8 rounded-xl border border-white/10 bg-surface-light/20 p-6 md:p-8">
           <h2 className="font-heading text-2xl text-text-primary tracking-wide">
             Запись закрыта
           </h2>
           <p className="mt-3 font-body text-text-secondary">
-            Этот турнир уже завершён или отменён. Новые заявки не принимаются.
+            Этот турнир уже завершён, находится на проверке результатов или отменён. Новые заявки не принимаются.
           </p>
           <Link
             href={`/calendar/${id}`}
@@ -72,9 +67,11 @@ export default async function TournamentRegisterPage({ params }: PageProps) {
           </Link>
         </section>
       ) : (
-        <TournamentRegisterForm tournamentId={id} />
+        <TournamentRegisterForm
+          tournamentId={id}
+          individualOnly={isIndividualRegistration}
+        />
       )}
     </main>
   );
 }
-

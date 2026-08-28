@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireApiRole } from '@/lib/admin-auth';
+import { writeAuditLog } from '@/lib/admin-audit';
 import { adminErrorResponse } from '@/lib/admin-errors';
 import { resolveSudyamBootstrap } from '@/lib/sudyam-bootstrap';
 import {
@@ -42,6 +43,17 @@ export async function POST(
 
     let preview;
     let r2SeedDraft;
+    let beforePayload = null;
+
+    if (
+      action === 'bootstrap_r1' ||
+      action === 'reshuffle_r1' ||
+      action === 'finish_r1' ||
+      action === 'confirm_r2_seed' ||
+      action === 'finish_r2'
+    ) {
+      beforePayload = await resolveSudyamBootstrap(id, 'thai').catch(() => null);
+    }
 
     if (action === 'bootstrap_r1') {
       await bootstrapThaiJudgeState(id, { seed: seed >= 1 ? seed : undefined });
@@ -58,6 +70,32 @@ export async function POST(
     }
 
     const payload = await resolveSudyamBootstrap(id, 'thai');
+    const auditActionMap: Record<string, string> = {
+      bootstrap_r1: 'tournament.thaiBootstrapR1',
+      reshuffle_r1: 'tournament.thaiReshuffleR1',
+      finish_r1: 'tournament.thaiFinishR1',
+      confirm_r2_seed: 'tournament.thaiConfirmR2Seed',
+      finish_r2: 'tournament.thaiFinishR2',
+    };
+    if (auditActionMap[action]) {
+      await writeAuditLog({
+        actorId: auth.actor.id,
+        actorRole: auth.actor.role,
+        action: auditActionMap[action],
+        entityType: 'tournament',
+        entityId: id,
+        beforeState: {
+          stage: beforePayload?.thaiOperatorState?.stage ?? null,
+          tournamentStatus: beforePayload?.bootstrapState?.tournament?.status ?? null,
+        },
+        afterState: {
+          stage: payload?.thaiOperatorState?.stage ?? null,
+          tournamentStatus: payload?.bootstrapState?.tournament?.status ?? null,
+          seed: seed >= 1 ? seed : null,
+          zoneCount: Array.isArray((body.zones as unknown[] | undefined)) ? (body.zones as unknown[]).length : null,
+        },
+      });
+    }
     return NextResponse.json({
       success: true,
       payload,

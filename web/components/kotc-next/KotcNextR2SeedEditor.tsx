@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KotcNextR2SeedZone, KotcNextZoneKey } from '@/lib/kotc-next/types';
 import { zoneLabel } from '@/lib/kotc-next-config';
 
@@ -12,6 +12,14 @@ interface DraftEntry {
   pairLabel: string;
   kingWins: number;
   takeovers: number;
+  longestKingRun: number;
+  firstLongestKingRunOrder: number | null;
+  primaryPlayerId?: string | null;
+  primaryPlayerName?: string;
+  primaryGender?: 'M' | 'W' | null;
+  secondaryPlayerId?: string | null;
+  secondaryPlayerName?: string;
+  secondaryGender?: 'M' | 'W' | null;
 }
 
 function flattenDraft(draft: KotcNextR2SeedZone[]): DraftEntry[] {
@@ -24,9 +32,39 @@ function flattenDraft(draft: KotcNextR2SeedZone[]): DraftEntry[] {
       pairLabel: pair.pairLabel,
       kingWins: pair.kingWins,
       takeovers: pair.takeovers,
+      longestKingRun: pair.longestKingRun ?? 0,
+      firstLongestKingRunOrder: pair.firstLongestKingRunOrder ?? null,
+      primaryPlayerId: pair.primaryPlayerId,
+      primaryPlayerName: pair.primaryPlayerName,
+      primaryGender: pair.primaryGender,
+      secondaryPlayerId: pair.secondaryPlayerId,
+      secondaryPlayerName: pair.secondaryPlayerName,
+      secondaryGender: pair.secondaryGender,
     })),
   );
 }
+
+function formatRunMeta(pair: Pick<DraftEntry, 'longestKingRun' | 'firstLongestKingRunOrder'>): string {
+  const run = pair.longestKingRun ?? 0;
+  const order = pair.firstLongestKingRunOrder ?? null;
+  if (!run) return '\u0421\u0435\u0440\u0438\u044f 0';
+  return order
+    ? `\u0421\u0435\u0440\u0438\u044f ${run} · \u043f\u0435\u0440\u0432\u0430\u044f #${order}`
+    : `\u0421\u0435\u0440\u0438\u044f ${run}`;
+}
+
+const R2_SEEDING_LABEL = '\u041f\u043e\u0441\u0435\u0432 R2';
+const R2_ZONE_EDITOR_TITLE = '\u0420\u0435\u0434\u0430\u043a\u0442\u043e\u0440 \u0437\u043e\u043d R2';
+const R2_ZONE_EDITOR_TEXT =
+  '\u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435 \u0430\u0432\u0442\u043e\u043f\u043e\u0441\u0435\u0432 \u0438 \u043f\u0440\u0438 ' +
+  '\u043d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u043e\u0441\u0442\u0438 \u043f\u0435\u0440\u0435\u043a\u0438\u043d\u044c\u0442\u0435 \u043f\u0430\u0440\u0443 ' +
+  '\u0432 \u0434\u0440\u0443\u0433\u0443\u044e \u0437\u043e\u043d\u0443 \u043f\u0435\u0440\u0435\u0434 \u0437\u0430\u043f\u0443\u0441\u043a\u043e\u043c R2.';
+const RELOAD_LABEL = '\u041e\u0431\u043d\u043e\u0432\u0438\u0442\u044c';
+const RELOADING_LABEL = '\u041e\u0431\u043d\u043e\u0432\u043b\u044f\u0435\u043c...';
+const CONFIRM_R2_LABEL = '\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c R2';
+const R1_COURT_LABEL = '\u043a\u043e\u0440\u0442 R1';
+const PAIR_LABEL = '\u043f\u0430\u0440\u0430';
+const EMPTY_ZONE_LABEL = '\u0412 \u044d\u0442\u043e\u0439 \u0437\u043e\u043d\u0435 \u043f\u043e\u043a\u0430 \u043d\u0435\u0442 \u043f\u0430\u0440.';
 
 export function KotcNextR2SeedEditor({
   draft,
@@ -42,13 +80,23 @@ export function KotcNextR2SeedEditor({
   onConfirm: (zones: KotcNextR2SeedZone[]) => void;
 }) {
   const [entries, setEntries] = useState<DraftEntry[]>([]);
+  const [draftDirty, setDraftDirty] = useState(false);
+  const [remoteUpdateAvailable, setRemoteUpdateAvailable] = useState(false);
+  const sourceFingerprintRef = useRef('');
+  const draftDirtyRef = useRef(false);
 
   useEffect(() => {
+    const fingerprint = JSON.stringify(draft ?? []);
+    if (draftDirtyRef.current && sourceFingerprintRef.current && sourceFingerprintRef.current !== fingerprint) {
+      setRemoteUpdateAvailable(true);
+      return;
+    }
     setEntries(draft ? flattenDraft(draft) : []);
+    sourceFingerprintRef.current = fingerprint;
+    setRemoteUpdateAvailable(false);
   }, [draft]);
 
   const availableZones = useMemo(() => draft?.map((zone) => zone.zone) ?? [], [draft]);
-
   const groupedZones = useMemo(
     () =>
       availableZones.map((zone) => ({
@@ -64,24 +112,30 @@ export function KotcNextR2SeedEditor({
     <section className="rounded-[24px] border border-[#2d3144] bg-[rgba(11,14,24,0.88)] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.24)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.28em] text-[#7d8498]">R2 Seeding</div>
-          <h3 className="mt-2 text-xl font-semibold text-white">R2 zone editor</h3>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#aeb6c8]">
-            Проверьте автопосев и при необходимости перекиньте пару в другую зону перед запуском R2.
-          </p>
+          <div className="text-[10px] uppercase tracking-[0.28em] text-[#7d8498]">{R2_SEEDING_LABEL}</div>
+          <h3 className="mt-2 text-xl font-semibold text-white">{R2_ZONE_EDITOR_TITLE}</h3>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#aeb6c8]">{R2_ZONE_EDITOR_TEXT}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={onReload}
+            onClick={() => {
+              if (draftDirty && !window.confirm('Отменить локальные изменения и загрузить новую версию R2?')) return;
+              setDraftDirty(false);
+              draftDirtyRef.current = false;
+              setRemoteUpdateAvailable(false);
+              onReload();
+            }}
             disabled={loading}
             className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? 'Обновляем…' : 'Обновить'}
+            {loading ? RELOADING_LABEL : RELOAD_LABEL}
           </button>
           <button
             type="button"
-            onClick={() =>
+            onClick={() => {
+              setDraftDirty(false);
+              draftDirtyRef.current = false;
               onConfirm(
                 groupedZones.map((zone) => ({
                   zone: zone.zone,
@@ -91,14 +145,22 @@ export function KotcNextR2SeedEditor({
                     pairLabel: pair.pairLabel,
                     kingWins: pair.kingWins,
                     takeovers: pair.takeovers,
+                    longestKingRun: pair.longestKingRun,
+                    firstLongestKingRunOrder: pair.firstLongestKingRunOrder,
+                    primaryPlayerId: pair.primaryPlayerId,
+                    primaryPlayerName: pair.primaryPlayerName,
+                    primaryGender: pair.primaryGender,
+                    secondaryPlayerId: pair.secondaryPlayerId,
+                    secondaryPlayerName: pair.secondaryPlayerName,
+                    secondaryGender: pair.secondaryGender,
                   })),
                 })),
-              )
-            }
+              );
+            }}
             disabled={confirmDisabled}
             className="rounded-full border border-[#5b4713] bg-[#ffd24a] px-4 py-2 text-sm font-semibold text-[#17130b] transition hover:bg-[#ffe07f] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Подтвердить R2
+            {CONFIRM_R2_LABEL}
           </button>
         </div>
       </div>
@@ -106,6 +168,11 @@ export function KotcNextR2SeedEditor({
       {message ? (
         <div className="mt-4 rounded-[18px] border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
           {message}
+        </div>
+      ) : null}
+      {remoteUpdateAvailable ? (
+        <div role="status" aria-live="polite" className="mt-4 rounded-[18px] border border-amber-300/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          Доступна новая серверная версия. Ваш черновик сохранён; нажмите «Обновить», чтобы заменить его.
         </div>
       ) : null}
 
@@ -123,7 +190,8 @@ export function KotcNextR2SeedEditor({
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-white">{pair.pairLabel}</div>
                       <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-[#9aa1b3]">
-                        R1 court {pair.courtNo} · pair {pair.pairIdx + 1} · KP {pair.kingWins} · TO {pair.takeovers}
+                        {R1_COURT_LABEL} {pair.courtNo} · {PAIR_LABEL} {pair.pairIdx + 1} · KP {pair.kingWins} ·{' '}
+                        {formatRunMeta(pair)} · TO {pair.takeovers}
                       </div>
                     </div>
                     <select
@@ -133,6 +201,8 @@ export function KotcNextR2SeedEditor({
                         setEntries((current) =>
                           current.map((entry) => (entry.id === pair.id ? { ...entry, zone: nextZone } : entry)),
                         );
+                        setDraftDirty(true);
+                        draftDirtyRef.current = true;
                       }}
                       className="rounded-xl border border-white/10 bg-[#0e111b] px-3 py-2 text-sm text-white outline-none transition focus:border-[#ffd24a]"
                     >
@@ -146,7 +216,7 @@ export function KotcNextR2SeedEditor({
                 ))
               ) : (
                 <div className="rounded-2xl border border-dashed border-white/10 px-3 py-4 text-sm text-[#7d8498]">
-                  В этой зоне пока нет пар.
+                  {EMPTY_ZONE_LABEL}
                 </div>
               )}
             </div>

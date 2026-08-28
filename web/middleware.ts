@@ -12,8 +12,15 @@ function buildRedirectUrl(request: NextRequest, targetPath: string, options?: { 
   const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
   const nextPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
   if (forwardedHost) {
-    const hostname = forwardedHost.split(':')[0];
-    const url = new URL(targetPath, `${forwardedProto}://${hostname}`);
+    const url = new URL(targetPath, `${forwardedProto}://${forwardedHost}`);
+    if (options?.returnTo && nextPath) {
+      url.searchParams.set('returnTo', nextPath);
+    }
+    return url;
+  }
+  const directHost = request.headers.get('host');
+  if (directHost) {
+    const url = new URL(targetPath, `${request.nextUrl.protocol}//${directHost}`);
     if (options?.returnTo && nextPath) {
       url.searchParams.set('returnTo', nextPath);
     }
@@ -136,8 +143,19 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  const isCoach = pathname === '/coach' || pathname.startsWith('/coach/');
+  const isCoachLogin = pathname.startsWith('/coach/login');
+  if (isCoach && !isCoachLogin) {
+    const token = request.cookies.get(ADMIN_COOKIE_NAME)?.value;
+    if (!token || !(await isValidAdminSession(token))) {
+      const response = NextResponse.redirect(buildRedirectUrl(request, '/coach/login'));
+      response.headers.set('Cache-Control', 'private, no-cache, no-store, max-age=0, must-revalidate');
+      return response;
+    }
+  }
+
   const response = NextResponse.next();
-  if (isAdmin) {
+  if (isAdmin || isCoach) {
     response.headers.set('Cache-Control', 'private, no-cache, no-store, max-age=0, must-revalidate');
   }
   return response;
@@ -153,5 +171,7 @@ export const config = {
     '/court/:path*',
     '/admin',
     '/admin/:path*',
+    '/coach',
+    '/coach/:path*',
   ],
 };

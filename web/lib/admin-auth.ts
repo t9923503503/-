@@ -29,7 +29,9 @@ const ROLE_ORDER: Record<AdminRole, number> = {
   admin: 3,
 };
 
-const FALLBACK_ADMIN_PIN = '7319';
+const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 12;
+
+const DEV_FALLBACK_ADMIN_PIN = '7319';
 
 function hasRequiredRole(actual: AdminRole, required: AdminRole): boolean {
   return ROLE_ORDER[actual] >= ROLE_ORDER[required];
@@ -63,7 +65,10 @@ function parseCredentialsFromEnv(): AdminCredential[] {
 
 function getLegacyCredentials(): AdminCredential[] {
   const list: AdminCredential[] = [];
-  const adminPin = String(process.env.ADMIN_PIN || FALLBACK_ADMIN_PIN).trim();
+  const configuredAdminPin = String(process.env.ADMIN_PIN || '').trim();
+  const adminPin = configuredAdminPin || (
+    process.env.NODE_ENV === 'production' ? '' : DEV_FALLBACK_ADMIN_PIN
+  );
   const operatorPin = String(process.env.ADMIN_OPERATOR_PIN || '').trim();
   const viewerPin = String(process.env.ADMIN_VIEWER_PIN || '').trim();
   if (adminPin) list.push({ id: 'legacy-admin', role: 'admin', pin: adminPin });
@@ -75,11 +80,16 @@ function getLegacyCredentials(): AdminCredential[] {
 function getAllCredentials(): AdminCredential[] {
   const envCreds = parseCredentialsFromEnv();
   if (envCreds.length > 0) return envCreds;
+  const hasExplicitLegacyPin = [
+    process.env.ADMIN_PIN,
+    process.env.ADMIN_OPERATOR_PIN,
+    process.env.ADMIN_VIEWER_PIN,
+  ].some((value) => String(value || '').trim() !== '');
   const allowLegacy = allowLegacyPins(
     String(process.env.NODE_ENV || ''),
-    String(process.env.ADMIN_ALLOW_LEGACY_PIN || 'true')
+    String(process.env.ADMIN_ALLOW_LEGACY_PIN || '')
   );
-  return allowLegacy ? getLegacyCredentials() : [];
+  return allowLegacy || hasExplicitLegacyPin ? getLegacyCredentials() : [];
 }
 
 function verifyLogin(login: { id?: string; pin: string }): AdminActor | null {
@@ -113,7 +123,7 @@ function encodeSession(actor: AdminActor): string {
   const payload: SessionPayload = {
     id: actor.id,
     role: actor.role,
-    exp: Date.now() + 1000 * 60 * 60 * 24 * 30,
+    exp: Date.now() + 1000 * ADMIN_SESSION_TTL_SECONDS,
   };
   const part = b64UrlEncode(JSON.stringify(payload));
   const sig = signPart(part, secret);
@@ -144,11 +154,7 @@ function decodeSession(token: string): AdminActor | null {
 }
 
 export function createAdminSessionResponse(input: { id?: string; pin: string }): NextResponse {
-  const normalizedPin = String(input.pin || '').trim();
-  const actor =
-    normalizedPin === FALLBACK_ADMIN_PIN
-      ? { id: String(input.id || 'legacy-admin').trim() || 'legacy-admin', role: 'admin' as const }
-      : verifyLogin(input);
+  const actor = verifyLogin(input);
   if (!actor) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
   }
@@ -163,7 +169,7 @@ export function createAdminSessionResponse(input: { id?: string; pin: string }):
     httpOnly: true,
     sameSite: 'strict',
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: ADMIN_SESSION_TTL_SECONDS,
     path: '/',
   });
   return res;

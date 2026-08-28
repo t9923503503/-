@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
   if (
     action !== 'bootstrap_r1' &&
     action !== 'finish_r1' &&
+    action !== 'adjust_r1_pair_score' &&
     action !== 'preview_r2_seed' &&
     action !== 'confirm_r2_seed' &&
     action !== 'bootstrap_r2' &&
@@ -30,6 +31,10 @@ export async function POST(req: NextRequest) {
   try {
     const result = await runKotcNextOperatorAction(tournamentId, action as Parameters<typeof runKotcNextOperatorAction>[1], {
       zones: body.zones,
+      courtNo: body.courtNo,
+      raundNo: body.raundNo,
+      pairIdx: body.pairIdx,
+      delta: body.delta,
     });
     const payload = await resolveSudyamBootstrap(tournamentId, 'kotc');
     return NextResponse.json({

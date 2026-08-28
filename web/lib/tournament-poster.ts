@@ -1,6 +1,8 @@
 import type { Tournament } from '@/lib/types';
 
 const LOCAL_TOURNAMENT_POSTERS: Record<string, string> = {
+  '5eb64334-aeff-4003-a748-b13033a1aa4b':
+    '/images/tournaments/5eb64334-aeff-4003-a748-b13033a1aa4b/hero.jpg',
   'a19522bb-864e-4520-8182-61e035c27894':
     '/images/tournaments/a19522bb-864e-4520-8182-61e035c27894/hero.jpg',
   '4bca6863-beb1-4fc6-ab16-9db4105552f4':

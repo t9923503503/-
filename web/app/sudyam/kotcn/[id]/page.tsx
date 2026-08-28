@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { KotcNextTournamentWorkspace } from '@/components/kotc-next/KotcNextTournamentWorkspace';
+import { getAdminSessionFromCookies } from '@/lib/admin-auth';
 import { SudyamBootstrapError, resolveSudyamBootstrap } from '@/lib/sudyam-bootstrap';
 
 export const dynamic = 'force-dynamic';
@@ -26,14 +27,23 @@ export default async function SudyamKotcNextPage({
   const { id } = await params;
 
   try {
-    const payload = await resolveSudyamBootstrap(id, 'kotc');
+    const [payload, actor] = await Promise.all([
+      resolveSudyamBootstrap(id, 'kotc'),
+      getAdminSessionFromCookies(),
+    ]);
     if (payload.format !== 'kotc') {
       notFound();
     }
-    if (payload.kotcJudgeModule === 'legacy') {
-      redirect(`/sudyam?tournamentId=${encodeURIComponent(id)}&format=kotc&legacy=1`);
-    }
-    return <KotcNextTournamentWorkspace initialData={payload} />;
+    return (
+      <KotcNextTournamentWorkspace
+        cockpitV3Enabled={process.env.KOTC_COCKPIT_V3_ENABLED !== 'false'}
+        initialData={{
+          ...payload,
+          canAdminResetKotcNext: actor?.role === 'admin',
+          canAdminForceFinishKotcRound: actor?.role === 'admin',
+        }}
+      />
+    );
   } catch (error) {
     if (error instanceof SudyamBootstrapError && error.status === 404) {
       notFound();

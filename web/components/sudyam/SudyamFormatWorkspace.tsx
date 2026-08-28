@@ -529,8 +529,6 @@ export function SudyamFormatWorkspace({
       activeData.bootstrapState.settings.thaiVariant ??
       ''
     ).trim().toUpperCase();
-    const showLegacyLink = activeData.thaiJudgeModule === 'legacy';
-
     return (
       <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(255,210,74,0.08),transparent_16%),linear-gradient(180deg,#080813,#0b0b16_28%,#090913)] text-text-primary">
         <header className="border-b border-white/8 bg-[rgba(7,7,16,0.92)]">
@@ -554,14 +552,6 @@ export function SudyamFormatWorkspace({
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-[#aeb6c8]">
                 {tournament.status || "draft"}
               </span>
-              {showLegacyLink ? (
-                <a
-                  href={legacyUrl}
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-[#cbd2e1] transition hover:border-white/20 hover:bg-white/10"
-                >
-                  Legacy
-                </a>
-              ) : null}
             </div>
           </div>
         </header>

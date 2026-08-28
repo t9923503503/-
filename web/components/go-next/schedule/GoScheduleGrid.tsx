@@ -170,8 +170,29 @@ export function GoScheduleGrid({
           body: JSON.stringify(withConfirmPayload),
         },
       );
-      const body = (await response.json().catch(() => ({}))) as { error?: string; matches?: GoMatchView[] };
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+        matches?: GoMatchView[];
+        impact?: {
+          impactHash: string;
+          invalidatesBracket: boolean;
+          affectedMatches: Array<{ matchNo: number; status: string }>;
+          blockers: string[];
+        };
+      };
       if (!response.ok) {
+        if (body.code === 'go_impact_preview_required' && body.impact?.impactHash) {
+          const affected = body.impact.affectedMatches.map((item) => `#${item.matchNo} (${item.status})`).join(', ');
+          const confirmed = window.confirm([
+            'Исправление результата влияет на последующие данные.',
+            body.impact.invalidatesBracket ? 'Текущая незапущенная сетка будет отменена и потребует нового посева.' : '',
+            affected ? `Затронутые матчи: ${affected}.` : '',
+            'Подтвердить исправление?',
+          ].filter(Boolean).join('\n'));
+          if (!confirmed) return false;
+          return patchMatch(match, { ...withConfirmPayload, impactHash: body.impact.impactHash });
+        }
         throw new Error(body.error || 'Не удалось обновить матч');
       }
       if (Array.isArray(body.matches)) applyMatches(body.matches);

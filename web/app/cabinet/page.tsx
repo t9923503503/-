@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import LogoutButton from '@/components/profile/LogoutButton';
 import PlayerAuthPanel from '@/components/profile/PlayerAuthPanel';
+import PlayerCabinetPage from '@/components/profile/PlayerCabinetPage';
 import { getAccessSummaryFromCookies } from '@/lib/access-summary';
 import { isTelegramWebAuthAvailable } from '@/lib/telegram-web-auth';
 import { isVkIdAvailable } from '@/lib/vk-id';
@@ -22,8 +23,38 @@ function adminRoleLabel(role: 'admin' | 'operator' | 'viewer'): string {
   return 'наблюдатель';
 }
 
-export default async function CabinetPage() {
+interface CabinetPageProps {
+  searchParams?: Promise<{ id?: string; tab?: string; avatarSetup?: string; returnTo?: string }>;
+}
+
+export default async function CabinetPage({ searchParams }: CabinetPageProps) {
   const summary = await getAccessSummaryFromCookies();
+
+  if (summary.player) {
+    return (
+      <>
+        {summary.admin || summary.judgeApproved ? (
+          <div className="mx-auto w-full max-w-6xl px-4 pt-5">
+            <section className="cabinet-access-banner" aria-label="Дополнительный активный доступ">
+              <div className="cabinet-access-copy">
+                <span>Дополнительная роль</span>
+                <strong>
+                  {summary.admin
+                    ? `Вы также вошли как ${adminRoleLabel(summary.admin.role)}`
+                    : 'Судейский доступ активен'}
+                </strong>
+              </div>
+              <div className="cabinet-access-actions">
+                {summary.admin ? <Link href="/admin" className="cabinet-access-primary">Открыть панель</Link> : null}
+                {summary.judgeApproved ? <Link href="/court" className="cabinet-access-link">Открыть судейский вход</Link> : null}
+              </div>
+            </section>
+          </div>
+        ) : null}
+        <PlayerCabinetPage searchParams={searchParams} />
+      </>
+    );
+  }
 
   return (
     <main className="cabinet-page mx-auto w-full max-w-[1180px] px-4 py-8 md:py-12">
@@ -63,32 +94,16 @@ export default async function CabinetPage() {
       <section className="cabinet-login-shell">
         <div id="player-login" className="cabinet-login-pane">
           <div className="cabinet-login-content">
-            {summary.player ? (
-              <section className="cabinet-player-session" aria-labelledby="cabinet-player-title">
-                <div className="cabinet-auth-kicker">Личный кабинет игрока</div>
-                <h1 id="cabinet-player-title" className="cabinet-auth-title">
-                  Вы вошли как {summary.player.displayName}
-                </h1>
-                <p className="cabinet-auth-lead">
-                  Профиль, статистика, заявки на турниры и ваши игры уже доступны.
-                </p>
-                <div className="cabinet-player-actions">
-                  <Link href="/profile" className="cabinet-auth-submit">Открыть профиль</Link>
-                  <LogoutButton redirectTo="/cabinet" className="cabinet-player-logout" />
-                </div>
-              </section>
-            ) : (
-              <PlayerAuthPanel
-                redirectTo="/cabinet"
-                initialMode="login"
-                appearance="compact"
-                telegramAuthEnabled={isTelegramWebAuthAvailable()}
-                vkIdEnabled={isVkIdAvailable()}
-              />
-            )}
+            <PlayerAuthPanel
+              redirectTo="/cabinet"
+              initialMode="login"
+              appearance="compact"
+              telegramAuthEnabled={isTelegramWebAuthAvailable()}
+              vkIdEnabled={isVkIdAvailable()}
+            />
 
-            <nav className="cabinet-other-access" aria-label="Другой способ входа">
-              <span>Другой способ входа</span>
+            <nav className="cabinet-other-access" aria-label="Вход для судей">
+              <span>Для судей</span>
               <Link href={summary.judgeApproved ? '/court' : '/sudyam/login?returnTo=%2Fcabinet'}>
                 {summary.judgeApproved ? 'Открыть судейский вход' : 'Вход для судей по PIN'}
                 <span aria-hidden="true"> →</span>

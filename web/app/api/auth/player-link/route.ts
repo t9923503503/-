@@ -3,8 +3,8 @@ import { getPlayerTokenFromCookieHeader, verifyPlayerToken } from '@/lib/player-
 import {
   bindPlayerToAccount,
   findBoundPlayer,
-  findExplicitLinkedPlayer,
   getAccountFullName,
+  requiresModeratedPlayerLink,
   resolvePlayerForAccount,
   searchPlayersForLink,
   unlinkPlayerFromAccount,
@@ -19,11 +19,12 @@ function getAuthedUser(req: NextRequest): { id: number; email: string } | null {
 }
 
 async function buildPayload(userId: number, query = '') {
-  const [fullName, linkedPlayer, resolvedPlayer, searchResults] = await Promise.all([
+  const [fullName, linkedPlayer, resolvedPlayer, searchResults, linkRequiresModeration] = await Promise.all([
     getAccountFullName(userId),
     findBoundPlayer(userId),
     resolvePlayerForAccount(userId),
     query ? searchPlayersForLink(query, 8) : Promise.resolve([]),
+    requiresModeratedPlayerLink(userId),
   ]);
 
   return {
@@ -31,6 +32,8 @@ async function buildPayload(userId: number, query = '') {
     linked_player: linkedPlayer,
     resolved_player: resolvedPlayer,
     search_results: searchResults,
+    link_requires_moderation: linkRequiresModeration,
+    telegram_bot: (process.env.TELEGRAM_BOT_USERNAME || 'Lpvolley_bot').replace(/^@/, ''),
   };
 }
 

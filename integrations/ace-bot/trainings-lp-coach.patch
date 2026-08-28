@@ -1,0 +1,38 @@
+--- handlers/trainings.py	2026-08-11
++++ handlers/trainings.py	2026-08-11
+@@ -19,7 +19,8 @@
+     Message,
+ )
+ 
+ import database as db
++from lp_coach_sync import push_training_snapshot
+ from config import (
+     SYRNIKI_TIMEZONE,
+     TRAINING_REMINDER_HOURS,
+@@ -125,13 +126,16 @@
+     events = await fetch_yclients_trainings(range_start, range_end)
+     created = 0
+     for event in events:
+         _, was_created = await db.upsert_training_event(event)
+         created += int(was_created)
++        await push_training_snapshot(event)
+     cancelled = await db.mark_missing_training_events(
+         range_start.isoformat(),
+         range_end.isoformat(),
+         [event["yclients_activity_id"] for event in events],
+     )
++    for event in cancelled:
++        await push_training_snapshot(event)
+     logger.info(
+         "YCLIENTS: синхронизировано %s тренировок, новых %s, отменённых %s",
+         len(events), created, len(cancelled),
+@@ -538,5 +542,9 @@
+         or f"id{callback.from_user.id}"
+     )
+     await db.save_training_vote(poll_id, callback.from_user.id, user_name, choice)
+     await _refresh_poll_message(callback.bot, poll_id)
++    refreshed_poll = await db.get_training_poll(poll_id)
++    refreshed_votes = await db.get_training_votes(poll_id)
++    if refreshed_poll:
++        await push_training_snapshot(refreshed_poll, refreshed_votes)
+     await callback.answer(f"Голос принят: {CHOICE_LABELS[choice]}")

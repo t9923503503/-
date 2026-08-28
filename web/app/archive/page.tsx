@@ -43,12 +43,28 @@ function formatDate(dateStr: string) {
 }
 
 function TournamentCard({ t }: { t: ArchiveTournament }) {
+  const hasGallery = Boolean(t.coverPhotoUrl || t.galleryCount > 0);
   return (
     <div className="archive-card overflow-hidden rounded-[22px] border border-white/10 bg-white/5">
+      {t.coverPhotoUrl ? (
+        <Link href={`/calendar/${t.id}#photos`} className="group relative block aspect-[16/8] overflow-hidden bg-black/30 sm:aspect-[16/6]">
+          <img
+            src={t.coverPhotoUrl}
+            alt={`Главное фото турнира ${t.name}`}
+            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+          <span className="absolute bottom-4 left-4 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
+            📸 Смотреть фотоотчёт{t.galleryCount ? ` · ${t.galleryCount} фото` : ''}
+          </span>
+        </Link>
+      ) : null}
       <div className="flex flex-col gap-1 p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-heading text-xl leading-tight">{t.name}</h2>
+            <h2 className="font-heading text-xl leading-tight">
+              <Link href={`/calendar/${t.id}`} className="transition hover:text-brand">{t.name}</Link>
+            </h2>
             <p className="text-sm text-text-secondary mt-1">📅 {formatDate(t.date)}</p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-start gap-2 sm:justify-end">
@@ -63,6 +79,14 @@ function TournamentCard({ t }: { t: ArchiveTournament }) {
                 ) : null}
               </Link>
             ) : null}
+            {hasGallery ? (
+              <Link
+                href={`/calendar/${t.id}#photos`}
+                className="flex items-center gap-1.5 rounded-lg border border-brand/30 bg-brand/10 px-3 py-1.5 text-xs font-semibold text-brand transition-colors hover:bg-brand/20"
+              >
+                📸 Фотоотчёт{t.galleryCount ? ` · ${t.galleryCount}` : ''}
+              </Link>
+            ) : null}
             {t.photoUrl && (
               <a
                 href={t.photoUrl}
@@ -70,7 +94,7 @@ function TournamentCard({ t }: { t: ArchiveTournament }) {
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 text-yellow-400 text-xs font-semibold hover:bg-yellow-500/20 transition-colors"
               >
-                📸 Фото
+                Полный альбом ↗
               </a>
             )}
           </div>

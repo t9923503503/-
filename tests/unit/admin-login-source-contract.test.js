@@ -18,6 +18,7 @@ describe('admin login source contract', () => {
     expect(source).toContain('name="pin"');
     expect(source).toContain("redirect('/admin');");
     expect(source).toContain("invalid: 'Неверный PIN или ID'");
+    expect(source).toContain("rate_limited: 'Слишком много попыток. Повторите вход через 15 минут.'");
   });
 
   it('accepts non-JS form posts and redirects them back into admin flow', () => {
@@ -30,7 +31,9 @@ describe('admin login source contract', () => {
     expect(source).toContain("contentType.includes('multipart/form-data')");
     expect(source).toContain("const form = await req.formData().catch(() => null);");
     expect(source).toContain("const redirectUrl = buildExternalRedirectUrl(req, response.ok ? '/admin' : '/admin/login');");
-    expect(source).toContain("redirectUrl.searchParams.set('error', response.status === 401 ? 'invalid' : 'server');");
+    expect(source).toContain("checkAdminLoginRateLimit(req.headers, id)");
+    expect(source).toContain("recordAdminLoginFailure(req.headers, id)");
+    expect(source).toContain("response.status === 429");
     expect(source).toContain("NextResponse.redirect(redirectUrl, { status: 303 })");
   });
 });

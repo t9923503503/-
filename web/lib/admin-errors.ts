@@ -24,6 +24,23 @@ export function adminErrorResponse(err: unknown, context: string) {
     );
   }
 
+  if (message.includes('idx_players_name_gender')) {
+    return Response.json(
+      { error: 'Игрок с таким именем и полом уже есть в базе' },
+      { status: 409 }
+    );
+  }
+
+  if (
+    message.includes('tournament_participants_tournament_id_player_id_key') ||
+    message.includes('duplicate key value violates unique constraint')
+  ) {
+    return Response.json(
+      { error: 'В составе есть повторяющийся игрок. Уберите дубль перед сохранением.' },
+      { status: 400 }
+    );
+  }
+
   if (message.includes('Missing DATABASE_URL') || message.includes('Missing admin server DB')) {
     return Response.json(
       { error: 'Database is not configured' },

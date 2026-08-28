@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import type { GoBracketSlotView, GoMatchView, GoOperatorActionName, GoOperatorState } from '@/lib/go-next/types';
 import { GoBracketView } from './GoBracketView';
+import { GoGroupMatrix } from './GoGroupMatrix';
 import { GoGroupStandings } from './GoGroupStandings';
 import { GoSeedEditor, type GoSeedDraft } from './GoSeedEditor';
 import { GoCourtSlotsGrid } from './courts/GoCourtSlotsGrid';
@@ -19,6 +21,7 @@ import {
 } from './operator-cockpit-model';
 import { GoScheduleGrid } from './schedule/GoScheduleGrid';
 import { GoRosterConfigPanel } from './setup/GoRosterConfigPanel';
+import { GoPairManagerPanel } from './setup/GoPairManagerPanel';
 
 type GoStateResponse = {
   state?: GoOperatorState;
@@ -29,7 +32,7 @@ type GoStateResponse = {
   error?: string;
 };
 
-type WorkspaceKey = 'groups' | 'schedule' | 'bracket' | 'courts';
+type WorkspaceKey = 'matrix' | 'groups' | 'schedule' | 'bracket' | 'courts';
 
 type ConfirmState =
   | {
@@ -103,7 +106,7 @@ export function GoOperatorPanel({
   const [brackets, setBrackets] = useState<Record<string, GoBracketSlotView[]>>({});
   const [seedDraft, setSeedDraft] = useState<GoSeedDraft | null>(null);
   const [activeBracketLevel, setActiveBracketLevel] = useState('');
-  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceKey>('groups');
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceKey>('matrix');
   const [selectedGroupForWalkover, setSelectedGroupForWalkover] = useState('');
   const [pending, setPending] = useState<GoOperatorActionName | null>(null);
   const [actionError, setActionError] = useState('');
@@ -202,7 +205,7 @@ export function GoOperatorPanel({
       return;
     }
     if (domainStage === 'groups_live') {
-      setActiveWorkspace('schedule');
+      setActiveWorkspace('matrix');
       return;
     }
     if (domainStage === 'groups_done' || domainStage === 'bracket_ready' || domainStage === 'bracket_live') {
@@ -296,8 +299,255 @@ export function GoOperatorPanel({
     if (actionId === 'finish_bracket' && actionAllowedByStage.finish_bracket) return runAction('finish_bracket');
   }
 
+  async function saveMatrixScore(
+    match: GoMatchView,
+    score: { scoreA: number[]; scoreB: number[]; setsA: number; setsB: number },
+  ): Promise<void> {
+    const winnerId = score.setsA > score.setsB ? match.teamA?.teamId ?? null : match.teamB?.teamId ?? null;
+    const payload: Record<string, unknown> = {
+      status: 'finished',
+      scoreA: score.scoreA,
+      scoreB: score.scoreB,
+      setsA: score.setsA,
+      setsB: score.setsB,
+      winnerId,
+      note: 'group-matrix-score',
+    };
+    const send = async (impactHash?: string) => {
+      const response = await fetch(
+        `/api/admin/tournaments/${encodeURIComponent(tournamentId)}/go-matches/${encodeURIComponent(match.matchId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, ...(impactHash ? { impactHash } : {}) }),
+        },
+      );
+      const body = (await response.json().catch(() => ({}))) as GoStateResponse & {
+        code?: string;
+        impact?: {
+          impactHash: string;
+          invalidatesBracket: boolean;
+          affectedMatches: Array<{ matchNo: number; status: string }>;
+        };
+      };
+      return { response, body };
+    };
+    let { response, body } = await send();
+    if (!response.ok && body.code === 'go_impact_preview_required' && body.impact?.impactHash) {
+      const affected = body.impact.affectedMatches.map((item) => `#${item.matchNo} (${item.status})`).join(', ');
+      const confirmed = window.confirm([
+        'Исправление меняет итог группы и последующие данные.',
+        body.impact.invalidatesBracket ? 'Незапущенная сетка будет отменена; после исправления сформируйте посев заново.' : '',
+        affected ? `Затронутые матчи: ${affected}.` : '',
+        'Подтвердить исправление?',
+      ].filter(Boolean).join('\n'));
+      if (!confirmed) throw new Error('Исправление отменено');
+      ({ response, body } = await send(body.impact.impactHash));
+    }
+    if (!response.ok) throw new Error(body.error || 'Не удалось сохранить счет');
+    hydrate(body);
+    if (Array.isArray(body.matches)) setMatches(body.matches);
+    setLastSyncAt(Date.now());
+    setSyncState('ready');
+    await loadState();
+  }
+
   const canFinishGroups = actionAllowedByStage.finish_group_stage && summary.pendingMatches === 0 && summary.liveMatches === 0;
   const canFinishBracket = actionAllowedByStage.finish_bracket && summary.pendingMatches === 0 && summary.liveMatches === 0;
+  const groupMatches = matches.filter((match) => Boolean(match.groupLabel));
+  const groupPlayedMatches = groupMatches.filter((match) => match.status === 'finished').length;
+  const groupTotalMatches = groupMatches.length;
+  const groupsAreComplete = groupTotalMatches > 0 && groupPlayedMatches >= groupTotalMatches;
+
+  async function runSimplePrimaryAction(): Promise<void> {
+    if (currentStage === 'setup') {
+      await runAction('bootstrap_groups');
+      return;
+    }
+    if (currentStage === 'groups_ready') {
+      await runAction('start_group_stage');
+      return;
+    }
+    if (currentStage === 'groups_live' && groupsAreComplete) {
+      await runAction('finish_group_stage');
+      await runAction('preview_bracket_seed');
+      return;
+    }
+    if (currentStage === 'groups_finished') {
+      await runAction('preview_bracket_seed');
+      return;
+    }
+    if (currentStage === 'bracket_preview' && seedDraft) {
+      await runAction('confirm_bracket_seed', { seedDraft });
+      return;
+    }
+    if (currentStage === 'bracket_ready') {
+      await runAction('bootstrap_bracket');
+      return;
+    }
+    if (currentStage === 'bracket_live' && canFinishBracket) {
+      await runAction('finish_bracket');
+    }
+  }
+
+  const simplePrimaryLabel =
+    currentStage === 'setup'
+      ? 'Сформировать группы'
+      : currentStage === 'groups_ready'
+        ? 'Открыть ввод результатов'
+        : currentStage === 'groups_live'
+          ? 'Перейти к финалу →'
+          : currentStage === 'groups_finished'
+            ? 'Подготовить финал'
+            : currentStage === 'bracket_preview'
+              ? 'Подтвердить финал'
+              : currentStage === 'bracket_ready'
+                ? 'Запустить финал'
+                : currentStage === 'bracket_live'
+                  ? 'Завершить турнир'
+                  : 'Турнир завершён';
+  const simplePrimaryDisabled =
+    pending !== null ||
+    currentStage === 'finished' ||
+    (currentStage === 'groups_live' && !groupsAreComplete) ||
+    (currentStage === 'bracket_live' && !canFinishBracket);
+  const simplePrimaryHint =
+    currentStage === 'setup'
+      ? 'Сначала создаём группы и матчи из сохранённых пар.'
+      : currentStage === 'groups_ready'
+        ? 'Группы готовы. Можно открыть ввод результатов.'
+        : currentStage === 'groups_live'
+          ? groupsAreComplete
+            ? 'Все матчи группового этапа сыграны.'
+            : 'Кнопка станет активной, когда будут заполнены все ячейки группового этапа.'
+          : currentStage === 'bracket_preview'
+            ? 'Проверьте посев финала и подтвердите его.'
+            : currentStage === 'bracket_ready'
+              ? 'Финальная сетка готова к запуску.'
+              : currentStage === 'bracket_live'
+                ? canFinishBracket
+                  ? 'Все финальные матчи сыграны.'
+                  : 'Завершите финальные матчи перед закрытием турнира.'
+                : '';
+
+  const simpleLiveUiEnabled = process.env.NEXT_PUBLIC_GO_LIVE_LEGACY !== '1';
+
+  if (simpleLiveUiEnabled) {
+    return (
+    <div className="mx-auto w-full max-w-6xl px-0 py-3 text-slate-950 sm:px-3 md:py-5">
+      <section className="bg-white p-3 shadow-sm sm:rounded-xl sm:border sm:border-slate-200 sm:p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-slate-950">Групповой этап</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {groups.length > 0
+                ? `${groups.length} групп · ${groups.reduce((sum, group) => sum + group.effectiveTeamCount, 0)} команд`
+                : 'Группы еще не сформированы'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadState()}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Обновить
+          </button>
+        </div>
+
+        {actionError || fetchError ? (
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {actionError || fetchError}
+          </div>
+        ) : null}
+
+        {state?.structuralDrift ? (
+          <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {state.structureChangeBlockedReason}
+          </div>
+        ) : null}
+
+        {state?.courts.length ? (
+          <details className="mb-3 rounded-lg border border-slate-200 p-3">
+            <summary className="cursor-pointer text-sm font-semibold">QR-коды судейских кортов</summary>
+            <div className="mt-3 flex flex-wrap gap-4">
+              {state.courts.map((court) => (
+                <div key={court.pinCode} className="rounded border border-slate-200 p-2 text-center text-xs">
+                  <QRCodeSVG value={`${process.env.NEXT_PUBLIC_APP_URL ?? 'https://lpvolley.ru'}/court/${encodeURIComponent(court.pinCode)}`} size={112} />
+                  <p className="mt-1 font-semibold">{court.label}</p><p>PIN: {court.pinCode}</p>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
+
+        {state?.courts.length ? <a href={`/admin/tournaments/${encodeURIComponent(tournamentId)}/go-schedule-print`} target="_blank" rel="noreferrer" className="mb-3 inline-block rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">Печать расписания / PDF</a> : null}
+
+        <div className="mb-4 flex items-center gap-2">
+          <span className="rounded bg-orange-500 px-4 py-2 text-sm font-semibold text-white">Список</span>
+          <span className="rounded bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500">Вкладки</span>
+        </div>
+
+        {currentStage === 'setup' ? (
+          <GoPairManagerPanel tournamentId={tournamentId} onChanged={() => void loadState()} />
+        ) : null}
+
+        {currentStage === 'setup' ? (
+          <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+            <h2 className="text-base font-bold text-slate-950">Таблицы еще не созданы</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Состав уже сохранён в турнире. Нажмите кнопку ниже, чтобы создать группы и матчи для ввода результатов.
+            </p>
+          </div>
+        ) : null}
+
+        <GoGroupMatrix
+          groups={groups}
+          matches={groupMatches}
+          mode="operator"
+          qualifyCount={qualifyCount}
+          onSaveScore={saveMatrixScore}
+        />
+
+        {seedDraft || Object.keys(brackets).length > 0 ? (
+          <div className="mt-6 space-y-3">
+            <h2 className="text-xl font-bold text-slate-950">Финальные таблицы</h2>
+            {seedDraft ? (
+              <GoSeedEditor
+                initialDraft={seedDraft}
+                groups={groups}
+                onConfirm={(draft) => {
+                  void runAction('confirm_bracket_seed', { seedDraft: draft });
+                }}
+              />
+            ) : null}
+            <GoBracketView
+              brackets={brackets}
+              level={activeBracketLevel}
+              onLevelChange={setActiveBracketLevel}
+              matches={matches}
+            />
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex max-w-xl items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-sm font-semibold text-slate-950">
+            <div>{groupPlayedMatches}/{groupTotalMatches || 0} матчей</div>
+            <div>группового этапа сыграно</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void runSimplePrimaryAction()}
+            disabled={simplePrimaryDisabled}
+            className="rounded-md border border-orange-500 bg-orange-500 px-4 py-2 text-sm font-semibold text-white disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+          >
+            {pending ? 'Выполняется...' : simplePrimaryLabel}
+          </button>
+        </div>
+        {simplePrimaryHint ? <p className="mt-2 text-xs text-slate-500">{simplePrimaryHint}</p> : null}
+      </section>
+    </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-3 py-4 md:px-4 md:py-6">
@@ -492,8 +742,8 @@ export function GoOperatorPanel({
         <section className="rounded-2xl border border-white/10 bg-[#101524]/95 p-4">
           <h3 className="text-sm font-semibold text-white">Доп. действия</h3>
           <div className="mt-3 flex flex-wrap gap-2">
-            {(['groups', 'schedule', 'bracket', 'courts'] as WorkspaceKey[]).map((workspace) => {
-              const workspaceLabels: Record<WorkspaceKey, string> = { groups: 'Группы', schedule: 'Расписание', bracket: 'Сетка', courts: 'Корты' };
+            {(['matrix', 'groups', 'schedule', 'bracket', 'courts'] as WorkspaceKey[]).map((workspace) => {
+              const workspaceLabels: Record<WorkspaceKey, string> = { matrix: 'Таблицы', groups: 'Группы', schedule: 'Расписание', bracket: 'Сетка', courts: 'Корты' };
               return (
               <button
                 key={workspace}
@@ -580,6 +830,16 @@ export function GoOperatorPanel({
       <section className="rounded-2xl border border-white/10 bg-[#0f1119]/95 p-4">
         <h3 className="text-sm font-semibold text-white">Рабочее пространство</h3>
         <div className="mt-3">
+          {activeWorkspace === 'matrix' ? (
+            <GoGroupMatrix
+              groups={groups}
+              matches={matches.filter((match) => Boolean(match.groupLabel))}
+              mode="operator"
+              qualifyCount={qualifyCount}
+              onSaveScore={saveMatrixScore}
+            />
+          ) : null}
+
           {activeWorkspace === 'groups' ? (
             <>
               {currentStage === 'setup' && state ? (

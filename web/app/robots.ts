@@ -5,8 +5,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/admin/', '/api/admin/'],
     },
-    sitemap: '/sitemap.xml',
+    sitemap: 'https://lpvolley.ru/sitemap.xml',
   };
 }

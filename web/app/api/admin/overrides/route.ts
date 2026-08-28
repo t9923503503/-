@@ -41,7 +41,10 @@ export async function POST(req: NextRequest) {
       await writeAuditLog({
         actorId: auth.actor.id,
         actorRole: auth.actor.role,
-        action: 'override.tournament_status',
+        action:
+          status === 'finished' && String(before?.format || '').trim().toLowerCase() === 'thai'
+            ? 'tournament.thaiMarkCalendarFinished'
+            : 'override.tournament_status',
         entityType: 'tournament',
         entityId: tournamentId,
         reason: input.reason,

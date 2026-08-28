@@ -33,12 +33,14 @@ describe('KOTC Next judge source contract', () => {
     expect(screen).toContain("runAction('start')");
     expect(screen).toContain("runAction('king-point')");
     expect(screen).toContain("runAction('takeover')");
-    expect(screen).toContain("runAction('undo')");
+    expect(screen).toContain("runAction('undo', {");
     expect(screen).toContain('runUndoAction()');
     expect(screen).toContain('runFinishAction()');
     expect(screen).toContain('const confirmations = [');
     expect(screen).toContain('for (const confirmationMessage of confirmations)');
-    expect(screen).toContain("type JudgeSound = 'score' | 'error';");
+    expect(screen).toContain(
+      "type JudgeSound = 'score' | 'error' | 'countdown' | 'minute-warning' | 'last-20' | 'stop';",
+    );
     expect(screen).toContain('const audioContextRef = useRef<AudioContext | null>(null);');
     expect(screen).toContain("playJudgeSound('score')");
     expect(screen).toContain("playJudgeSound('error')");

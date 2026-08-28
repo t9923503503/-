@@ -24,6 +24,7 @@ describe('reset password source contract', () => {
     expect(formSource).toContain('router.push');
     expect(formSource).toContain('"/profile"');
     expect(confirmRouteSource).toContain('setPlayerCookie');
+    expect(confirmRouteSource).toContain('setRecentPlayerAuthCookie');
     expect(confirmRouteSource).toContain("redirectTo: '/profile'");
   });
 });

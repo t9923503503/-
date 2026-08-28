@@ -34,7 +34,9 @@ describe('KOTC Next backend source contract', () => {
     const resetRoute = read('web/app/api/kotc-next/judge/[pin]/raund/[no]/reset/route.ts');
 
     expect(snapshotRoute).toContain('getKotcNextJudgeSnapshotByPin');
-    expect(startRoute).toContain('startKotcNextRaund');
+    expect(startRoute).toContain('OPERATOR_CONTROL_REQUIRED');
+    expect(startRoute).toContain('{ status: 403 }');
+    expect(startRoute).not.toContain('startKotcNextRaund');
     expect(pointRoute).toContain('recordKotcNextKingPoint');
     expect(takeoverRoute).toContain('recordKotcNextTakeover');
     expect(undoRoute).toContain('undoKotcNextLastEvent');

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { assignByes, calcBracketSize } from '@/lib/go-next/bracket-generator';
 import type { GoGroupView, GoTeamView } from '@/lib/go-next/types';
 
 export type GoSeedDraft = Record<string, GoTeamView[]>;
@@ -35,10 +36,16 @@ function detectBracketCollisions(draft: GoSeedDraft, groups: GoGroupView[]): Col
   const collisions: CollisionInfo[] = [];
 
   for (const [level, teams] of Object.entries(draft)) {
-    // Round 1 pairs: positions (1,2), (3,4), (5,6), ...
-    for (let i = 0; i < teams.length - 1; i += 2) {
-      const teamA = teams[i];
-      const teamB = teams[i + 1];
+    const teamById = new Map(teams.map((team) => [team.teamId, team]));
+    const seedPosition = new Map(teams.map((team, index) => [team.teamId, index + 1]));
+    const physicalSlots = assignByes(
+      teams.map((team, index) => ({ teamId: team.teamId, seedQuality: teams.length - index })),
+      calcBracketSize(teams.length),
+    );
+    // Round-one opponents are adjacent physical slots, not adjacent seed numbers.
+    for (let i = 0; i < physicalSlots.length - 1; i += 2) {
+      const teamA = teamById.get(physicalSlots[i]?.teamId ?? '');
+      const teamB = teamById.get(physicalSlots[i + 1]?.teamId ?? '');
       if (!teamA || !teamB) continue;
 
       const groupA = teamGroupMap.get(teamA.teamId);
@@ -46,16 +53,16 @@ function detectBracketCollisions(draft: GoSeedDraft, groups: GoGroupView[]): Col
 
       if (groupA && groupB && groupA === groupB) {
         // Collision! Look for a safe swap candidate outside this pair
-        const posA = i + 1; // 1-based position
-        const posB = i + 2;
+        const posA = seedPosition.get(teamA.teamId) ?? 0;
+        const posB = seedPosition.get(teamB.teamId) ?? 0;
 
         let swapCandidate: CollisionInfo['swapCandidate'] = null;
 
         // Try to find a team that can swap with teamB (in posB) — Δseed ≤ 2
         for (let j = 0; j < teams.length; j++) {
-          if (j === i || j === i + 1) continue;
           const candidate = teams[j];
           if (!candidate) continue;
+          if (candidate.teamId === teamA.teamId || candidate.teamId === teamB.teamId) continue;
           const candidateGroup = teamGroupMap.get(candidate.teamId);
           if (candidateGroup === groupA) continue; // same group — still collision
           const delta = Math.abs((j + 1) - posB);

@@ -8,6 +8,8 @@ const STATUS_VALUES = new Set<Tournament['status'] | 'all'>([
   'all',
   'open',
   'full',
+  'in_progress',
+  'awaiting_results',
   'finished',
   'cancelled',
 ]);

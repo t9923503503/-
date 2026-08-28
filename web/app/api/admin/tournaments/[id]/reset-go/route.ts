@@ -11,7 +11,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const auth = requireApiRole(req, 'admin');
+  const auth = requireApiRole(req, 'operator');
   if (!auth.ok) return auth.response;
 
   try {

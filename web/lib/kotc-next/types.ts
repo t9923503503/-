@@ -42,6 +42,12 @@ export interface KotcNextJudgeParams {
   raundTimerMinutes: number; // 9вЂ“20
   takeoversMode: KotcNextTakeoversMode;
   r2SeedingMode: KotcR2SeedingMode;
+  /** Optional player-authenticated scoring mode. Audit remains enabled when this is off. */
+  selfScoringEnabled: boolean;
+  /** Tournament-level permission for spoken score confirmations. */
+  scoreVoiceEnabled: boolean;
+  /** Whether the score audit is exposed in the court UI. */
+  scoreHistoryVisible: boolean;
 }
 
 // в”Ђв”Ђв”Ђ Pair (fixed for the duration of a round) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
@@ -101,6 +107,51 @@ export interface KotcNextRaundHistoryEntry {
   standings: KotcNextPairLiveState[];
 }
 
+export interface KotcNextScoreViewer {
+  userId: number;
+  playerId: string | null;
+  displayName: string;
+  pairIdx: number | null;
+  canSelfScore: boolean;
+}
+
+export interface KotcNextScoreHistoryEntry {
+  id: string;
+  commandId: string | null;
+  eventType: 'pair_point' | 'undo' | 'correct_score' | 'revert_correction';
+  pairIdx: number | null;
+  pairLabel: string;
+  delta: number;
+  scoreBefore: number | null;
+  scoreAfter: number | null;
+  actorKind: 'player' | 'judge' | 'operator' | 'admin' | 'system';
+  actorId: string | null;
+  actorName: string;
+  deviceId: string | null;
+  createdAt: string;
+  revertedEventId: string | null;
+  reverted: boolean;
+}
+
+export interface KotcNextScoreFeedback {
+  eventId: string;
+  commandId: string;
+  pairIdx: number;
+  pairLabel: string;
+  delta: 1;
+  scoreBefore: number;
+  scoreAfter: number;
+  actorName: string;
+  appliedAt: string;
+  revision: number;
+  idempotent: boolean;
+}
+
+export interface KotcNextPairPointResult {
+  snapshot: KotcNextJudgeSnapshot;
+  feedback: KotcNextScoreFeedback;
+}
+
 export interface KotcNextJudgeCourtNavItem {
   courtId: string | null;
   courtNo: number;
@@ -158,6 +209,7 @@ export interface KotcNextJudgeAggregateStandings {
 }
 
 export interface KotcNextJudgeSnapshot {
+  serverNow: number;
   tournamentId: string;
   tournamentName: string;
   tournamentDate: string;
@@ -177,8 +229,12 @@ export interface KotcNextJudgeSnapshot {
   roundNav: KotcNextJudgeRoundNavItem[];
   courtNav: KotcNextJudgeCourtNavItem[];
   raundHistory: KotcNextRaundHistoryEntry[];
+  /** Server-authorized navigation; pending future raunds stay locked until start or timer end. */
+  accessibleRaundNos?: number[];
   selectedRaundNo: number;
   currentEvents: KotcNextGameEvent[];
+  scoreHistory: KotcNextScoreHistoryEntry[];
+  viewer: KotcNextScoreViewer | null;
   currentRaundInstanceKey: string;
   currentRaundRevision: number;
   canUndo: boolean; // true if there is at least one game event to undo
@@ -210,6 +266,16 @@ export interface KotcNextCourtOperatorView {
   raunds: KotcNextCourtRaundProgress[];
   currentRaundNo: number | null;
   liveState: KotcNextCourtLiveState | null;
+  presence: KotcNextCourtPresence;
+}
+
+export type KotcNextPresenceStatus = 'online' | 'stale' | 'offline';
+
+export interface KotcNextCourtPresence {
+  onlineDevices: number;
+  staleDevices: number;
+  lastSeenAt: string | null;
+  status: KotcNextPresenceStatus;
 }
 
 export interface KotcNextOperatorRoundView {
@@ -311,7 +377,7 @@ export type KotcNextControlAction =
   | 'rollback_r2';
 
 export interface KotcNextControlActor {
-  kind: 'judge' | 'operator' | 'admin' | 'system';
+  kind: 'player' | 'judge' | 'operator' | 'admin' | 'system';
   id?: string | null;
 }
 
@@ -323,6 +389,7 @@ export interface KotcNextControlCommandInput {
   courtNo?: number;
   expectedRevision?: number | null;
   reason?: string | null;
+  acknowledgeOffline?: boolean;
   payload?: Record<string, unknown>;
 }
 
@@ -350,6 +417,23 @@ export interface KotcNextControlCommandResult {
   event: KotcNextControlEvent | null;
   idempotent: boolean;
   serverNow: number;
+  appliedAt: string;
+  affectedCourts: number[];
+}
+
+export interface KotcNextHeartbeatInput {
+  deviceId: string;
+  selectedRaundNo: number;
+  appVersion?: string | null;
+  platform?: string | null;
+  knownRevision?: number | null;
+}
+
+export interface KotcNextHeartbeatResult {
+  ok: true;
+  serverNow: number;
+  revision: number;
+  requiresSnapshot: boolean;
 }
 
 // в”Ђв”Ђв”Ђ Final results в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ

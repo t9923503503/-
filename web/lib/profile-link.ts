@@ -61,6 +61,24 @@ export async function getAccountFullName(userId: number): Promise<string | null>
   }
 }
 
+export async function requiresModeratedPlayerLink(userId: number): Promise<boolean> {
+  if (!process.env.DATABASE_URL) return false;
+  try {
+    const { rows } = await getPool().query(
+      `SELECT email, password_hash, telegram_user_id
+         FROM users WHERE id = $1 LIMIT 1`,
+      [userId]
+    );
+    const account = rows[0];
+    return Boolean(
+      account?.telegram_user_id
+      && (!String(account.email || '').trim() || !String(account.password_hash || '').trim())
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function findExplicitLinkedPlayer(userId: number): Promise<PlayerLinkSummary | null> {
   if (!process.env.DATABASE_URL) return null;
   const pool = getPool();
@@ -68,13 +86,10 @@ export async function findExplicitLinkedPlayer(userId: number): Promise<PlayerLi
   try {
     const { rows } = await pool.query(
       `SELECT p.id::text AS id, p.name, p.gender, p.photo_url
-         FROM player_requests pr
-         JOIN players p ON p.id = pr.approved_player_id
-        WHERE pr.requester_user_id = $1
-          AND pr.tournament_id IS NULL
-          AND pr.status = 'approved'
-          AND pr.approved_player_id IS NOT NULL
-        ORDER BY pr.reviewed_at DESC NULLS LAST, pr.created_at DESC
+         FROM users u
+         JOIN players p ON p.id = u.player_id
+        WHERE u.id = $1
+          AND u.player_id IS NOT NULL
         LIMIT 1`,
       [userId]
     );
@@ -85,30 +100,7 @@ export async function findExplicitLinkedPlayer(userId: number): Promise<PlayerLi
 }
 
 export async function findBoundPlayer(userId: number): Promise<PlayerLinkSummary | null> {
-  const explicit = await findExplicitLinkedPlayer(userId);
-  if (explicit) return explicit;
-
-  if (!process.env.DATABASE_URL) return null;
-  const pool = getPool();
-
-  try {
-    const { rows } = await pool.query(
-      `SELECT approved_player_id::text AS player_id
-         FROM player_requests
-        WHERE requester_user_id = $1
-          AND tournament_id IS NULL
-          AND status = 'approved'
-          AND approved_player_id IS NOT NULL
-        ORDER BY reviewed_at DESC NULLS LAST, created_at DESC
-        LIMIT 1`,
-      [userId]
-    );
-
-    const playerId = String(rows[0]?.player_id || '').trim();
-    return isUuid(playerId) ? fetchPlayerLinkSummary(playerId) : null;
-  } catch {
-    return null;
-  }
+  return findExplicitLinkedPlayer(userId);
 }
 
 export async function searchPlayersForLink(query: string, limit = 8): Promise<PlayerLinkSummary[]> {
@@ -142,46 +134,7 @@ export async function searchPlayersForLink(query: string, limit = 8): Promise<Pl
 
 export async function resolvePlayerIdForAccount(userId: number): Promise<string | null> {
   const explicit = await findExplicitLinkedPlayer(userId);
-  if (explicit?.id) return explicit.id;
-
-  if (!process.env.DATABASE_URL) return null;
-  const pool = getPool();
-  const fullName = await getAccountFullName(userId);
-
-  try {
-    const linkedRes = await pool.query(
-      `SELECT approved_player_id::text AS player_id
-         FROM player_requests
-        WHERE requester_user_id = $1
-          AND approved_player_id IS NOT NULL
-        ORDER BY created_at DESC
-        LIMIT 1`,
-      [userId]
-    );
-
-    const linkedId = String(linkedRes.rows[0]?.player_id || '').trim();
-    if (isUuid(linkedId)) return linkedId;
-  } catch {}
-
-  if (!fullName) return null;
-
-  try {
-    const byNameRes = await pool.query(
-      `SELECT id::text AS id
-         FROM players
-        WHERE lower(trim(name)) = lower(trim($1))
-        LIMIT 2`,
-      [fullName]
-    );
-
-    if (byNameRes.rows.length === 1) {
-      const candidateId = String(byNameRes.rows[0]?.id || '').trim();
-      return isUuid(candidateId) ? candidateId : null;
-    }
-  } catch {}
-
-  const fuzzyMatches = await searchPlayersForLink(fullName, 2);
-  return fuzzyMatches.length === 1 ? fuzzyMatches[0].id : null;
+  return explicit?.id || null;
 }
 
 export async function resolvePlayerForAccount(userId: number): Promise<PlayerLinkSummary | null> {
@@ -206,11 +159,33 @@ export async function bindPlayerToAccount(
   try {
     await client.query('BEGIN');
 
+    const accountRes = await client.query(
+      `SELECT email, password_hash, telegram_user_id
+         FROM users WHERE id = $1
+         FOR UPDATE`,
+      [userId]
+    );
+    const account = accountRes.rows[0];
+    if (!account) {
+      await client.query('ROLLBACK');
+      return { linkedPlayer: null, error: 'Аккаунт не найден' };
+    }
+    if (
+      account.telegram_user_id
+      && (!String(account.email || '').trim() || !String(account.password_hash || '').trim())
+    ) {
+      await client.query('ROLLBACK');
+      return {
+        linkedPlayer: null,
+        error: 'Для Telegram-аккаунта карточку подтверждает организатор. Откройте @Lpvolley_bot и нажмите «Привязать карточку».',
+      };
+    }
+
     const playerRes = await client.query(
       `SELECT id::text AS id, name, gender, photo_url
          FROM players
-        WHERE id = $1
-        LIMIT 1`,
+        WHERE id = $1 AND status = 'active'
+        FOR SHARE`,
       [playerId]
     );
     const player = mapPlayerSummary(playerRes.rows[0]);
@@ -220,17 +195,23 @@ export async function bindPlayerToAccount(
     }
 
     const conflictRes = await client.query(
-      `SELECT requester_user_id
-         FROM player_requests
-        WHERE tournament_id IS NULL
-          AND status = 'approved'
-          AND approved_player_id = $1
-          AND requester_user_id <> $2
-        ORDER BY reviewed_at DESC NULLS LAST, created_at DESC
+      `SELECT account_id
+         FROM (
+           SELECT u.id AS account_id
+             FROM users u
+            WHERE u.player_id::text = $1 AND u.id <> $2
+           UNION ALL
+           SELECT pr.requester_user_id AS account_id
+             FROM player_requests pr
+            WHERE pr.tournament_id IS NULL
+              AND pr.status = 'approved'
+              AND pr.approved_player_id::text = $1
+              AND pr.requester_user_id <> $2
+         ) conflicts
         LIMIT 1`,
       [playerId, userId]
     );
-    if (conflictRes.rows[0]?.requester_user_id != null) {
+    if (conflictRes.rows[0]?.account_id != null) {
       await client.query('ROLLBACK');
       return {
         linkedPlayer: null,
@@ -293,10 +274,41 @@ export async function bindPlayerToAccount(
       player.photoUrl = avatarUrl;
     }
 
+    await client.query(
+      `WITH cancelled_claims AS (
+         UPDATE player_claims
+            SET status = 'cancelled', updated_at = now()
+          WHERE user_id = $1 AND status IN ('pending', 'approved')
+          RETURNING id
+       )
+       UPDATE telegram_admin_outbox AS outbox
+          SET sent_at = COALESCE(outbox.sent_at, now())
+         FROM cancelled_claims AS claim
+        WHERE outbox.sent_at IS NULL
+          AND outbox.dedup_key = 'player_claim:' || claim.id::text`,
+      [userId]
+    );
+    await client.query(
+      `UPDATE users
+          SET player_id = $2,
+              telegram_onboarding_status = CASE
+                WHEN telegram_user_id IS NOT NULL THEN 'approved'
+                ELSE telegram_onboarding_status
+              END
+        WHERE id = $1`,
+      [userId, player.id]
+    );
+
     await client.query('COMMIT');
     return { linkedPlayer: player, error: null };
   } catch (error) {
     await client.query('ROLLBACK');
+    if (error && typeof error === 'object' && (error as { code?: string }).code === '23505') {
+      return {
+        linkedPlayer: null,
+        error: 'Эта карточка уже привязана к другому аккаунту.',
+      };
+    }
     throw error;
   } finally {
     client.release();
@@ -306,10 +318,45 @@ export async function bindPlayerToAccount(
 export async function unlinkPlayerFromAccount(userId: number): Promise<void> {
   if (!process.env.DATABASE_URL) return;
   const pool = getPool();
-  await pool.query(
-    `DELETE FROM player_requests
-      WHERE requester_user_id = $1
-        AND tournament_id IS NULL`,
-    [userId]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+    await client.query(
+      `UPDATE users
+          SET player_id = NULL,
+              telegram_onboarding_status = CASE
+                WHEN telegram_user_id IS NOT NULL THEN 'legacy'
+                ELSE telegram_onboarding_status
+              END
+        WHERE id = $1`,
+      [userId]
+    );
+    await client.query(
+      `WITH cancelled_claims AS (
+         UPDATE player_claims
+            SET status = 'cancelled', updated_at = now()
+          WHERE user_id = $1 AND status IN ('pending', 'approved')
+          RETURNING id
+       )
+       UPDATE telegram_admin_outbox AS outbox
+          SET sent_at = COALESCE(outbox.sent_at, now())
+         FROM cancelled_claims AS claim
+        WHERE outbox.sent_at IS NULL
+          AND outbox.dedup_key = 'player_claim:' || claim.id::text`,
+      [userId]
+    );
+    await client.query(
+      `DELETE FROM player_requests
+        WHERE requester_user_id = $1
+          AND tournament_id IS NULL`,
+      [userId]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }

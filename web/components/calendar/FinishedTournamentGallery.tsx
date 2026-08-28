@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface GalleryImage {
   src: string;
+  thumbnailSrc?: string;
   alt: string;
   caption?: string;
 }
@@ -19,6 +21,7 @@ export default function FinishedTournamentGallery({ images }: Props) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
     if (safeImages.length <= 1 || isPaused || isLightboxOpen) {
@@ -55,6 +58,19 @@ export default function FinishedTournamentGallery({ images }: Props) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isLightboxOpen, safeImages.length]);
 
+  useEffect(() => {
+    setActiveIndex((index) => Math.min(index, Math.max(0, safeImages.length - 1)));
+  }, [safeImages.length]);
+
+  useEffect(() => {
+    if (!isLightboxOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isLightboxOpen]);
+
   if (safeImages.length === 0) {
     return null;
   }
@@ -62,6 +78,20 @@ export default function FinishedTournamentGallery({ images }: Props) {
   const current = safeImages[Math.min(activeIndex, safeImages.length - 1)];
   const goPrev = () => setActiveIndex((prev) => (prev === 0 ? safeImages.length - 1 : prev - 1));
   const goNext = () => setActiveIndex((prev) => (prev === safeImages.length - 1 ? 0 : prev + 1));
+  const onTouchStart = (event: React.TouchEvent) => {
+    touchStartX.current = event.changedTouches[0]?.clientX ?? null;
+    setIsPaused(true);
+  };
+  const onTouchEnd = (event: React.TouchEvent) => {
+    const start = touchStartX.current;
+    touchStartX.current = null;
+    setIsPaused(false);
+    if (start == null || safeImages.length <= 1) return;
+    const distance = (event.changedTouches[0]?.clientX ?? start) - start;
+    if (Math.abs(distance) < 48) return;
+    if (distance > 0) goPrev();
+    else goNext();
+  };
 
   return (
     <>
@@ -69,8 +99,13 @@ export default function FinishedTournamentGallery({ images }: Props) {
         className="space-y-4"
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
       >
-        <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black/40 shadow-[0_24px_70px_rgba(0,0,0,0.28)]">
+        <div
+          className="relative overflow-hidden rounded-[28px] border border-white/10 shadow-[0_24px_70px_rgba(0,0,0,0.28)]"
+          style={{ backgroundColor: '#050505' }}
+        >
           <button
             type="button"
             onClick={() => setIsLightboxOpen(true)}
@@ -80,8 +115,9 @@ export default function FinishedTournamentGallery({ images }: Props) {
             <img
               src={current.src}
               alt={current.alt}
-              className="block h-[300px] w-full object-contain bg-black/70 md:h-[520px]"
+              className="mx-auto block h-auto max-h-[min(68svh,520px)] w-auto max-w-full object-contain"
               loading="eager"
+              sizes="(max-width: 768px) 100vw, 960px"
             />
           </button>
 
@@ -110,7 +146,7 @@ export default function FinishedTournamentGallery({ images }: Props) {
               <button
                 type="button"
                 onClick={goPrev}
-                className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full border border-white/15 bg-black/55 px-3 py-2 text-lg font-semibold text-text-primary transition hover:border-brand/50 hover:text-brand"
+                className="absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/55 text-lg font-semibold text-text-primary transition hover:border-brand/50 hover:text-brand"
                 aria-label="Предыдущее фото"
               >
                 ←
@@ -118,7 +154,7 @@ export default function FinishedTournamentGallery({ images }: Props) {
               <button
                 type="button"
                 onClick={goNext}
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-white/15 bg-black/55 px-3 py-2 text-lg font-semibold text-text-primary transition hover:border-brand/50 hover:text-brand"
+                className="absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/55 text-lg font-semibold text-text-primary transition hover:border-brand/50 hover:text-brand"
                 aria-label="Следующее фото"
               >
                 →
@@ -144,7 +180,7 @@ export default function FinishedTournamentGallery({ images }: Props) {
                   type="button"
                   onClick={() => setActiveIndex(index)}
                   className={[
-                    'relative h-20 w-28 flex-shrink-0 overflow-hidden rounded-2xl border transition',
+                    'relative h-[72px] w-24 flex-shrink-0 overflow-hidden rounded-xl border transition md:h-20 md:w-28 md:rounded-2xl',
                     isActive
                       ? 'border-brand shadow-[0_0_0_1px_rgba(255,90,0,0.35)]'
                       : 'border-white/10 hover:border-white/30',
@@ -152,7 +188,13 @@ export default function FinishedTournamentGallery({ images }: Props) {
                   aria-label={`Показать фото ${index + 1}`}
                   aria-pressed={isActive}
                 >
-                  <img src={image.src} alt="" className="h-full w-full object-cover" loading="lazy" aria-hidden="true" />
+                  <img
+                    src={image.thumbnailSrc || image.src}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                    aria-hidden="true"
+                  />
                 </button>
               );
             })}
@@ -160,38 +202,49 @@ export default function FinishedTournamentGallery({ images }: Props) {
         ) : null}
       </div>
 
-      {isLightboxOpen ? (
+      {isLightboxOpen ? createPortal(
         <div
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 px-4 py-6"
+          className="fixed inset-0 z-[9999] flex items-center justify-center px-4 py-6"
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.94)' }}
           role="dialog"
           aria-modal="true"
           aria-label="Просмотр фото турнира"
           onClick={() => setIsLightboxOpen(false)}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
         >
           <div
             className="relative flex max-h-full w-full max-w-6xl flex-col gap-4"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-3">
-              <div className="rounded-full border border-white/15 bg-black/45 px-3 py-1 text-xs font-body text-text-primary/85">
+              <div
+                className="rounded-full border border-white/15 bg-black/45 px-3 py-1 text-xs font-body"
+                style={{ color: '#ffffff' }}
+              >
                 {activeIndex + 1} / {safeImages.length}
               </div>
               <button
                 type="button"
                 onClick={() => setIsLightboxOpen(false)}
-                className="rounded-full border border-white/15 bg-black/45 px-3 py-1 text-sm font-body text-text-primary transition hover:border-brand/50 hover:text-brand"
+                className="rounded-full border border-white/15 bg-black/45 px-3 py-1 text-sm font-body transition hover:border-brand/50 hover:text-brand"
+                style={{ color: '#ffffff' }}
                 aria-label="Закрыть просмотр"
               >
                 Закрыть
               </button>
             </div>
 
-            <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-black">
+            <div
+              className="relative overflow-hidden rounded-[28px] border border-white/10"
+              style={{ backgroundColor: '#050505' }}
+            >
               <img
                 src={current.src}
                 alt={current.alt}
-                className="block max-h-[78vh] w-full object-contain"
+                className="mx-auto block h-auto max-h-[78svh] w-auto max-w-full object-contain"
                 loading="eager"
+                sizes="100vw"
               />
 
               {safeImages.length > 1 ? (
@@ -199,7 +252,7 @@ export default function FinishedTournamentGallery({ images }: Props) {
                   <button
                     type="button"
                     onClick={goPrev}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full border border-white/15 bg-black/55 px-3 py-2 text-lg font-semibold text-text-primary transition hover:border-brand/50 hover:text-brand"
+                    className="absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/55 text-lg font-semibold text-text-primary transition hover:border-brand/50 hover:text-brand"
                     aria-label="Предыдущее фото"
                   >
                     ←
@@ -207,7 +260,7 @@ export default function FinishedTournamentGallery({ images }: Props) {
                   <button
                     type="button"
                     onClick={goNext}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-white/15 bg-black/55 px-3 py-2 text-lg font-semibold text-text-primary transition hover:border-brand/50 hover:text-brand"
+                    className="absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/55 text-lg font-semibold text-text-primary transition hover:border-brand/50 hover:text-brand"
                     aria-label="Следующее фото"
                   >
                     →
@@ -217,12 +270,16 @@ export default function FinishedTournamentGallery({ images }: Props) {
             </div>
 
             {current.caption ? (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                <p className="text-sm font-body text-text-primary/90">{current.caption}</p>
+              <div
+                className="rounded-2xl border border-white/10 px-4 py-3"
+                style={{ backgroundColor: 'rgba(255, 255, 255, 0.08)' }}
+              >
+                <p className="text-sm font-body" style={{ color: '#ffffff' }}>{current.caption}</p>
               </div>
             ) : null}
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </>
   );

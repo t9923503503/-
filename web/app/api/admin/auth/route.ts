@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminSessionResponse, getAdminSessionFromRequest } from '@/lib/admin-auth';
 import { ADMIN_COOKIE_NAME } from '@/lib/admin-constants';
+import {
+  checkAdminLoginRateLimit,
+  clearAdminLoginFailures,
+  recordAdminLoginFailure,
+} from '@/lib/admin-login-rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,17 +45,37 @@ export async function POST(req: NextRequest) {
     id = String(form?.get('id') || '');
   }
 
-  const response = createAdminSessionResponse({ id, pin });
+  const limit = checkAdminLoginRateLimit(req.headers, id);
+  const response = limit.blocked
+    ? NextResponse.json(
+        { error: 'Too many login attempts' },
+        { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } }
+      )
+    : createAdminSessionResponse({ id, pin });
+
+  if (!limit.blocked && response.status === 401) {
+    recordAdminLoginFailure(req.headers, id);
+  } else if (response.ok) {
+    clearAdminLoginFailures(req.headers, id);
+  }
+
   if (!expectsFormRedirect) {
     return response;
   }
 
   const redirectUrl = buildExternalRedirectUrl(req, response.ok ? '/admin' : '/admin/login');
   if (!response.ok) {
-    redirectUrl.searchParams.set('error', response.status === 401 ? 'invalid' : 'server');
+    const errorCode = response.status === 401
+      ? 'invalid'
+      : response.status === 429
+        ? 'rate_limited'
+        : 'server';
+    redirectUrl.searchParams.set('error', errorCode);
   }
 
   const redirectResponse = NextResponse.redirect(redirectUrl, { status: 303 });
+  const retryAfter = response.headers.get('retry-after');
+  if (retryAfter) redirectResponse.headers.set('Retry-After', retryAfter);
   for (const cookie of response.cookies.getAll()) {
     redirectResponse.cookies.set(cookie);
   }

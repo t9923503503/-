@@ -46,27 +46,29 @@ function StandingPlaceBadge({ place }: { place: number }) {
   );
 }
 
-function MobileClassicRow({ row, tourCount }: { row: ThaiStandingsRow; tourCount: number }) {
+function MobileClassicRow({ row, tourCount, showTieBreak }: { row: ThaiStandingsRow; tourCount: number; showTieBreak: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
+        className="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left"
+        aria-expanded={open}
       >
         <StandingPlaceBadge place={row.place} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-white">{row.playerName}</div>
           <div className="mt-0.5 text-[11px] text-white/50">
             Δ {formatStandingDelta(row.totalDiff)} · K {row.kef.toFixed(2)} · Поб {row.wins}
+            {showTieBreak ? <span className="ml-1 text-[#ffd24a]">· место по K</span> : null}
           </div>
         </div>
         <div className="shrink-0 text-right">
           <div className="text-xl font-black tabular-nums text-[#ffd24a]">{row.pointsP}</div>
           <div className="text-[9px] uppercase tracking-[0.16em] text-white/40">очки</div>
         </div>
-        <span className={`shrink-0 text-white/40 transition-transform ${open ? 'rotate-180' : ''}`}>⌄</span>
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/5 text-base text-white/55 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true">⌄</span>
       </button>
       {open ? (
         <div className="border-t border-white/8 px-3 py-2.5">
@@ -98,7 +100,8 @@ function MobileMatchupRow({ row, tourCount }: { row: ThaiStandingsRow; tourCount
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
+        className="flex min-h-14 w-full items-center gap-3 px-3 py-2.5 text-left"
+        aria-expanded={open}
       >
         <StandingPlaceBadge place={row.place} />
         <div className="min-w-0 flex-1">
@@ -109,7 +112,7 @@ function MobileMatchupRow({ row, tourCount }: { row: ThaiStandingsRow; tourCount
           <div className="text-xl font-black tabular-nums text-[#ffd24a]">{row.pointsP}</div>
           <div className="text-[9px] uppercase tracking-[0.16em] text-white/40">очки</div>
         </div>
-        <span className={`shrink-0 text-white/40 transition-transform ${open ? 'rotate-180' : ''}`}>⌄</span>
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/5 text-base text-white/55 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true">⌄</span>
       </button>
       {open ? (
         <div className="space-y-2 border-t border-white/8 px-3 py-2.5">
@@ -193,7 +196,12 @@ export function ThaiStandingsTable({
             <div className="mt-3 space-y-2 md:hidden">
               {group.rows.map((row) =>
                 viewMode === 'classic' ? (
-                  <MobileClassicRow key={row.playerId} row={row} tourCount={tourCount} />
+                  <MobileClassicRow
+                    key={row.playerId}
+                    row={row}
+                    tourCount={tourCount}
+                    showTieBreak={group.rows.some((other) => other.playerId !== row.playerId && other.pointsP === row.pointsP)}
+                  />
                 ) : (
                   <MobileMatchupRow key={row.playerId} row={row} tourCount={tourCount} />
                 ),

@@ -3,7 +3,7 @@ import { requireApiRole } from '@/lib/admin-auth';
 import { adminErrorResponse } from '@/lib/admin-errors';
 import { getPlayersByIds, getTournamentById, listRosterParticipants } from '@/lib/admin-queries';
 import { isGoAdminFormat, normalizeGoAdminSettings } from '@/lib/admin-legacy-sync';
-import { validateGoSetup } from '@/lib/go-next-config';
+import { describeGoPairRule, normalizeGoGender, resolveGoDivisionRule, validateGoSetup } from '@/lib/go-next-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +68,8 @@ function buildResult(checks: CheckItem[]): GoPreflightResult {
 }
 
 function getDivisionPairRule(division: string): 'mixed' | 'men' | 'women' | null {
+  const resolved = resolveGoDivisionRule(division);
+  if (resolved !== 'unknown') return resolved;
   const normalized = division.toLowerCase();
   if (normalized.includes('mix') || normalized.includes('микс')) return 'mixed';
   if (normalized.includes('муж') || normalized.includes('men')) return 'men';
@@ -119,69 +121,60 @@ export async function POST(req: NextRequest) {
     const playersById = new Map(players.map((player) => [player.id, player]));
 
     const goSettings = normalizeGoAdminSettings(settings, orderedParticipants.length);
-    const declaredParticipants = Math.max(2, toInt(goSettings.declaredTeamCount, 0)) * 2;
+    const declaredTeams = Math.max(2, toInt(goSettings.declaredTeamCount, 0));
+    const declaredParticipants = declaredTeams * 2;
     const structuralParticipantCount = Math.max(orderedParticipants.length, declaredParticipants);
     const structuralError = validateGoSetup(goSettings as never, structuralParticipantCount);
 
     const checks: CheckItem[] = [];
+    if (resolveGoDivisionRule(division) === 'unknown') {
+      checks.push(check('division', 'Дивизион', 'error', 'Для GO выберите дивизион: Мужской, Женский или Микст.'));
+    }
     checks.push(
       check(
         'structural',
-        'GO structural config',
+        'Структура GO',
         structuralError ? 'error' : 'ok',
-        structuralError || 'GO structure is valid.',
+        structuralError || `Структура валидна: ${declaredTeams} команд / ${declaredParticipants} игроков.`,
       ),
     );
 
     const participantCount = orderedParticipants.length;
+    const filledTeams = Math.floor(participantCount / 2);
     checks.push(
       check(
         'participant-even',
-        'Even participant count',
+        'Чётность состава',
         participantCount % 2 === 0 ? 'ok' : 'error',
         participantCount % 2 === 0
-          ? `OK: ${participantCount} participants (even).`
-          : `Expected even participant count, got ${participantCount}.`,
+          ? `OK: ${participantCount} игроков = ${filledTeams} команд.`
+          : `Ожидалось чётное количество игроков, сейчас ${participantCount}.`,
       ),
     );
 
     const missingSeats = Math.max(0, structuralParticipantCount - participantCount);
+    const missingTeams = Math.ceil(missingSeats / 2);
     checks.push(
       check(
         'participant-target',
-        'Target fill',
-        missingSeats > 0 ? 'warning' : 'ok',
+        'Заполнение состава',
+        missingSeats > 0 ? 'error' : 'ok',
         missingSeats > 0
-          ? `Missing ${missingSeats} participants to reach configured target.`
-          : 'Configured target is filled.',
+          ? `Не хватает ${missingTeams} команд (${missingSeats} игроков): заполнено ${filledTeams}/${declaredTeams} команд.`
+          : `Состав заполнен: ${filledTeams}/${declaredTeams} команд (${participantCount}/${declaredParticipants} игроков).`,
       ),
     );
 
     if (String(goSettings.seedingMode).toLowerCase() === 'fixedpairs') {
-      const groupCount = Math.max(
-        1,
-        toInt(
-          (settings as Record<string, unknown>).goGroupCount ??
-            (settings as Record<string, unknown>).groupCount ??
-            Math.ceil(goSettings.declaredTeamCount / Math.max(1, goSettings.groupSlotSize)),
-          1,
-        ),
-      );
-      const hardSlots = groupCount * goSettings.groupFormula.hard * 2;
-      const mediumSlots = groupCount * goSettings.groupFormula.medium * 2;
-      const liteSlots = groupCount * goSettings.groupFormula.lite * 2;
-      const hardFilled = orderedParticipants.slice(0, hardSlots).length;
-      const mediumFilled = orderedParticipants.slice(hardSlots, hardSlots + mediumSlots).length;
-      const liteFilled = orderedParticipants.slice(hardSlots + mediumSlots, hardSlots + mediumSlots + liteSlots).length;
-      const categoryIntegrityError = hardFilled % 2 !== 0 || mediumFilled % 2 !== 0 || liteFilled % 2 !== 0;
+      const pairIntegrityError = orderedParticipants.length % 2 !== 0;
       checks.push(
         check(
           'fixed-pairs-integrity',
-          'Fixed pairs category integrity',
-          categoryIntegrityError ? 'error' : 'ok',
-          categoryIntegrityError
-            ? 'At least one category has incomplete pair alignment.'
-            : 'Category alignment is valid (whole pairs).',
+          'Целостность фиксированных пар',
+          pairIntegrityError ? 'error' : 'ok',
+          pairIntegrityError
+            ? 'Есть незавершенная пара: один из слотов заполнен без второго игрока.'
+            : 'Все заполненные слоты образуют целые пары без деления на уровни.',
         ),
       );
     }
@@ -194,28 +187,36 @@ export async function POST(req: NextRequest) {
           const left = playersById.get(orderedParticipants[index]?.playerId ?? '');
           const right = playersById.get(orderedParticipants[index + 1]?.playerId ?? '');
           if (!left || !right) continue;
+          const normalizedPairRule = resolveGoDivisionRule(division);
+          const normalizedGenders = [normalizeGoGender(left.gender), normalizeGoGender(right.gender)].sort().join('');
+          const expectedGenders = normalizedPairRule === 'mixed' ? 'MW' : normalizedPairRule === 'women' ? 'WW' : 'MM';
+          if (normalizedGenders !== expectedGenders) {
+            const pairNumber = index / 2 + 1;
+            pairRuleError = `Пара ${pairNumber} (слоты ${index + 1}–${index + 2}): нужна ${describeGoPairRule(normalizedPairRule)}, сейчас ${normalizedGenders[0]}/${normalizedGenders[1]}.`;
+            break;
+          }
           const genders = [String(left.gender ?? 'M').toUpperCase(), String(right.gender ?? 'M').toUpperCase()]
             .sort()
             .join('');
           if (pairRule === 'mixed' && genders !== 'MW') {
-            pairRuleError = 'Mixed GO requires M/W pairs in roster order.';
+            pairRuleError = 'Микст GO требует пары M/Ж в порядке слотов.';
             break;
           }
           if (pairRule === 'men' && genders !== 'MM') {
-            pairRuleError = 'Men GO requires M/M pairs in roster order.';
+            pairRuleError = 'Мужской GO требует пары M/M.';
             break;
           }
           if (pairRule === 'women' && genders !== 'WW') {
-            pairRuleError = 'Women GO requires W/W pairs in roster order.';
+            pairRuleError = 'Женский GO требует пары Ж/Ж.';
             break;
           }
         }
         checks.push(
           check(
             'pair-order-rule',
-            'Division pair rule',
+            'Правило пары по дивизиону',
             pairRuleError ? 'error' : 'ok',
-            pairRuleError || 'Pair ordering matches selected division.',
+            pairRuleError || 'Пары соответствуют выбранному дивизиону.',
           ),
         );
       }
@@ -224,9 +225,9 @@ export async function POST(req: NextRequest) {
     checks.push(
       check(
         'drift',
-        'Structural drift',
+        'Изменение структуры',
         'ok',
-        'No structural drift detected in current draft snapshot.',
+        'Текущий черновик не конфликтует со структурой турнира.',
       ),
     );
 

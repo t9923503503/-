@@ -50,3 +50,16 @@ export function sanitizeServerImageUrl(value: unknown): string {
 
   return toPublicAssetPath(url) ? url : '';
 }
+
+/**
+ * Uploaded tournament media may live in the writable standalone public mirror,
+ * while SSR runs with the source checkout as cwd. The strict generated path is
+ * safe to expose even when that mirror is not visible to this filesystem probe.
+ */
+export function sanitizeTournamentMediaUrl(value: unknown): string {
+  const url = String(value ?? '').trim();
+  if (/^\/images\/tournaments\/[0-9a-f-]{36}\/gallery\/[a-z0-9-]+\.webp$/i.test(url)) {
+    return url;
+  }
+  return sanitizeServerImageUrl(url);
+}

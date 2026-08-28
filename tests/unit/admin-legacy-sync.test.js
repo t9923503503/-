@@ -211,9 +211,13 @@ describe('admin legacy IPT sync helpers', () => {
       ppc: 5,
       raundCount: 5,
       raundTimerMinutes: 18,
-      kotcJudgeModule: 'legacy',
+      kotcJudgeModule: 'next',
       kotcJudgeBootstrapSignature: 'sig-1',
       kotcTakeoversMode: 'no_takeovers',
+      kotcR2SeedingMode: 'court_places',
+      kotcSelfScoringEnabled: false,
+      kotcScoreVoiceEnabled: true,
+      kotcScoreHistoryVisible: true,
     });
 
     expect(
@@ -229,12 +233,27 @@ describe('admin legacy IPT sync helpers', () => {
       kotcJudgeModule: 'next',
       kotcJudgeBootstrapSignature: null,
       kotcTakeoversMode: 'standard',
+      kotcSelfScoringEnabled: false,
+      kotcScoreVoiceEnabled: true,
+      kotcScoreHistoryVisible: true,
+    });
+
+    expect(
+      normalizeKotcAdminSettings({
+        kotcSelfScoringEnabled: 'true',
+        kotcScoreVoiceEnabled: 'false',
+        kotcScoreHistoryVisible: false,
+      })
+    ).toMatchObject({
+      kotcSelfScoringEnabled: true,
+      kotcScoreVoiceEnabled: false,
+      kotcScoreHistoryVisible: false,
     });
 
     expect(getKotcSeatCount(3, 5)).toBe(30);
-    expect(normalizeKotcJudgeModule('legacy')).toBe('legacy');
+    expect(normalizeKotcJudgeModule('legacy')).toBe('next');
     expect(normalizeKotcJudgeModule('next', 'legacy')).toBe('next');
-    expect(normalizeKotcJudgeModule(undefined, 'legacy')).toBe('legacy');
+    expect(normalizeKotcJudgeModule(undefined, 'legacy')).toBe('next');
     expect(isKotcAdminFormat(KOTC_ADMIN_FORMAT)).toBe(true);
   });
 

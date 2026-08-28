@@ -13,7 +13,7 @@ describe('KOTC Next UI source contract', () => {
     const workspace = read('web/components/kotc-next/KotcNextTournamentWorkspace.tsx');
     const panel = read('web/components/kotc-next/KotcNextOperatorPanel.tsx');
 
-    expect(sudyamPage).toContain("payload.kotcJudgeModule === \"next\"");
+    expect(sudyamPage).toContain('payload.format === "kotc"');
     expect(sudyamPage).toContain('/sudyam/kotcn/');
     expect(operatorPage).toContain('resolveSudyamBootstrap');
     expect(operatorPage).toContain('KotcNextTournamentWorkspace');
@@ -23,7 +23,7 @@ describe('KOTC Next UI source contract', () => {
     expect(panel).toContain('KotcNextR2SeedEditor');
     expect(panel).toContain('operatorState?.canBootstrapR1');
     expect(panel).toContain("actions.onAction('finish_r1')");
-    expect(panel).toContain("actions.onAction('finish_r2')");
+    expect(panel).toContain('actions.onConfirmR2Seed');
     expect(panel).toContain('/live/kotcn/');
   });
 

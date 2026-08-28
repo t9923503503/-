@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await writeAuditLog({
       actorId: auth.actor.id,
       actorRole: auth.actor.role,
-      action: 'tournament.syncThaiResults',
+      action: 'tournament.thaiSyncResults',
       entityType: 'tournament',
       entityId: id,
       afterState: { inserted, roundUsed },

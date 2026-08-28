@@ -7,18 +7,20 @@ function read(relPath) {
 }
 
 describe('profile photo upload source contract', () => {
-  it('keeps a conservative client-side payload budget for proxy uploads', () => {
+  it('accepts a large source locally but keeps a conservative proxy payload', () => {
     const source = read('web/components/profile/PlayerPhotoUploadForm.tsx');
 
+    expect(source).toContain('const MAX_SOURCE_BYTES = 10 * 1024 * 1024;');
     expect(source).toContain('const MULTIPART_OVERHEAD_BYTES = 32 * 1024;');
     expect(source).toContain('const SAFE_REQUEST_BYTES = 380 * 1024;');
     expect(source).toContain('const MAX_UPLOAD_BYTES = SAFE_REQUEST_BYTES - MULTIPART_OVERHEAD_BYTES;');
-    expect(source).toContain('const shouldNormalize = file.size > MAX_UPLOAD_BYTES || file.type !== "image/jpeg";');
-    expect(source).toContain('const qualitySteps = [0.82, 0.72, 0.62, 0.52, 0.42, 0.34];');
-    expect(source).toContain('while (width > MIN_IMAGE_SIDE && height > MIN_IMAGE_SIDE)');
-    expect(source).toContain('Файл всё ещё превышает лимит прокси.');
-    expect(source).toContain('startTransition(() => {');
-    expect(source).toContain('router.refresh();');
+    expect(source).toContain('const OUTPUT_SIZE = 512;');
+    expect(source).toContain('drawCrop(');
+    expect(source).toContain('type="range"');
+    expect(source).toContain('setRotation');
+    expect(source).toContain('onPointerMove');
+    expect(source).toContain("new File([blob], `${sourceName}.jpg`, { type: 'image/jpeg' })");
+    expect(source).toContain('startTransition(() => router.refresh());');
     expect(source).not.toContain('window.location.reload()');
   });
 });

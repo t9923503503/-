@@ -1,257 +1,295 @@
-"use client";
+'use client';
 
-import { useRouter } from "next/navigation";
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-type Notice = { type: "success" | "error"; text: string } | null;
+type Notice = { type: 'success' | 'error'; text: string } | null;
 
+const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
 const MULTIPART_OVERHEAD_BYTES = 32 * 1024;
 const SAFE_REQUEST_BYTES = 380 * 1024;
 const MAX_UPLOAD_BYTES = SAFE_REQUEST_BYTES - MULTIPART_OVERHEAD_BYTES;
-const MAX_IMAGE_SIDE = 1280;
-const MIN_IMAGE_SIDE = 360;
-const TARGET_UPLOAD_LABEL = `до ~${Math.round(MAX_UPLOAD_BYTES / 1024)} KB`;
-
-function toJpegFileName(name: string): string {
-  const base = String(name || "photo").replace(/\.[^.]+$/, "");
-  return `${base || "photo"}.jpg`;
-}
-
-function loadImage(file: File): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(img);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("IMAGE_LOAD_FAILED"));
-    };
-    img.src = objectUrl;
-  });
-}
+const OUTPUT_SIZE = 512;
+const ACCEPTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          reject(new Error("IMAGE_ENCODE_FAILED"));
-          return;
-        }
-        resolve(blob);
-      },
-      "image/jpeg",
-      quality
-    );
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('IMAGE_ENCODE_FAILED')), 'image/jpeg', quality);
   });
 }
 
-async function prepareUploadFile(file: File): Promise<File> {
-  const shouldNormalize = file.size > MAX_UPLOAD_BYTES || file.type !== "image/jpeg";
-  if (!shouldNormalize) return file;
+async function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('IMAGE_LOAD_FAILED'));
+    image.src = url;
+  });
+}
 
-  const img = await loadImage(file);
-  const sourceWidth = img.naturalWidth || img.width || 1;
-  const sourceHeight = img.naturalHeight || img.height || 1;
-  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(sourceWidth, sourceHeight));
+function drawCrop(
+  canvas: HTMLCanvasElement,
+  image: HTMLImageElement,
+  zoom: number,
+  rotation: number,
+  offsetX: number,
+  offsetY: number
+) {
+  canvas.width = OUTPUT_SIZE;
+  canvas.height = OUTPUT_SIZE;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('NO_CANVAS_CONTEXT');
+  const sideways = Math.abs(rotation % 180) === 90;
+  const rotatedWidth = sideways ? image.naturalHeight : image.naturalWidth;
+  const rotatedHeight = sideways ? image.naturalWidth : image.naturalHeight;
+  const scale = Math.max(OUTPUT_SIZE / rotatedWidth, OUTPUT_SIZE / rotatedHeight) * zoom;
 
-  let width = Math.max(1, Math.round(sourceWidth * scale));
-  let height = Math.max(1, Math.round(sourceHeight * scale));
+  context.clearRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+  context.fillStyle = '#0b1220';
+  context.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+  context.save();
+  context.translate(OUTPUT_SIZE / 2 + offsetX, OUTPUT_SIZE / 2 + offsetY);
+  context.rotate((rotation * Math.PI) / 180);
+  context.scale(scale, scale);
+  context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+  context.restore();
+}
 
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("NO_CANVAS_CONTEXT");
-
-  const render = (nextWidth: number, nextHeight: number) => {
-    canvas.width = nextWidth;
-    canvas.height = nextHeight;
-    context.clearRect(0, 0, nextWidth, nextHeight);
-    context.drawImage(img, 0, 0, nextWidth, nextHeight);
+function clampOffset(
+  image: HTMLImageElement,
+  zoom: number,
+  rotation: number,
+  offsetX: number,
+  offsetY: number
+) {
+  const sideways = Math.abs(rotation % 180) === 90;
+  const rotatedWidth = sideways ? image.naturalHeight : image.naturalWidth;
+  const rotatedHeight = sideways ? image.naturalWidth : image.naturalHeight;
+  const scale = Math.max(OUTPUT_SIZE / rotatedWidth, OUTPUT_SIZE / rotatedHeight) * zoom;
+  const maxX = Math.max(0, (rotatedWidth * scale - OUTPUT_SIZE) / 2);
+  const maxY = Math.max(0, (rotatedHeight * scale - OUTPUT_SIZE) / 2);
+  return {
+    x: Math.max(-maxX, Math.min(maxX, offsetX)),
+    y: Math.max(-maxY, Math.min(maxY, offsetY)),
   };
-
-  render(width, height);
-  const qualitySteps = [0.82, 0.72, 0.62, 0.52, 0.42, 0.34];
-
-  for (const quality of qualitySteps) {
-    const blob = await canvasToJpegBlob(canvas, quality);
-    if (blob.size <= MAX_UPLOAD_BYTES) {
-      return new File([blob], toJpegFileName(file.name), { type: "image/jpeg" });
-    }
-  }
-
-  while (width > MIN_IMAGE_SIDE && height > MIN_IMAGE_SIDE) {
-    width = Math.max(MIN_IMAGE_SIDE, Math.round(width * 0.82));
-    height = Math.max(MIN_IMAGE_SIDE, Math.round(height * 0.82));
-    render(width, height);
-
-    for (const quality of qualitySteps) {
-      const blob = await canvasToJpegBlob(canvas, quality);
-      if (blob.size <= MAX_UPLOAD_BYTES) {
-        return new File([blob], toJpegFileName(file.name), { type: "image/jpeg" });
-      }
-    }
-  }
-
-  throw new Error("FILE_TOO_LARGE");
 }
 
 export default function PlayerPhotoUploadForm({
   playerId,
   embedded = false,
+  setupReturnTo = null,
 }: {
   playerId?: string;
   embedded?: boolean;
+  setupReturnTo?: string | null;
 }) {
   const router = useRouter();
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const [sourceName, setSourceName] = useState('avatar');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [zoom, setZoom] = useState(1);
+  const [rotation, setRotation] = useState(0);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const canSubmit = useMemo(() => !!file && !loading, [file, loading]);
+  useEffect(() => () => {
+    if (sourceUrl.startsWith('blob:')) URL.revokeObjectURL(sourceUrl);
+  }, [sourceUrl]);
 
   useEffect(() => {
-    return () => {
-      if (previewUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(previewUrl);
-      }
-    };
-  }, [previewUrl]);
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setNotice(null);
-    if (!file) {
-      setNotice({ type: "error", text: "Выберите файл." });
+    if (!sourceUrl) {
+      imageRef.current = null;
       return;
     }
+    let active = true;
+    loadImage(sourceUrl)
+      .then((image) => {
+        if (!active) return;
+        imageRef.current = image;
+        if (canvasRef.current) drawCrop(canvasRef.current, image, 1, 0, 0, 0);
+      })
+      .catch(() => setNotice({ type: 'error', text: 'Не удалось прочитать изображение.' }));
+    return () => { active = false; };
+  }, [sourceUrl]);
 
+  useEffect(() => {
+    const image = imageRef.current;
+    const canvas = canvasRef.current;
+    if (!image || !canvas) return;
+    const next = clampOffset(image, zoom, rotation, offset.x, offset.y);
+    if (next.x !== offset.x || next.y !== offset.y) {
+      setOffset(next);
+      return;
+    }
+    drawCrop(canvas, image, zoom, rotation, offset.x, offset.y);
+  }, [zoom, rotation, offset]);
+
+  function resetEditor() {
+    if (sourceUrl.startsWith('blob:')) URL.revokeObjectURL(sourceUrl);
+    setSourceUrl('');
+    imageRef.current = null;
+    setZoom(1);
+    setRotation(0);
+    setOffset({ x: 0, y: 0 });
+    if (inputRef.current) inputRef.current.value = '';
+  }
+
+  async function selectFile(file: File | null) {
+    setNotice(null);
+    if (!file) return resetEditor();
+    if (!ACCEPTED_TYPES.has(file.type)) {
+      setNotice({ type: 'error', text: 'Разрешены только JPG, PNG и WEBP.' });
+      if (inputRef.current) inputRef.current.value = '';
+      return;
+    }
+    if (file.size > MAX_SOURCE_BYTES) {
+      setNotice({ type: 'error', text: 'Исходный файл превышает 10 MB.' });
+      if (inputRef.current) inputRef.current.value = '';
+      return;
+    }
+    if (sourceUrl.startsWith('blob:')) URL.revokeObjectURL(sourceUrl);
+    setSourceName(file.name.replace(/\.[^.]+$/, '') || 'avatar');
+    setZoom(1);
+    setRotation(0);
+    setOffset({ x: 0, y: 0 });
+    setSourceUrl(URL.createObjectURL(file));
+  }
+
+  async function createUploadFile(): Promise<File> {
+    const canvas = canvasRef.current;
+    const image = imageRef.current;
+    if (!canvas || !image) throw new Error('IMAGE_NOT_READY');
+    drawCrop(canvas, image, zoom, rotation, offset.x, offset.y);
+    for (const quality of [0.88, 0.8, 0.72, 0.64, 0.56]) {
+      const blob = await canvasToJpegBlob(canvas, quality);
+      if (blob.size <= MAX_UPLOAD_BYTES) {
+        return new File([blob], `${sourceName}.jpg`, { type: 'image/jpeg' });
+      }
+    }
+    throw new Error('FILE_TOO_LARGE');
+  }
+
+  async function save() {
     setLoading(true);
+    setNotice(null);
     try {
-      const uploadFile = await prepareUploadFile(file);
-
-      const fd = new FormData();
-      fd.append("photo", uploadFile);
-      if (playerId) fd.append("playerId", playerId);
-
-      const res = await fetch("/api/auth/photo", { method: "POST", body: fd });
-      if (res.status === 413) {
-        setNotice({
-          type: "error",
-          text: "Файл всё ещё превышает лимит прокси. Выберите более лёгкое фото и повторите попытку.",
-        });
+      const uploadFile = await createUploadFile();
+      const formData = new FormData();
+      formData.append('photo', uploadFile);
+      if (playerId) formData.append('playerId', playerId);
+      const response = await fetch('/api/auth/photo', { method: 'POST', body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setNotice({ type: 'error', text: data.error || 'Не удалось загрузить фото.' });
         return;
       }
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setNotice({
-          type: "error",
-          text: data?.error || "Не удалось загрузить фото.",
-        });
+      setNotice({ type: 'success', text: data.message || 'Фото обновлено.' });
+      resetEditor();
+      if (setupReturnTo) {
+        window.location.assign(setupReturnTo);
         return;
       }
-
-      setNotice({
-        type: "success",
-        text: data?.message || "Фото обновлено.",
-      });
-      setFile(null);
-      if (inputRef.current) inputRef.current.value = "";
-      if (previewUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(previewUrl);
-      }
-      setPreviewUrl("");
-      startTransition(() => {
-        router.refresh();
-      });
+      startTransition(() => router.refresh());
     } catch (error) {
-      if (error instanceof Error && error.message === "FILE_TOO_LARGE") {
-        setNotice({
-          type: "error",
-          text: "Фото не удалось сжать до лимита. Выберите менее крупное изображение.",
-        });
-      } else {
-        setNotice({ type: "error", text: "Ошибка сети. Повторите попытку." });
-      }
+      setNotice({
+        type: 'error',
+        text: error instanceof Error && error.message === 'FILE_TOO_LARGE'
+          ? 'Не удалось подготовить изображение для отправки.'
+          : 'Не удалось обработать изображение. Выберите другой файл.',
+      });
     } finally {
       setLoading(false);
     }
   }
 
-  const rootClass = embedded
-    ? ''
-    : 'rounded-xl border border-white/10 bg-surface-light/20 p-4';
-
   return (
-    <section className={rootClass}>
-      {!embedded ? (
-        <>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-secondary">
-            Обновление фото
+    <section className={embedded ? '' : 'rounded-xl border border-white/10 bg-surface-light/20 p-4'}>
+      <p className="text-sm text-text-secondary">JPG, PNG или WEBP до 10 MB. Результат сохраняется квадратом 512×512 без метаданных.</p>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={(event) => void selectFile(event.currentTarget.files?.[0] || null)}
+        className="mt-3 block w-full text-sm text-text-secondary file:mr-4 file:rounded-lg file:border-0 file:bg-brand/20 file:px-4 file:py-2 file:text-brand-light hover:file:bg-brand/30"
+      />
+
+      {sourceUrl ? (
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,320px)_1fr]">
+          <div>
+            <div className="relative aspect-square w-full max-w-80 overflow-hidden rounded-2xl border border-white/15 bg-slate-950 touch-none">
+              <canvas
+                ref={canvasRef}
+                aria-label="Предпросмотр кадрирования аватара"
+                className="h-full w-full cursor-grab active:cursor-grabbing"
+                onPointerDown={(event) => {
+                  dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                }}
+                onPointerMove={(event) => {
+                  const drag = dragRef.current;
+                  if (!drag || drag.pointerId !== event.pointerId) return;
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const ratio = OUTPUT_SIZE / Math.max(1, rect.width);
+                  const image = imageRef.current;
+                  if (!image) return;
+                  const next = clampOffset(
+                    image,
+                    zoom,
+                    rotation,
+                    offset.x + (event.clientX - drag.x) * ratio,
+                    offset.y + (event.clientY - drag.y) * ratio
+                  );
+                  dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+                  setOffset(next);
+                }}
+                onPointerUp={(event) => {
+                  dragRef.current = null;
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }}
+                onPointerCancel={() => { dragRef.current = null; }}
+              />
+              <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/25" />
+            </div>
+            <p className="mt-2 text-xs text-text-secondary">Перетаскивайте фото внутри квадрата.</p>
           </div>
-          <p className="mt-1.5 text-sm font-body text-text-secondary">
-            JPG, PNG или WEBP. Фото автоматически приводится к JPEG и сжимается перед отправкой (
-            {TARGET_UPLOAD_LABEL}).
-          </p>
-        </>
-      ) : (
-        <p className="text-sm font-body text-text-secondary">
-          JPG, PNG или WEBP. Фото автоматически приводится к JPEG и сжимается перед отправкой (
-          {TARGET_UPLOAD_LABEL}).
-        </p>
-      )}
 
-      <form onSubmit={onSubmit} className="mt-3 flex flex-col gap-3">
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          onChange={(e) => {
-            const nextFile = e.currentTarget.files?.[0] || null;
-            setFile(nextFile);
-            setNotice(null);
-            if (previewUrl.startsWith("blob:")) {
-              URL.revokeObjectURL(previewUrl);
-            }
-            if (nextFile) {
-              setPreviewUrl(URL.createObjectURL(nextFile));
-            } else {
-              setPreviewUrl("");
-            }
-          }}
-          className="block w-full text-sm text-text-secondary file:mr-4 file:rounded-lg file:border-0 file:bg-brand/20 file:px-4 file:py-2 file:text-brand-light hover:file:bg-brand/30"
-        />
-
-        {previewUrl ? (
-          <div className="h-28 w-28 overflow-hidden rounded-2xl border border-white/10">
-            <img src={previewUrl} alt="preview" className="h-full w-full object-cover" />
+          <div className="grid content-start gap-4">
+            <label className="grid gap-2 text-sm font-semibold text-text-primary">
+              Масштаб: {Math.round(zoom * 100)}%
+              <input
+                type="range"
+                min="1"
+                max="3"
+                step="0.01"
+                value={zoom}
+                onChange={(event) => setZoom(Number(event.target.value))}
+                className="accent-brand"
+              />
+            </label>
+            <div>
+              <span className="text-sm font-semibold text-text-primary">Поворот</span>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button type="button" onClick={() => setRotation((value) => (value + 270) % 360)} className="rounded-xl border border-white/15 px-3 py-2 text-sm text-text-primary">↶ 90°</button>
+                <button type="button" onClick={() => setRotation((value) => (value + 90) % 360)} className="rounded-xl border border-white/15 px-3 py-2 text-sm text-text-primary">↷ 90°</button>
+                <button type="button" onClick={() => { setZoom(1); setRotation(0); setOffset({ x: 0, y: 0 }); }} className="rounded-xl border border-white/15 px-3 py-2 text-sm text-text-secondary">Сбросить</button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={loading} onClick={() => void save()} className="rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+                {loading ? 'Сохраняем…' : 'Сохранить фото'}
+              </button>
+              <button type="button" disabled={loading} onClick={resetEditor} className="rounded-xl border border-white/15 px-4 py-2.5 text-sm font-semibold text-text-primary">Отмена</button>
+            </div>
           </div>
-        ) : null}
-
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className={["btn-action-outline w-full sm:w-auto", !canSubmit ? "cursor-not-allowed opacity-60" : ""].join(" ")}
-        >
-          {loading ? "Загрузка..." : "Сохранить фото"}
-        </button>
-      </form>
+        </div>
+      ) : null}
 
       {notice ? (
-        <div
-          className={[
-            "mt-3 rounded-lg border px-4 py-3 text-sm font-body",
-            notice.type === "success"
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-              : "border-red-500/40 bg-red-500/10 text-red-200",
-          ].join(" ")}
-          role="status"
-        >
+        <div className={`mt-3 rounded-lg border px-4 py-3 text-sm ${notice.type === 'success' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200' : 'border-red-500/40 bg-red-500/10 text-red-200'}`} role="status">
           {notice.text}
         </div>
       ) : null}
