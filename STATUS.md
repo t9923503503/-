@@ -1,6 +1,6 @@
 # 📋 STATUS.md — Координация агентов
 
-- [x] Аккаунт игрока `sv-ugra@yandex.ru` связан с полным доступом к Next.js-админке без повторного admin ID/PIN: email перепроверяется по PostgreSQL, первый переход в `/admin` выпускает стандартную подписанную `admin_session` с ролью `admin`, чужие аккаунты остаются на обычном admin-login, а выход из ЛК отзывает обе сессии. Targeted Vitest, TypeScript и production build прошли; production deployment выполняется отдельным атомарным релизом без миграций. ✅ (2026-08-29, player-linked admin auth)
+- [x] Аккаунт игрока `sv-ugra@yandex.ru` связан с полным доступом к Next.js-админке без повторного admin ID/PIN: email перепроверяется по PostgreSQL, первый переход в `/admin` выпускает стандартную подписанную `admin_session` с ролью `admin`, чужие аккаунты остаются на обычном admin-login, а выход из ЛК отзывает обе сессии. Targeted Vitest прошёл `5/5`; production-сборка из актуального server source-среза прошла compile, TypeScript, route generation и standalone postbuild. Production атомарно переключён на build `4s95t5_QN9olA-BYC0QfI` без миграций; реальный owner account найден как user `6`, `/api/auth/summary` возвращает `admin`, claim выдаёт cookie и `/admin` отвечает `200`. Сервис active, `NRestarts=0`, новых warning/error после старта нет. Rollback: `/var/www/ipt/.deploy-backup/20260829-033402-admin-player-access-v1`. ✅ (2026-08-29, commit `78fcb5e`, player-linked admin auth)
 
 > **КАЖДЫЙ АГЕНТ ЧИТАЕТ ЭТОТ ФАЙЛ ПЕРЕД НАЧАЛОМ РАБОТЫ**
 >
