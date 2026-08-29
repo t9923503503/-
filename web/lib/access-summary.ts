@@ -2,6 +2,7 @@ import { getPool } from '@/lib/db';
 import { getAuthStatus } from '@/lib/auth';
 import { getAdminSessionFromCookies, type AdminActor, type AdminRole } from '@/lib/admin-auth';
 import { PLAYER_COOKIE, verifyPlayerToken } from '@/lib/player-auth';
+import { createPlayerAdminActor, isAdminPlayerEmail } from '@/lib/admin-player-access';
 import { cookies } from 'next/headers';
 
 export interface AccessSummaryPlayer {
@@ -43,20 +44,22 @@ async function loadPlayerSummaryFromCookies(): Promise<AccessSummaryPlayer | nul
 
   let fullName: string | null = null;
   let nickname: string | null = null;
+  let email = String(payload.email || '');
 
   try {
     const pool = getPool();
     const { rows } = await pool.query(
-      'SELECT full_name, nickname FROM users WHERE id = $1 LIMIT 1',
+      'SELECT email, full_name, nickname FROM users WHERE id = $1 LIMIT 1',
       [payload.id]
     );
+    email = rows[0]?.email ? String(rows[0].email) : email;
     fullName = rows[0]?.full_name ? String(rows[0].full_name) : null;
     nickname = rows[0]?.nickname ? String(rows[0].nickname) : null;
   } catch {
     // Player session should still work even if the profile query fails.
   }
 
-  const emailPrefix = String(payload.email || '').split('@')[0] || 'Игрок';
+  const emailPrefix = email.split('@')[0] || 'Игрок';
   const displayName =
     normalizeDisplayName(nickname) ||
     normalizeDisplayName(fullName) ||
@@ -65,7 +68,7 @@ async function loadPlayerSummaryFromCookies(): Promise<AccessSummaryPlayer | nul
 
   return {
     id: payload.id,
-    email: payload.email,
+    email,
     fullName,
     nickname,
     displayName,
@@ -79,9 +82,15 @@ export async function getAccessSummaryFromCookies(): Promise<AccessSummary> {
     getAuthStatus(),
   ]);
 
+  const linkedAdmin = admin || (
+    player && isAdminPlayerEmail(player.email)
+      ? createPlayerAdminActor(player.id)
+      : null
+  );
+
   return {
     player,
-    admin,
+    admin: linkedAdmin,
     judgeApproved: judgeStatus === 'approved',
   };
 }
@@ -126,4 +135,3 @@ export function getAccessSubtitle(summary: AccessSummary): string {
 export function hasAnyAccess(summary: AccessSummary): boolean {
   return Boolean(summary.player || summary.admin || summary.judgeApproved);
 }
-

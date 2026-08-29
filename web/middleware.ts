@@ -130,6 +130,17 @@ export async function middleware(request: NextRequest) {
   if (isAdmin && !isAdminLogin) {
     const token = request.cookies.get(ADMIN_COOKIE_NAME)?.value;
     if (!token || !(await isValidAdminSession(token))) {
+      const hasPlayerSession = Boolean(
+        request.cookies.get('__Host-lpvolley_player_session')?.value
+        || request.cookies.get('player_session')?.value
+      );
+      if (hasPlayerSession) {
+        const claimUrl = buildRedirectUrl(request, '/api/admin/player-session');
+        claimUrl.searchParams.set('returnTo', `${request.nextUrl.pathname}${request.nextUrl.search}`);
+        const response = NextResponse.redirect(claimUrl);
+        response.headers.set('Cache-Control', 'private, no-cache, no-store, max-age=0, must-revalidate');
+        return response;
+      }
       const response = NextResponse.redirect(buildRedirectUrl(request, '/admin/login'));
       response.headers.set('Cache-Control', 'private, no-cache, no-store, max-age=0, must-revalidate');
       return response;

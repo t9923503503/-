@@ -30,6 +30,7 @@ const ROLE_ORDER: Record<AdminRole, number> = {
 };
 
 const FALLBACK_ADMIN_PIN = '7319';
+const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 function hasRequiredRole(actual: AdminRole, required: AdminRole): boolean {
   return ROLE_ORDER[actual] >= ROLE_ORDER[required];
@@ -113,11 +114,25 @@ function encodeSession(actor: AdminActor): string {
   const payload: SessionPayload = {
     id: actor.id,
     role: actor.role,
-    exp: Date.now() + 1000 * 60 * 60 * 24 * 30,
+    exp: Date.now() + 1000 * ADMIN_SESSION_TTL_SECONDS,
   };
   const part = b64UrlEncode(JSON.stringify(payload));
   const sig = signPart(part, secret);
   return `${part}.${sig}`;
+}
+
+export function setAdminSessionCookie(response: NextResponse, actor: AdminActor): void {
+  const token = encodeSession(actor);
+  if (!token) {
+    throw new Error('Admin session secret is not configured');
+  }
+  response.cookies.set(ADMIN_COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: ADMIN_SESSION_TTL_SECONDS,
+    path: '/',
+  });
 }
 
 function decodeSession(token: string): AdminActor | null {
@@ -152,20 +167,13 @@ export function createAdminSessionResponse(input: { id?: string; pin: string }):
   if (!actor) {
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
   }
-  const token = encodeSession(actor);
-  if (!token) {
-    return NextResponse.json({ error: 'Session secret is not configured' }, { status: 500 });
-  }
-
   const res = NextResponse.json({ ok: true, actor });
   // Keep strict flags on admin_session to reduce theft risk.
-  res.cookies.set(ADMIN_COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: 'strict',
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 60 * 60 * 24 * 30,
-    path: '/',
-  });
+  try {
+    setAdminSessionCookie(res, actor);
+  } catch {
+    return NextResponse.json({ error: 'Session secret is not configured' }, { status: 500 });
+  }
   return res;
 }
 
